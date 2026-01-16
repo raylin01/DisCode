@@ -1,0 +1,245 @@
+/**
+ * YAML-based storage system for DisCode Discord Bot
+ */
+
+import fs from 'fs';
+import path from 'path';
+import yaml from 'js-yaml';
+import type { TokenInfo, RunnerInfo, Session } from '../shared/types.js';
+
+interface StorageData {
+  users: Record<string, UserData>;
+  runners: Record<string, RunnerInfo>;
+  sessions: Record<string, Session>;
+}
+
+interface UserData {
+  tokens: TokenInfo[];
+  runners: string[]; // runner IDs owned by this user
+}
+
+const STORAGE_PATH = process.env.DISCORDE_STORAGE_PATH || './data';
+const USERS_FILE = path.join(STORAGE_PATH, 'users.yaml');
+const RUNNERS_FILE = path.join(STORAGE_PATH, 'runners.yaml');
+const SESSIONS_FILE = path.join(STORAGE_PATH, 'sessions.yaml');
+
+class Storage {
+  private data: StorageData;
+
+  constructor() {
+    this.data = {
+      users: {},
+      runners: {},
+      sessions: {}
+    };
+    this.ensureDirectories();
+    this.load();
+  }
+
+  private ensureDirectories(): void {
+    if (!fs.existsSync(STORAGE_PATH)) {
+      fs.mkdirSync(STORAGE_PATH, { recursive: true });
+    }
+  }
+
+  private load(): void {
+    try {
+      if (fs.existsSync(USERS_FILE)) {
+        const usersData = fs.readFileSync(USERS_FILE, 'utf-8');
+        this.data.users = yaml.load(usersData) as Record<string, UserData>;
+      }
+
+      if (fs.existsSync(RUNNERS_FILE)) {
+        const runnersData = fs.readFileSync(RUNNERS_FILE, 'utf-8');
+        this.data.runners = yaml.load(runnersData) as Record<string, RunnerInfo>;
+      }
+
+      if (fs.existsSync(SESSIONS_FILE)) {
+        const sessionsData = fs.readFileSync(SESSIONS_FILE, 'utf-8');
+        this.data.sessions = yaml.load(sessionsData) as Record<string, Session>;
+      }
+    } catch (error) {
+      console.error('Error loading storage:', error);
+      // Start with empty data if files don't exist or are invalid
+    }
+  }
+
+  private saveUsers(): void {
+    const yamlStr = yaml.dump(this.data.users);
+    fs.writeFileSync(USERS_FILE, yamlStr, 'utf-8');
+  }
+
+  private saveRunners(): void {
+    const yamlStr = yaml.dump(this.data.runners);
+    fs.writeFileSync(RUNNERS_FILE, yamlStr, 'utf-8');
+  }
+
+  private saveSessions(): void {
+    const yamlStr = yaml.dump(this.data.sessions);
+    fs.writeFileSync(SESSIONS_FILE, yamlStr, 'utf-8');
+  }
+
+  // Token operations
+  generateToken(userId: string, guildId: string): TokenInfo {
+    const user = this.data.users[userId] || { tokens: [], runners: [] };
+
+    const token = this.generateRandomToken();
+    const tokenInfo: TokenInfo = {
+      token,
+      userId,
+      guildId,
+      createdAt: new Date().toISOString(),
+      lastUsed: new Date().toISOString(),
+      isActive: true
+    };
+
+    user.tokens.push(tokenInfo);
+    this.data.users[userId] = user;
+    this.saveUsers();
+
+    return tokenInfo;
+  }
+
+  validateToken(token: string): TokenInfo | null {
+    for (const userId in this.data.users) {
+      const user = this.data.users[userId];
+      const tokenInfo = user.tokens.find(t => t.token === token && t.isActive);
+
+      if (tokenInfo) {
+        // Update last used
+        tokenInfo.lastUsed = new Date().toISOString();
+        this.saveUsers();
+        return tokenInfo;
+      }
+    }
+
+    return null;
+  }
+
+  getUserTokens(userId: string): TokenInfo[] {
+    const user = this.data.users[userId];
+    return user?.tokens.filter(t => t.isActive) || [];
+  }
+
+  revokeToken(userId: string, token: string): boolean {
+    const user = this.data.users[userId];
+    if (!user) return false;
+
+    const tokenInfo = user.tokens.find(t => t.token === token);
+    if (!tokenInfo) return false;
+
+    tokenInfo.isActive = false;
+    this.saveUsers();
+    return true;
+  }
+
+  // Runner operations
+  registerRunner(runner: RunnerInfo): void {
+    this.data.runners[runner.runnerId] = runner;
+
+    // Add to owner's runners list
+    const user = this.data.users[runner.ownerId] || { tokens: [], runners: [] };
+    if (!user.runners.includes(runner.runnerId)) {
+      user.runners.push(runner.runnerId);
+    }
+    this.data.users[runner.ownerId] = user;
+
+    this.saveRunners();
+    this.saveUsers();
+  }
+
+  getRunner(runnerId: string): RunnerInfo | null {
+    return this.data.runners[runnerId] || null;
+  }
+
+  getUserRunners(userId: string): RunnerInfo[] {
+    const user = this.data.users[userId];
+    if (!user) return [];
+
+    return user.runners
+      .map(id => this.data.runners[id])
+      .filter((r): r is RunnerInfo => r !== undefined);
+  }
+
+  updateRunnerStatus(runnerId: string, status: 'online' | 'offline'): void {
+    const runner = this.data.runners[runnerId];
+    if (runner) {
+      runner.status = status;
+      runner.lastHeartbeat = new Date().toISOString();
+      this.saveRunners();
+    }
+  }
+
+  shareRunner(userId: string, runnerId: string, targetUserId: string): boolean {
+    const runner = this.data.runners[runnerId];
+
+    if (!runner || runner.ownerId !== userId) {
+      return false;
+    }
+
+    if (!runner.authorizedUsers.includes(targetUserId)) {
+      runner.authorizedUsers.push(targetUserId);
+      this.saveRunners();
+    }
+
+    return true;
+  }
+
+  unshareRunner(userId: string, runnerId: string, targetUserId: string): boolean {
+    const runner = this.data.runners[runnerId];
+
+    if (!runner || runner.ownerId !== userId) {
+      return false;
+    }
+
+    runner.authorizedUsers = runner.authorizedUsers.filter(id => id !== targetUserId);
+    this.saveRunners();
+    return true;
+  }
+
+  canUserAccessRunner(userId: string, runnerId: string): boolean {
+    const runner = this.data.runners[runnerId];
+
+    if (!runner) return false;
+    if (runner.ownerId === userId) return true;
+    if (runner.authorizedUsers.includes(userId)) return true;
+
+    return false;
+  }
+
+  // Session operations
+  createSession(session: Session): void {
+    this.data.sessions[session.sessionId] = session;
+    this.saveSessions();
+  }
+
+  getSession(sessionId: string): Session | null {
+    return this.data.sessions[sessionId] || null;
+  }
+
+  getRunnerSessions(runnerId: string): Session[] {
+    return Object.values(this.data.sessions)
+      .filter(s => s.runnerId === runnerId);
+  }
+
+  endSession(sessionId: string): void {
+    const session = this.data.sessions[sessionId];
+    if (session) {
+      session.status = 'ended';
+      this.saveSessions();
+    }
+  }
+
+  private generateRandomToken(): string {
+    // Generate a secure random token
+    const crypto = require('crypto');
+    return crypto.randomBytes(32).toString('hex');
+  }
+
+  // Getter for data (needed for accessing all runners)
+  get data(): StorageData {
+    return this.data;
+  }
+}
+
+export const storage = new Storage();

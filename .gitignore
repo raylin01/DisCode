@@ -1,0 +1,5 @@
+*.md
+.env
+node_modules
+poc
+bun.lock

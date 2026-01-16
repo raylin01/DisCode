@@ -1,0 +1,20 @@
+{
+  "name": "discode-discord-bot",
+  "version": "0.1.0",
+  "description": "Discord bot for DisCode - control AI coding CLIs through Discord",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun run --watch src/index.ts",
+    "register-commands": "bun run src/register-commands.ts"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "js-yaml": "^4.1.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/ws": "^8.5.13"
+  }
+}
