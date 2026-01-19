@@ -1,0 +1,43 @@
+{
+  "description": "DisCode - Discord integration for Claude Code with interactive approvals",
+  "version": "0.1.0",
+  "author": "DisCode",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "description": "Send tool approval request to Discord bot via runner agent",
+            "command": "bun ~/.claude/plugins/discode/approval-handler.js"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "description": "Notify Discord bot of new session",
+            "command": "bun ~/.claude/plugins/discode/session-handler.js start"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "description": "Notify Discord bot of session end",
+            "command": "bun ~/.claude/plugins/discode/session-handler.js end"
+          }
+        ]
+      }
+    ]
+  }
+}

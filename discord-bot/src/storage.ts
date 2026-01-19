@@ -52,6 +52,25 @@ class Storage {
       if (fs.existsSync(RUNNERS_FILE)) {
         const runnersData = fs.readFileSync(RUNNERS_FILE, 'utf-8');
         this.data.runners = yaml.load(runnersData) as Record<string, RunnerInfo>;
+
+        // Clean up null values from authorizedUsers
+        let cleaned = false;
+        for (const runnerId in this.data.runners) {
+          const runner = this.data.runners[runnerId];
+          if (runner.authorizedUsers) {
+            const originalLength = runner.authorizedUsers.length;
+            runner.authorizedUsers = runner.authorizedUsers.filter((userId): userId is string => !!userId);
+            if (runner.authorizedUsers.length !== originalLength) {
+              cleaned = true;
+              console.log(`Cleaned ${originalLength - runner.authorizedUsers.length} null values from runner ${runnerId}`);
+            }
+          }
+        }
+
+        // Save cleaned data
+        if (cleaned) {
+          this.saveRunners();
+        }
       }
 
       if (fs.existsSync(SESSIONS_FILE)) {
@@ -137,12 +156,32 @@ class Storage {
   registerRunner(runner: RunnerInfo): void {
     this.data.runners[runner.runnerId] = runner;
 
-    // Add to owner's runners list
+    // Add to owner's runners list (deduplicate)
     const user = this.data.users[runner.ownerId] || { tokens: [], runners: [] };
     if (!user.runners.includes(runner.runnerId)) {
       user.runners.push(runner.runnerId);
     }
+    // Remove duplicates
+    user.runners = [...new Set(user.runners)];
     this.data.users[runner.ownerId] = user;
+
+    this.saveRunners();
+    this.saveUsers();
+  }
+
+  deleteRunner(runnerId: string): void {
+    const runner = this.data.runners[runnerId];
+    if (!runner) return;
+
+    // Remove from owner's runners list
+    const user = this.data.users[runner.ownerId];
+    if (user) {
+      user.runners = user.runners.filter(id => id !== runnerId);
+      this.data.users[runner.ownerId] = user;
+    }
+
+    // Remove from runners
+    delete this.data.runners[runnerId];
 
     this.saveRunners();
     this.saveUsers();
@@ -219,7 +258,7 @@ class Storage {
 
   getRunnerSessions(runnerId: string): Session[] {
     return Object.values(this.data.sessions)
-      .filter(s => s.runnerId === runnerId);
+      .filter(s => s.runnerId === runnerId && s.status === 'active');
   }
 
   endSession(sessionId: string): void {
@@ -228,6 +267,30 @@ class Storage {
       session.status = 'ended';
       this.saveSessions();
     }
+  }
+
+  async cleanupOldSessions(): Promise<number> {
+    const beforeCount = Object.keys(this.data.sessions).length;
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    // Remove ended sessions older than 24 hours
+    for (const sessionId in this.data.sessions) {
+      const session = this.data.sessions[sessionId];
+      if (session.status === 'ended' && new Date(session.createdAt) < oneDayAgo) {
+        delete this.data.sessions[sessionId];
+      }
+    }
+
+    const afterCount = Object.keys(this.data.sessions).length;
+    const cleanedCount = beforeCount - afterCount;
+
+    if (cleanedCount > 0) {
+      // Use async file write to avoid blocking
+      await fs.promises.writeFile(SESSIONS_FILE, yaml.dump(this.data.sessions));
+      console.log(`Cleaned up ${cleanedCount} old ended sessions`);
+    }
+
+    return cleanedCount;
   }
 
   private generateRandomToken(): string {
