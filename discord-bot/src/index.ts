@@ -11,11 +11,11 @@
  * Note: Using flags: 64 for ephemeral responses (MessageFlags.Ephemeral)
  */
 
-import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, ComponentType, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ChannelType } from 'discord.js';
+import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, ComponentType, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ChannelType, WebhookClient } from 'discord.js';
 import { WebSocketServer } from 'ws';
 import { randomUUID } from 'crypto';
 import { storage } from './storage.js';
-import type { ApprovalRequest, RunnerInfo, WebSocketMessage, Session } from '../shared/types.js';
+import type { ApprovalRequest, RunnerInfo, WebSocketMessage, Session } from '../../shared/types.js';
 
 // Configuration
 const DISCORD_TOKEN = process.env.DISCORDE_DISCORD_TOKEN;
@@ -589,8 +589,279 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
       break;
     }
 
+    case 'session_ready': {
+      const data = message.data as {
+        runnerId: string;
+        sessionId: string;
+      };
+
+      await handleSessionReady(data);
+      break;
+    }
+
+    case 'status': {
+      const data = message.data as {
+        runnerId: string;
+        sessionId: string;
+        status: 'idle' | 'working' | 'waiting' | 'offline' | 'error';
+        currentTool?: string;
+      };
+      await handleRunnerStatusUpdate(data);
+      break;
+    }
+
+    case 'session_discovered': {
+      const data = message.data as {
+        runnerId: string;
+        sessionId: string;
+        exists: boolean;
+      };
+      await handleSessionDiscovered(data);
+      break;
+    }
+
+    case 'terminal_list': {
+      const data = message.data as {
+        runnerId: string;
+        terminals: string[];
+      };
+      await handleTerminalList(data);
+      break;
+    }
+
     default:
       console.log('Unknown message type:', message.type);
+  }
+}
+
+async function handleSessionDiscovered(data: { runnerId: string; sessionId: string; exists: boolean }): Promise<void> {
+  const { runnerId, sessionId, exists } = data;
+
+  const runner = storage.getRunner(runnerId);
+  if (!runner) return;
+  if (!runner.privateChannelId) return;
+
+  // Check if we already know about this session
+  const existingSession = storage.getSession(sessionId);
+
+  if (existingSession) {
+    // If session is active, nothing to do
+    if (existingSession.status === 'active') {
+      return;
+    }
+
+    // If session was ended, try to reactivate the thread
+    if (existingSession.status === 'ended') {
+      try {
+        const existingThread = await client.channels.fetch(existingSession.threadId);
+        if (existingThread && 'setArchived' in existingThread) {
+          // Unarchive the thread
+          await existingThread.setArchived(false);
+
+          // Update session status
+          storage.updateSession(sessionId, { status: 'active' });
+          sessionStatuses.set(sessionId, 'idle');
+
+          // Ping owner in thread
+          const embed = new EmbedBuilder()
+            .setColor(0x00FF00) // Green
+            .setTitle('Session Reactivated')
+            .setDescription(`Runner restarted and found existing tmux session \`${sessionId}\`. Thread reactivated.`)
+            .setTimestamp();
+
+          await existingThread.send({
+            content: runner.ownerId ? `<@${runner.ownerId}>` : '',
+            embeds: [embed]
+          });
+
+          console.log(`Reactivated discovered session ${sessionId} for runner ${runner.name}`);
+          return;
+        }
+      } catch (e) {
+        console.log(`Could not reactivate thread for discovered session ${sessionId}:`, e);
+        // Fall through to create new thread
+      }
+    }
+  }
+
+  // Create a new thread for this session
+  try {
+    const channel = await client.channels.fetch(runner.privateChannelId);
+    if (!channel || !('threads' in channel)) return;
+
+    // Create a thread for this session
+    const thread = await channel.threads.create({
+      name: `📺 ${sessionId}`,
+      autoArchiveDuration: 60,
+      reason: `Auto-discovered tmux session ${sessionId}`
+    } as any);
+
+    // Create session record
+    const session: Session = {
+      sessionId,
+      runnerId,
+      channelId: runner.privateChannelId,
+      threadId: thread.id,
+      createdAt: new Date().toISOString(),
+      status: 'active',
+      cliType: 'claude', // Default, we don't know for sure but tmux is generic
+      // We don't have a folder path or interaction token for discovered sessions
+    };
+
+    storage.createSession(session);
+
+    // add to sessionStatuses
+    sessionStatuses.set(sessionId, 'idle');
+
+    // Notify in the thread
+    const embed = new EmbedBuilder()
+      .setColor(0x5865F2) // Blurple
+      .setTitle('Session Discovered')
+      .setDescription(`Found existing tmux session \`${sessionId}\`. Attached Discord thread.`)
+      .setTimestamp();
+
+    await thread.send({
+      content: runner.ownerId ? `<@${runner.ownerId}>` : '',
+      embeds: [embed]
+    });
+
+    console.log(`Auto-discovered session ${sessionId} for runner ${runner.name}`);
+
+  } catch (error) {
+    console.error(`Failed to handle discovered session ${sessionId}:`, error);
+  }
+}
+
+async function handleTerminalList(data: { runnerId: string; terminals: string[] }): Promise<void> {
+  const { runnerId, terminals } = data;
+  const runner = storage.getRunner(runnerId);
+  if (!runner || !runner.privateChannelId) return;
+
+  try {
+    const channel = await client.channels.fetch(runner.privateChannelId);
+    if (channel && 'send' in channel) {
+      const embed = new EmbedBuilder()
+        .setColor(0x0099FF)
+        .setTitle(`Terminal List: ${runner.name}`)
+        .setDescription(terminals.length > 0 ? terminals.map(t => `• \`${t}\``).join('\n') : 'No active tmux sessions found.')
+        .setTimestamp();
+
+      await channel.send({ embeds: [embed] });
+    }
+  } catch (e) {
+    console.error('Failed to send terminal list:', e);
+  }
+}
+
+async function handleSessionReady(data: { runnerId: string; sessionId: string }): Promise<void> {
+  let session = storage.getSession(data.sessionId);
+  const runner = storage.getRunner(data.runnerId);
+
+  // If session doesn't exist (e.g. via /watch or auto-discovery), create it
+  if (!session) {
+    console.log(`[handleSessionReady] Session ${data.sessionId} not found in storage, creating new record (Watched Session)...`);
+
+    if (!runner || !runner.privateChannelId) {
+      console.error(`[handleSessionReady] Cannot create session: Runner ${data.runnerId} not found or no private channel`);
+      return;
+    }
+
+    try {
+      const channel = await client.channels.fetch(runner.privateChannelId);
+      if (!channel || !('threads' in channel)) {
+        console.error(`[handleSessionReady] Invalid runner channel`);
+        return;
+      }
+
+      // Check if thread already exists? (Maybe looking by name?)
+      // For now, create new thread
+      const thread = await channel.threads.create({
+        name: `📺 ${data.sessionId}`,
+        autoArchiveDuration: 60,
+        reason: `Watched session ${data.sessionId}`
+      } as any);
+
+      session = {
+        sessionId: data.sessionId,
+        runnerId: data.runnerId,
+        channelId: runner.privateChannelId,
+        threadId: thread.id,
+        createdAt: new Date().toISOString(),
+        status: 'active',
+        cliType: 'claude', // Default
+        folderPath: 'watched-session' // Placeholder
+      };
+
+      storage.createSession(session);
+      sessionStatuses.set(data.sessionId, 'idle');
+
+      // Notify availability
+      const embed = new EmbedBuilder()
+        .setColor(0x5865F2)
+        .setTitle('Session Connected')
+        .setDescription(`Successfully connected to existing session \`${data.sessionId}\`.`)
+        .setTimestamp();
+
+      await thread.send({ embeds: [embed] });
+
+    } catch (e) {
+      console.error(`[handleSessionReady] Failed to create thread/session:`, e);
+      return;
+    }
+  }
+
+  // Double check session is valid now
+  if (!session) return;
+
+  // Update session status if needed (though it should be active)
+  console.log(`[handleSessionReady] Session ${data.sessionId} is ready!`);
+
+  // Notify user in the thread
+  try {
+    const thread = await client.channels.fetch(session.threadId);
+    if (thread && thread.isThread()) {
+
+      // If we didn't just create it (i.e. it was a "Pending" creation session), notify
+      // Or just always notify to be safe?
+      // For "Initializing..." sessions, we want to update the ephemeral message too.
+
+      const readyEmbed = new EmbedBuilder()
+        .setColor(0x00FF00) // Green
+        .setTitle('Session Ready!')
+        .setDescription(`Connected to \`${runner?.name}\`. You can now start typing commands.`)
+        .addFields({
+          name: 'Working Directory',
+          value: `\`${session.folderPath}\``,
+          inline: true
+        })
+        .setTimestamp();
+
+      // Mention user
+      const userMention = session.creatorId ? `<@${session.creatorId}>` : '';
+
+      // Send thread notification
+      await thread.send({
+        content: `${userMention} Session is ready!`,
+        embeds: [readyEmbed]
+      });
+
+      // Update the ephemeral "Initializing" message if we have the token
+      if (session.interactionToken && client.application) {
+        try {
+          const webhook = new WebhookClient({ id: client.application.id, token: session.interactionToken });
+
+          await webhook.editMessage('@original', {
+            embeds: [readyEmbed],
+            components: [] // Remove buttons
+          });
+          console.log(`Updated ephemeral message for session ${session.sessionId}`);
+        } catch (error) {
+          console.error('Failed to update ephemeral message:', error);
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`[handleSessionReady] Failed to notify thread:`, error);
   }
 }
 
@@ -723,8 +994,12 @@ async function handleApprovalRequest(ws: any, data: {
   // Create rich embed
   const embed = createToolUseEmbed(runner, data.toolName, data.toolInput);
 
+  // Ping user!
+  const userMention = session.creatorId ? `<@${session.creatorId}>` : '';
+
   // Send approval request to thread
   const message = await thread.send({
+    content: `${userMention} Approval needed!`,
     embeds: [embed],
     components: [row]
   });
@@ -993,8 +1268,24 @@ client.on('interactionCreate', async (interaction) => {
         await handleActionItems(interaction, userId);
         break;
 
+      case 'status':
+        await handleStatus(interaction, userId);
+        break;
+
       case 'end-session':
         await handleEndSession(interaction, userId);
+        break;
+
+      case 'terminals':
+        await handleTerminals(interaction, userId);
+        break;
+
+      case 'watch':
+        await handleWatch(interaction, userId);
+        break;
+
+      case 'unwatch':
+        await handleUnwatch(interaction, userId);
         break;
 
       default:
@@ -1652,6 +1943,107 @@ async function handleActionItems(interaction: any, userId: string): Promise<void
   });
 }
 
+
+// Session status tracker (sessionId -> status)
+const sessionStatuses = new Map<string, 'idle' | 'working' | 'waiting' | 'offline' | 'error'>();
+
+async function handleRunnerStatusUpdate(data: {
+  runnerId: string;
+  sessionId: string;
+  status: 'idle' | 'working' | 'waiting' | 'offline' | 'error';
+  currentTool?: string;
+}): Promise<void> {
+  const session = storage.getSession(data.sessionId);
+  if (!session) return;
+
+  const previousStatus = sessionStatuses.get(data.sessionId) || 'idle';
+  sessionStatuses.set(data.sessionId, data.status);
+
+  // Ping on completion (transition to idle)
+  // Only ping if transitioning from 'working' to 'idle'
+  if (data.status === 'idle' && previousStatus === 'working') {
+    const thread = await client.channels.fetch(session.threadId);
+    if (thread && thread.isThread()) {
+      const userMention = session.creatorId ? `<@${session.creatorId}>` : '';
+
+      const embed = new EmbedBuilder()
+        .setColor(0x00FF00)
+        .setTitle('✅ Execution Complete')
+        .setDescription('Ready for next command.')
+        .setTimestamp();
+
+      await thread.send({
+        content: `${userMention}`,
+        embeds: [embed]
+      });
+    }
+  }
+}
+
+// --- Status Command Handler ---
+async function handleStatus(interaction: any, userId: string): Promise<void> {
+  const runnerIdFilter = interaction.options.getString('runner');
+
+  // Get all active sessions
+  const sessions = Object.values(storage.data.sessions).filter(s => s.status === 'active');
+
+  if (sessions.length === 0) {
+    await interaction.reply({
+      content: 'No active sessions found.',
+      flags: 64
+    });
+    return;
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle('Active Sessions Status')
+    .setColor(0x0099FF)
+    .setTimestamp();
+
+  for (const session of sessions) {
+    if (runnerIdFilter && session.runnerId !== runnerIdFilter) continue;
+
+    const runner = storage.getRunner(session.runnerId);
+    const runnerName = runner ? runner.name : 'Unknown Runner';
+
+    // Determine status
+    let statusEmoji = '🟢'; // Ready (default)
+    let statusText = 'Ready';
+
+    // Check real-time status from map
+    const currentStatus = sessionStatuses.get(session.sessionId);
+
+    // Check for pending approvals (override other statuses)
+    const isWaitingForApproval = Array.from(pendingApprovals.values()).some(p => p.sessionId === session.sessionId);
+
+    if (isWaitingForApproval || currentStatus === 'waiting') {
+      statusEmoji = '🟡';
+      statusText = 'Waiting for Approval';
+    } else if (currentStatus === 'working') {
+      statusEmoji = '🔴';
+      statusText = 'Running...';
+    } else if (currentStatus === 'offline') {
+      statusEmoji = '⚫';
+      statusText = 'Runner Offline';
+    } else if (currentStatus === 'error') {
+      statusEmoji = '❌';
+      statusText = 'Error State';
+    }
+
+    embed.addFields({
+      name: `${statusEmoji} ${session.sessionId.substring(0, 8)}...`,
+      value: `**Runner:** \`${runnerName}\`\n**Type:** ${session.cliType.toUpperCase()}\n**Status:** ${statusText}\n**Thread:** <#${session.threadId}>`,
+      inline: false
+    });
+  }
+
+  await interaction.reply({
+    embeds: [embed],
+    flags: 64
+  });
+}
+
+// --- End Session Handler ---
 async function handleEndSession(interaction: any, userId: string): Promise<void> {
   const sessionId = interaction.options.getString('session');
   let targetSessionId: string | null = null;
@@ -1737,6 +2129,293 @@ async function handleEndSession(interaction: any, userId: string): Promise<void>
     embeds: [createSuccessEmbed('Session Ended', `Session \`${sessionId}\` has been ended.`)],
     flags: 64
   });
+}
+
+// --- Terminal Watch Commands ---
+
+async function handleTerminals(interaction: any, userId: string): Promise<void> {
+  const runnerId = interaction.options.getString('runner');
+
+  // If specific runner requested
+  if (runnerId) {
+    const runner = storage.getRunner(runnerId);
+    if (!runner || !storage.canUserAccessRunner(userId, runnerId)) {
+      await interaction.reply({
+        embeds: [createErrorEmbed('Access Denied', 'Runner not found or you do not have permission.')],
+        flags: 64
+      });
+      return;
+    }
+
+    const ws = runnerConnections.get(runnerId);
+    if (!ws) {
+      await interaction.reply({
+        embeds: [createErrorEmbed('Runner Offline', 'Runner is currently offline.')],
+        flags: 64
+      });
+      return;
+    }
+
+    // Request terminal list from runner
+    ws.send(JSON.stringify({
+      type: 'list_terminals',
+      data: {}
+    }));
+
+    await interaction.reply({
+      content: `Requesting terminal list from \`${runner.name}\`...`,
+      flags: 64
+    });
+    return;
+  }
+
+  // List all runners to select from
+  const runners = storage.getUserRunners(userId).filter(r => r.status === 'online');
+
+  if (runners.length === 0) {
+    await interaction.reply({
+      embeds: [createErrorEmbed('No Online Runners', 'No online runners found to list terminals from.')],
+      flags: 64
+    });
+    return;
+  }
+
+  // TODO: Add UI to select runner if multiple. For now, just error if multiple or pick first if single?
+  // Let's just ask user to specify runner if multiple
+  if (runners.length > 1) {
+    await interaction.reply({
+      embeds: [createInfoEmbed('Multiple Runners', 'Please specify a runner using the `runner` option.')],
+      flags: 64
+    });
+    return;
+  }
+
+  // Single runner case
+  const runner = runners[0];
+  const ws = runnerConnections.get(runner.runnerId);
+  if (!ws) { // Should not happen given filter above
+    await interaction.reply({
+      embeds: [createErrorEmbed('Runner Offline', 'Runner is currently offline.')],
+      flags: 64
+    });
+    return;
+  }
+
+  ws.send(JSON.stringify({
+    type: 'list_terminals',
+    data: {}
+  }));
+
+  await interaction.reply({
+    content: `Requesting terminal list from \`${runner.name}\`...`,
+    flags: 64
+  });
+}
+
+async function handleWatch(interaction: any, userId: string): Promise<void> {
+  const sessionId = interaction.options.getString('session');
+  // Optional runner ID - if not provided, we must find a runner that HAS this session, 
+  // or just pick the first online one and hope? 
+  // Ideally we should ask runners "who has session X?" but that's slow.
+  // We'll rely on the user providing it or picking the first online one.
+  const runnerId = interaction.options.getString('runner');
+
+  if (!sessionId) {
+    await interaction.reply({
+      embeds: [createErrorEmbed('Missing Session', 'Please specify the session ID (e.g., tmux session name).')],
+      flags: 64
+    });
+    return;
+  }
+
+  // Determine target runner
+  let targetRunner: RunnerInfo | undefined;
+
+  if (runnerId) {
+    targetRunner = storage.getRunner(runnerId);
+    if (!targetRunner || !storage.canUserAccessRunner(userId, runnerId)) {
+      await interaction.reply({
+        embeds: [createErrorEmbed('Access Denied', 'Runner not found or access denied.')],
+        flags: 64
+      });
+      return;
+    }
+  } else {
+    // Pick first online runner
+    const runners = storage.getUserRunners(userId).filter(r => r.status === 'online');
+    if (runners.length === 1) {
+      targetRunner = runners[0];
+    } else if (runners.length === 0) {
+      await interaction.reply({
+        embeds: [createErrorEmbed('No Runners online', 'You need an online runner to watch sessions.')],
+        flags: 64
+      });
+      return;
+    } else {
+      await interaction.reply({
+        embeds: [createInfoEmbed('Multiple Runners', 'Please specify which runner to use with the `runner` option.')],
+        flags: 64
+      });
+      return;
+    }
+  }
+
+  if (!targetRunner) return;
+
+  // Check if runner is online
+  const ws = runnerConnections.get(targetRunner.runnerId);
+  if (!ws) {
+    await interaction.reply({
+      embeds: [createErrorEmbed('Runner Offline', 'Runner is currently offline.')],
+      flags: 64
+    });
+    return;
+  }
+
+  // Check if already watching AND active
+  const existingSession = storage.getSession(sessionId);
+  if (existingSession && existingSession.status === 'active') {
+    await interaction.reply({
+      embeds: [createErrorEmbed('Already Watching', `Session \`${sessionId}\` is already being watched/active. check /status or the existing thread.`)],
+      flags: 64
+    });
+    return;
+  }
+
+  // Check if there's an ended/archived session we can reactivate
+  if (existingSession && existingSession.status === 'ended') {
+    // Reactivate the existing thread instead of creating a new one
+    try {
+      const existingThread = await client.channels.fetch(existingSession.threadId);
+      if (existingThread && 'setArchived' in existingThread) {
+        // Unarchive the thread
+        await existingThread.setArchived(false);
+
+        // Update session status
+        existingSession.status = 'active';
+        storage.updateSession(existingSession.sessionId, { status: 'active' });
+        sessionStatuses.set(sessionId, 'idle');
+
+        // Add user to thread (in case they were removed)
+        if ('members' in existingThread) {
+          await existingThread.members.add(userId);
+        }
+
+        // Ping user in thread
+        const embed = new EmbedBuilder()
+          .setColor(0x00FF00) // Green = reconnected
+          .setTitle('Session Reactivated')
+          .setDescription(`Reconnected to tmux session \`${sessionId}\` on \`${targetRunner.name}\``)
+          .setTimestamp();
+
+        await existingThread.send({
+          content: `<@${userId}>`,
+          embeds: [embed]
+        });
+
+        // Send watch request to runner
+        const ws = runnerConnections.get(targetRunner.runnerId);
+        if (ws) {
+          ws.send(JSON.stringify({
+            type: 'watch_terminal',
+            data: { sessionId: sessionId }
+          }));
+        }
+
+        await interaction.reply({
+          content: `Reactivated watch on \`${sessionId}\`. Check <#${existingSession.threadId}>`,
+          flags: 64
+        });
+
+        console.log(`Reactivated session ${sessionId} for user ${userId}`);
+        return;
+      }
+    } catch (e) {
+      console.log(`Could not reactivate thread for ${sessionId}, will create new one:`, e);
+      // Fall through to create new thread
+    }
+  }
+
+  // 1. Create Thread first
+  let threadId: string;
+  let channelId = targetRunner.privateChannelId;
+
+  if (!channelId) {
+    // Try to get headers? Just error for now.
+    await interaction.reply({
+      embeds: [createErrorEmbed('Setup Error', 'Runner has no private channel.')],
+      flags: 64
+    });
+    return;
+  }
+
+  try {
+    const channel = await client.channels.fetch(channelId);
+    if (!channel || !('threads' in channel)) {
+      throw new Error("Invalid runner channel");
+    }
+
+    const thread = await channel.threads.create({
+      name: `📺 ${sessionId}`,
+      autoArchiveDuration: 60,
+      reason: `Watching tmux session ${sessionId}`
+    } as any);
+
+    threadId = thread.id;
+
+    // 2. Register Session
+    const session: Session = {
+      sessionId: sessionId,
+      runnerId: targetRunner.runnerId,
+      channelId: channelId,
+      threadId: threadId,
+      createdAt: new Date().toISOString(),
+      status: 'active', // Mark active so we accept messages immediately
+      cliType: 'claude', // Default
+      folderPath: 'watched-session'
+    };
+
+    storage.createSession(session);
+    sessionStatuses.set(sessionId, 'idle');
+
+    // Add user to thread
+    await thread.members.add(userId);
+
+    // Notify thread
+    const embed = new EmbedBuilder()
+      .setColor(0xFFFF00) // Yellow = connecting
+      .setTitle('Connecting to Session...')
+      .setDescription(`Requesting attachment to tmux session \`${sessionId}\` on \`${targetRunner.name}\`...`)
+      .setTimestamp();
+
+    await thread.send({ embeds: [embed] });
+
+    // 3. Send Request to Runner
+    ws.send(JSON.stringify({
+      type: 'watch_terminal',
+      data: {
+        sessionId: sessionId
+      }
+    }));
+
+    // 4. Reply to interaction
+    await interaction.reply({
+      content: `Transmitter set to \`${sessionId}\`. check <#${threadId}>`,
+      flags: 64
+    });
+
+  } catch (e: any) {
+    console.error("Failed to setup watch:", e);
+    await interaction.reply({
+      embeds: [createErrorEmbed('Watch Failed', e.message)],
+      flags: 64
+    });
+  }
+}
+
+async function handleUnwatch(interaction: any, userId: string): Promise<void> {
+  // Same as end-session for now, as "unwatch" implies stopping the discord integration
+  await handleEndSession(interaction, userId);
 }
 
 async function endSession(sessionId: string, userId: string): Promise<void> {
@@ -2400,7 +3079,8 @@ async function handleModalSubmit(interaction: any): Promise<void> {
         createdAt: new Date().toISOString(),
         status: 'active',
         cliType: state.cliType,
-        folderPath: folderPath
+        folderPath: folderPath,
+        interactionToken: interaction.token
       };
 
       // Set up thread permissions (allow users to send messages)
@@ -2453,57 +3133,38 @@ async function handleModalSubmit(interaction: any): Promise<void> {
           }
         }));
         console.log(`Sent session_start to runner ${runner.name} for session ${session.sessionId}`);
+
+        // We do NOT send the "Session Ready" message here anymore.
+        // We wait for the 'session_ready' event from the runner.
+
+        // Update original message to show "Initializing..." state
+        const initializingEmbed = new EmbedBuilder()
+          .setColor(0xFFFF00) // Yellow
+          .setTitle('Initializing Session...')
+          .setDescription(`Request sent to runner. Waiting for confirmation...`)
+          .addFields(
+            { name: 'Runner', value: runner.name, inline: true },
+            { name: 'CLI Type', value: state.cliType.toUpperCase(), inline: true },
+            { name: 'Working Folder', value: `\`\`\`${folderPath}\`\`\``, inline: false }
+          )
+          .setTimestamp();
+
+        await interaction.reply({
+          embeds: [initializingEmbed],
+          flags: 64
+        });
+
+        // Clear state
+        sessionCreationState.delete(userId);
+
+        // Store interaction message ID if needed? 
+        // Actually we replied ephemerally. The 'session_ready' handler will post to the thread.
+        // But we want to update the original interaction reply if possible? 
+        // Interaction tokens expire. It's safer to post to the thread.
+
+      } else {
+        // Runner not connected logic
       }
-
-      // Send session start embed with folder info
-      const embed = createSessionStartEmbed(runner, session);
-      await thread.send({ embeds: [embed] });
-
-      // Send a message with a button to send prompts
-      const promptButton = new ActionRowBuilder<ButtonBuilder>()
-        .addComponents(
-          new ButtonBuilder()
-            .setLabel('Send Prompt')
-            .setStyle(ButtonStyle.Primary)
-            .setCustomId(`prompt_${session.sessionId}`)
-            .setEmoji('💬')
-        );
-
-      await thread.send({
-        content: '📝 **Session Ready!**\n\nClick the button below to send a prompt to the CLI. Output will appear in this thread.',
-        components: [promptButton]
-      });
-
-      // Clear state
-      sessionCreationState.delete(userId);
-
-      // Update original message
-      const successEmbed = new EmbedBuilder()
-        .setColor(0x00FF00)
-        .setTitle('Session Created Successfully')
-        .setDescription(`Your session has been created in <#${channel.id}>`)
-        .addFields(
-          { name: 'Runner', value: runner.name, inline: true },
-          { name: 'CLI Type', value: state.cliType.toUpperCase(), inline: true },
-          { name: 'Working Folder', value: `\`\`\`${folderPath}\`\`\``, inline: false }
-        )
-        .setTimestamp();
-
-      // Add a button to jump to the thread
-      const jumpButton = new ActionRowBuilder<ButtonBuilder>()
-        .addComponents(
-          new ButtonBuilder()
-            .setLabel('Open Session Thread')
-            .setStyle(ButtonStyle.Link)
-            .setURL(thread.url)
-            .setEmoji('💬')
-        );
-
-      await interaction.reply({
-        embeds: [successEmbed],
-        components: [jumpButton],
-        flags: 64
-      });
 
       console.log(`Session ${session.sessionId} created for user ${userId} with custom folder: ${folderPath}`);
     } catch (error) {
@@ -2675,7 +3336,7 @@ async function handlePluginSelection(interaction: any, userId: string, customId:
     .addComponents(
       new ButtonBuilder()
         .setCustomId('session_default_folder')
-        .setLabel('Use Default (~)')
+        .setLabel(`Use Default (${runner.defaultWorkspace || '~'})`)
         .setStyle(ButtonStyle.Success)
         .setEmoji('🏠'),
       new ButtonBuilder()
@@ -2717,23 +3378,7 @@ async function handlePluginSelection(interaction: any, userId: string, customId:
 
 // ... handleBackToPlugin ...
 
-async function handleCustomFolder(interaction: any, userId: string): Promise<void> {
-  const modal = new ModalBuilder()
-    .setCustomId('session_folder_modal')
-    .setTitle('Working Directory');
 
-  const folderInput = new TextInputBuilder()
-    .setCustomId('folder_path')
-    .setLabel('Folder Path')
-    .setStyle(TextInputStyle.Short) // Changed to Short for path
-    .setPlaceholder('/path/to/project or ~/')
-    .setRequired(true);
-
-  const row = new ActionRowBuilder<TextInputBuilder>().addComponents(folderInput);
-  modal.addComponents(row);
-
-  await interaction.showModal(modal);
-}
 
 async function handleBackToPlugin(interaction: any, userId: string): Promise<void> {
   const state = sessionCreationState.get(userId);
@@ -2812,10 +3457,10 @@ async function handleDefaultFolder(interaction: any, userId: string): Promise<vo
       channelId: channel.id,
       threadId: thread.id,
       createdAt: new Date().toISOString(),
-      active: true, // Should match Session interface
       status: 'active',
       cliType: state.cliType,
-      folderPath: runner.defaultWorkspace || '~' // Use runner default or home
+      folderPath: runner.defaultWorkspace || '~', // Use runner default or home
+      interactionToken: interaction.token
     };
 
     // Set up thread permissions (allow users to send messages)
@@ -2869,56 +3514,33 @@ async function handleDefaultFolder(interaction: any, userId: string): Promise<vo
         }
       }));
       console.log(`Sent session_start to runner ${runner.name} for session ${session.sessionId}`);
+
+      // We do NOT send the "Session Ready" message here anymore.
+      // We wait for the 'session_ready' event from the runner.
+
+      // Update original message to show "Initializing..." state
+      const initializingEmbed = new EmbedBuilder()
+        .setColor(0xFFFF00) // Yellow
+        .setTitle('Initializing Session...')
+        .setDescription(`Request sent to runner. You will be notified in this thread when the session is ready.`)
+        .addFields(
+          { name: 'Runner', value: runner.name, inline: true },
+          { name: 'CLI Type', value: state.cliType.toUpperCase(), inline: true },
+          { name: 'Working Folder', value: `\`\`\`${runner.defaultWorkspace || '~'}\`\`\``, inline: false }
+        )
+        .setTimestamp();
+
+      await interaction.update({
+        embeds: [initializingEmbed],
+        components: [] // Remove buttons while waiting
+      });
+
+      // Clear state
+      sessionCreationState.delete(userId);
+
+    } else {
+      // Runner not connected
     }
-
-    // Send session start embed
-    const embed = createSessionStartEmbed(runner, session);
-    await thread.send({ embeds: [embed] });
-
-    // Send a message with a button to send prompts
-    const promptButton = new ActionRowBuilder<ButtonBuilder>()
-      .addComponents(
-        new ButtonBuilder()
-          .setLabel('Send Prompt')
-          .setStyle(ButtonStyle.Primary)
-          .setCustomId(`prompt_${session.sessionId}`)
-          .setEmoji('💬')
-      );
-
-    await thread.send({
-      content: '📝 **Session Ready!**\n\nClick the button below to send a prompt to the CLI. Output will appear in this thread.',
-      components: [promptButton]
-    });
-
-    // Clear state
-    sessionCreationState.delete(userId);
-
-    // Update original message
-    const successEmbed = new EmbedBuilder()
-      .setColor(0x00FF00)
-      .setTitle('Session Created Successfully')
-      .setDescription(`Your session has been created in <#${channel.id}>`)
-      .addFields(
-        { name: 'Runner', value: runner.name, inline: true },
-        { name: 'CLI Type', value: state.cliType.toUpperCase(), inline: true },
-        { name: 'Plugin', value: (state.plugin || 'DEFAULT').toUpperCase(), inline: true }
-      )
-      .setTimestamp();
-
-    // Add a button to jump to the thread
-    const jumpButton = new ActionRowBuilder<ButtonBuilder>()
-      .addComponents(
-        new ButtonBuilder()
-          .setLabel('Open Session Thread')
-          .setStyle(ButtonStyle.Link)
-          .setURL(thread.url)
-          .setEmoji('💬')
-      );
-
-    await interaction.update({
-      embeds: [successEmbed],
-      components: [jumpButton]
-    });
 
     console.log(`Session ${session.sessionId} created for user ${userId}`);
   } catch (error) {
@@ -3134,7 +3756,7 @@ function createToolUseEmbed(runner: RunnerInfo, toolName: string, toolInput: unk
 
 function createOutputEmbed(outputType: string, content: string): EmbedBuilder {
   const colors: Record<string, number> = {
-    stdout: 0x0099FF,
+    stdout: 0x2B2D31, // Dark grey background for standard output
     stderr: 0xFF6600,
     tool_use: 0xFFD700,
     tool_result: 0x00FF00,
@@ -3142,21 +3764,42 @@ function createOutputEmbed(outputType: string, content: string): EmbedBuilder {
   };
 
   const icons: Record<string, string> = {
-    stdout: '📤',
+    stdout: '💻', // Changed to computer icon
     stderr: '⚠️',
     tool_use: '🔧',
     tool_result: '✅',
     error: '❌'
   };
 
-  const color = colors[outputType] || 0x999999;
-  const icon = icons[outputType] || '📄';
+  const titles: Record<string, string> = {
+    stdout: 'CLI Output',
+    stderr: 'Error Output',
+    tool_use: 'Tool Request',
+    tool_result: 'Tool Result',
+    error: 'System Error'
+  };
 
-  return new EmbedBuilder()
+  const color = colors[outputType] || 0x2B2D31;
+  const icon = icons[outputType] || '📄';
+  const title = titles[outputType] || outputType.toUpperCase();
+
+  // For stdout, we often want a cleaner look without a heavy title if it's just streaming logs
+  // But for now, let's keep it consistent but cleaner
+  const embed = new EmbedBuilder()
     .setColor(color)
-    .setTitle(`${icon} ${outputType.toUpperCase()}`)
-    .setDescription(content.substring(0, 4000))
-    .setTimestamp();
+    .setDescription(content.substring(0, 4096)); // Max description length
+
+  // Only add title if it's not just a standard output chunk? 
+  // User asked for "nicer", maybe just header "CLI Output" is enough.
+  // Let's stick to the requested "CLI Output" header.
+  embed.setTitle(`${icon} ${title}`);
+
+  // Remove timestamp footer for cleaner look on rapid updates? 
+  // User didn't ask to remove it, but "nicer" might mean less clutter.
+  // I'll keep it simple.
+  embed.setTimestamp();
+
+  return embed;
 }
 
 function createActionItemEmbed(actionItem: string): EmbedBuilder {
@@ -3304,6 +3947,8 @@ async function registerCommands(): Promise<void> {
       .setName('list-runners')
       .setDescription('List all your runners'),
 
+
+
     new SlashCommandBuilder()
       .setName('my-access')
       .setDescription('Show all runners you can access (owned + shared)'),
@@ -3373,6 +4018,15 @@ async function registerCommands(): Promise<void> {
       ),
 
     new SlashCommandBuilder()
+      .setName('status')
+      .setDescription('List all active sessions and their status')
+      .addStringOption(option =>
+        option.setName('runner')
+          .setDescription('Filter by runner ID (optional)')
+          .setRequired(false)
+      ),
+
+    new SlashCommandBuilder()
       .setName('action-items')
       .setDescription('Show action items from CLI sessions')
       .addStringOption(option =>
@@ -3388,6 +4042,38 @@ async function registerCommands(): Promise<void> {
         option.setName('session')
           .setDescription('Session ID (optional - auto-detects from current context if not provided)')
           .setRequired(false)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('terminals')
+      .setDescription('List available tmux terminals on a runner')
+      .addStringOption(option =>
+        option.setName('runner')
+          .setDescription('Runner ID (optional)')
+          .setRequired(false)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('watch')
+      .setDescription('Watch an existing tmux session')
+      .addStringOption(option =>
+        option.setName('session')
+          .setDescription('Session ID to watch')
+          .setRequired(true)
+      )
+      .addStringOption(option =>
+        option.setName('runner')
+          .setDescription('Runner ID (optional)')
+          .setRequired(false)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('unwatch')
+      .setDescription('Stop watching a tmux session')
+      .addStringOption(option =>
+        option.setName('session')
+          .setDescription('Session ID (optional - auto-detects)')
+          .setRequired(false)
       )
   ];
 
@@ -3397,7 +4083,7 @@ async function registerCommands(): Promise<void> {
     console.log('Started refreshing application (/) commands.');
 
     await rest.put(
-      Routes.applicationCommands(DISCORD_CLIENT_ID),
+      Routes.applicationCommands(DISCORD_CLIENT_ID!),
       { body: commands }
     );
 
@@ -3429,7 +4115,7 @@ async function main(): Promise<void> {
   }
 
   await registerCommands();
-  await client.login(DISCORD_TOKEN);
+  await client.login(DISCORD_TOKEN!);
 }
 
 // Global error handlers

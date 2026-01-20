@@ -18,8 +18,8 @@ import {
     StatusEvent,
     ErrorEvent,
     MetadataEvent,
+    HookEvent,
 } from './base.ts';
-import { HookEvent } from '../hooks/server.ts';
 import { TmuxPlugin } from './tmux-plugin.ts';
 import { PrintPlugin } from './print-plugin.ts';
 
@@ -216,6 +216,13 @@ export class PluginManager extends EventEmitter {
     }
 
     /**
+     * Get a specific plugin instance
+     */
+    getPlugin(type: PluginType): CliPlugin | undefined {
+        return this.plugins.get(type);
+    }
+
+    /**
      * Setup event forwarding from a plugin
      */
     private setupPluginEvents(plugin: CliPlugin): void {
@@ -238,6 +245,10 @@ export class PluginManager extends EventEmitter {
         plugin.on('metadata', (data: MetadataEvent) => {
             this.emit('metadata', data);
         });
+
+        plugin.on('session_discovered', (data) => {
+            this.emit('session_discovered', data);
+        });
     }
 
     // TypeScript event declarations
@@ -245,8 +256,8 @@ export class PluginManager extends EventEmitter {
     on(event: 'approval', listener: (data: ApprovalEvent) => void): this;
     on(event: 'status', listener: (data: StatusEvent) => void): this;
     on(event: 'error', listener: (data: ErrorEvent) => void): this;
-    on(event: 'error', listener: (data: ErrorEvent) => void): this;
     on(event: 'metadata', listener: (data: MetadataEvent) => void): this;
+    on(event: 'session_discovered', listener: (data: any) => void): this;
     on(event: 'hook_event', listener: (data: HookEvent) => void): this;
     on(event: string, listener: (...args: any[]) => void): this {
         return super.on(event, listener);

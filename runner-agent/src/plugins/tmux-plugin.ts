@@ -29,9 +29,9 @@ import {
     ApprovalEvent,
     StatusEvent,
     MetadataEvent,
+    HookEvent,
 } from './base.js'; // Use .js for implementation
 import { getPluginManager } from './plugin-manager.js';
-import { HookEvent } from '../hooks/server.js'; // Import HookEvent directly from source
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -96,17 +96,29 @@ class TmuxSession extends EventEmitter implements PluginSession {
     /** Last hook event timestamp (to debounce scraping) */
     lastHookEvent = 0;
 
-    constructor(config: SessionConfig, tmuxSession: string, tmuxPath: string) {
+    /** Whether this session is owned by us (true) or just watched (false) */
+    readonly isOwned: boolean;
+
+    constructor(config: SessionConfig, tmuxSession: string, tmuxPath: string, isOwned = true) {
         super();
         this.sessionId = config.sessionId;
         this.config = config;
         this.tmuxSession = tmuxSession;
         this.tmuxPath = tmuxPath;
+        this.isOwned = isOwned;
         this.createdAt = new Date();
         this.lastActivity = new Date();
+
+        // If not owned (watched session), assume ready immediately
+        if (!isOwned) {
+            this.booting = false;
+            this.isReady = true;
+            this.status = 'idle';
+        }
     }
 
     async sendMessage(message: string): Promise<void> {
+        console.log(`[TmuxSession] Sending message to ${this.tmuxSession}: ${JSON.stringify(message)}`);
         await sendToTmuxSafe(this.tmuxSession, message, this.tmuxPath);
         this.lastActivity = new Date();
         this.status = 'working';
@@ -295,6 +307,11 @@ function cleanOutput(str: string): string {
         .replace(/\x1b\[\?[0-9;]*[a-zA-Z]/g, '')
         .replace(/[\x00-\x1F]/g, (c) => c === '\n' || c === '\r' ? c : '')
         .replace(/warn: CPU lacks AVX support.*?\.zip\s*/gs, '')
+        // Remove shell prompts that appear before/after Claude
+        .replace(/^\(base\).*?\$.*$/gm, '') // Conda/bash prompts
+        .replace(/^The default interactive shell is now zsh\.$/gm, '')
+        .replace(/^To update your account to use zsh.*$/gm, '')
+        .replace(/^For more details.*HT\d+\.$/gm, '')
         // Remove Claude Code UI noise - Aggressive cleanup
         .replace(/^[─-]{3,}.*?$/gm, '') // Horizontal rules of any length
         .replace(/^\s*[>❯]\s*$/gm, '') // Empty prompt lines
@@ -305,10 +322,22 @@ function cleanOutput(str: string): string {
         .replace(/Type \/help to see available commands/gi, '')
         .replace(/Claude Code/gi, '') // Welcome message part
         .replace(/Welcome to Claude/gi, '') // Welcome message part
+        .replace(/Welcome back!/gi, '') // Welcome back message
         .replace(/.*\/ide for Visual Studio Code.*/gi, '') // VS Code promotion
         .replace(/.*\/model to try.*/gi, '') // Model promotion
+        .replace(/.*Tips for getting started.*/gi, '') // Tips header
+        .replace(/.*Run \/init to create a CLAUDE\.md.*/gi, '') // Init tip
+        .replace(/.*Note: You have launched claude in your.*/gi, '') // Launch note
+        .replace(/.*Recent activity.*/gi, '') // Recent activity header
+        .replace(/.*No recent activity.*/gi, '') // No recent activity
+        .replace(/.*API Usage Billing.*/gi, '') // Billing note
+        .replace(/.*Sonnet.*·.*/gi, '') // Model indicator line
+        .replace(/.*Opus.*·.*/gi, '') // Model indicator line
         // Remove box drawing characters (welcome screen)
         .replace(/[╭─╮│╯╰▀▄█▌▐▖▗▘▙▚▛▜▝▞▟]/g, '')
+        // Remove logo/art characters
+        .replace(/[▐▛▜▌▝▘]/g, '')
+        .replace(/\*\s*\*\s*\*/g, '') // Stars from logo
         // Remove startup noise
         .replace(/ide visual studio code/gi, '')
         .replace(/starting up/gi, '')
@@ -393,6 +422,10 @@ export class TmuxPlugin extends BasePlugin {
 
     private tmuxPath = 'tmux'; // Default to just 'tmux', will be updated in initialize
 
+    // Polling for new sessions
+    private sessionDiscoveryInterval?: NodeJS.Timeout;
+    private discoveredSessions = new Set<string>();
+
     async initialize(): Promise<void> {
         await super.initialize();
 
@@ -428,8 +461,20 @@ export class TmuxPlugin extends BasePlugin {
             }
         }
 
+        // Cleanup orphaned sessions from previous runs
+        await this.cleanupOrphanedSessions();
+
         // Start polling
         this.startPolling();
+
+        // Start session discovery if enabled (default true)
+        const pollingEnabled = process.env.DISCORDE_TMUX_POLLING !== 'false';
+        if (pollingEnabled) {
+            this.log('Starting session discovery polling...');
+            this.startSessionDiscovery();
+        } else {
+            this.log('Session discovery polling disabled via DISCORDE_TMUX_POLLING=false');
+        }
 
         // Listen for hook events via PluginManager
         const pluginManager = getPluginManager();
@@ -438,10 +483,115 @@ export class TmuxPlugin extends BasePlugin {
         });
     }
 
+    private async cleanupOrphanedSessions(): Promise<void> {
+        this.log('Checking for orphaned discode-* sessions...');
+        try {
+            const sessions = await this.listSessions();
+            let count = 0;
+            for (const session of sessions) {
+                if (session.startsWith('discode-')) {
+                    this.log(`Cleaning up orphaned session: ${session}`);
+                    try {
+                        await execFileAsync(this.tmuxPath, ['kill-session', '-t', session], EXEC_OPTIONS);
+                        count++;
+                    } catch (e) {
+                        // Ignore
+                    }
+                }
+            }
+            if (count > 0) {
+                this.log(`Cleaned up ${count} orphaned sessions.`);
+            } else {
+                this.log('No orphaned sessions found.');
+            }
+        } catch (e) {
+            // Ignore (e.g. no sessions)
+        }
+    }
+
     async shutdown(): Promise<void> {
         if (this.pollInterval) clearInterval(this.pollInterval);
         if (this.healthInterval) clearInterval(this.healthInterval);
+        if (this.sessionDiscoveryInterval) clearInterval(this.sessionDiscoveryInterval);
         await super.shutdown();
+    }
+
+    async listSessions(): Promise<string[]> {
+        try {
+            const { stdout } = await execFileAsync(this.tmuxPath, ['list-sessions', '-F', '#{session_name}']);
+            return stdout.trim().split('\n').filter(s => s.length > 0);
+        } catch (e) {
+            // If no sessions, tmux returns error code 1
+            return [];
+        }
+    }
+
+    async watchSession(sessionId: string): Promise<PluginSession> {
+        // Verify session exists
+        const sessions = await this.listSessions();
+        if (!sessions.includes(sessionId)) {
+            throw new Error(`Session ${sessionId} not found`);
+        }
+
+        // Create a config for this watched session
+        const config: SessionConfig = {
+            cliPath: 'watched', // Placeholder
+            cwd: '/', // Unknown, doesn't matter for watching
+            sessionId: sessionId, // Use the tmux session name as our ID
+            cliType: 'claude', // Default to claude for now, or maybe generic
+            options: {
+                continueConversation: true
+            }
+        };
+
+        const session = new TmuxSession(config, sessionId, this.tmuxPath, false); // isOwned = false
+        this.sessions.set(sessionId, session);
+
+        // Mark as immediately ready since it's an existing session
+        session.setReady();
+        session.status = 'idle'; // Assume idle for now
+
+        this.log(`Started watching session: ${sessionId}`);
+
+        return session;
+    }
+
+    private startSessionDiscovery(): void {
+        this.sessionDiscoveryInterval = setInterval(async () => {
+            try {
+                const currentSessions = await this.listSessions();
+
+                for (const session of currentSessions) {
+                    // Ignore sessions we created/own (starts with discode-)
+                    // Actually, we might want to discover those too if we restarted?
+                    // For now, let's just emit everything we haven't seen yet
+
+                    if (!this.discoveredSessions.has(session)) {
+                        this.discoveredSessions.add(session);
+
+                        // Ignore internal sessions (created by us)
+                        if (session.startsWith('discode-')) {
+                            continue;
+                        }
+
+                        // Don't emit for our own internal sessions if we just created them
+                        // But wait, the bot needs to know about them? 
+                        // The createSession flow handles owned sessions.
+                        // We only care about EXTERNAL sessions or sessions we don't know about.
+
+                        if (!this.sessions.has(session)) {
+                            this.log(`Discovered new external session: ${session}`);
+                            this.emit('session_discovered', {
+                                sessionId: session,
+                                exists: true
+                            });
+                        }
+                    }
+                }
+            } catch (e) {
+                // Ignore errors (e.g. no sessions)
+            }
+        }, 5000); // Check every 5 seconds
     }
 
     /**
@@ -561,7 +711,29 @@ export class TmuxPlugin extends BasePlugin {
     private async pollSession(session: TmuxSession): Promise<void> {
         try {
             const output = await capturePane(session.tmuxSession, 100, session.tmuxPath);
-            const cleaned = cleanOutput(output);
+
+            // For watched sessions (not owned by us/Claude), use raw output (but strip ANSI for diffing clarity?)
+            // Actually, we want to preserve layout but maybe strip colors for the text content check? 
+            // Or better: use a less aggressive cleaner for watched sessions.
+            let cleaned: string;
+
+            // Detect if this is a Claude Code session (even if watched)
+            // by looking for Claude Code markers in the raw output
+            const isClaudeCodeSession = session.isOwned ||
+                output.includes('Claude Code') ||
+                output.includes('⏺') ||
+                output.includes('Sonnet') ||
+                output.includes('Opus');
+
+            if (isClaudeCodeSession) {
+                // Claude Code session: use aggressive cleaning to hide UI noise
+                cleaned = cleanOutput(output);
+            } else {
+                // Generic terminal: minimal cleaning (just ANSI)
+                cleaned = output.replace(/\x1b\[[0-9;]*[mGKH]/g, '') // Basic ANSI strip
+                    .replace(/[\x00-\x1F]/g, (c) => c === '\n' || c === '\r' ? c : '')
+                    .trim();
+            }
 
             // Startup Phase Handling
             if (session.isBooting()) {
@@ -640,6 +812,33 @@ export class TmuxPlugin extends BasePlugin {
                         currentTool: prompt.tool
                     });
                 }
+                // Check for IDLE state (prompt detected)
+                // If we are 'working' and see a prompt at the end, we are now 'idle'
+                else if (session.status === 'working') {
+                    // Check for prompt at the end of the cleaned output
+                    // Claude Code prompt usually ends with ">" or "❯"
+                    // We check the last line
+                    const lastLine = cleaned.split('\n').pop() || '';
+                    if (/^[>❯]\s*$/.test(lastLine) || cleaned.trim().endsWith('>') || cleaned.trim().endsWith('❯')) {
+                        this.log(`Prompt detected for ${session.sessionId}, marking as idle`);
+                        session.status = 'idle';
+                        session.currentTool = undefined;
+
+                        this.emit('status', {
+                            sessionId: session.sessionId,
+                            status: 'idle'
+                        });
+
+                        // Also emit an 'isComplete' output event to be sure
+                        this.emit('output', {
+                            sessionId: session.sessionId,
+                            content: '', // Empty content update
+                            isComplete: true,
+                            outputType: 'stdout',
+                            timestamp: new Date()
+                        });
+                    }
+                }
             }
 
             // Check if permission was resolved externally (e.g. user clicked header button in Claude TUI)
@@ -652,11 +851,13 @@ export class TmuxPlugin extends BasePlugin {
 
             // Emit output if changed significantly
             if (cleaned !== session.lastOutput && cleaned.length > 0) {
-                const newContent = this.getNewContent(session.lastOutput, cleaned);
-                if (newContent) {
+                // Use diff-based approach for all sessions
+                const contentToEmit = this.getNewContent(session.lastOutput, cleaned, isClaudeCodeSession);
+
+                if (contentToEmit) {
                     this.emit('output', {
                         sessionId: session.sessionId,
-                        content: newContent,
+                        content: contentToEmit,
                         isComplete: false,
                         outputType: 'stdout',
                         timestamp: new Date()
@@ -715,18 +916,55 @@ export class TmuxPlugin extends BasePlugin {
         }
     }
 
-    private getNewContent(oldOutput: string, newOutput: string): string | null {
-        // Simple diff - return new lines that weren't in old output
-        if (newOutput.length <= oldOutput.length) return null;
+    private getNewContent(oldOutput: string, newOutput: string, isClaudeCode: boolean = true): string | null {
+        // Line-based diff approach that:
+        // 1. Only emits lines that are NEW (not in old output)
+        // 2. Filters out empty shell prompts
+        // 3. Filters out prompt-only lines for terminals
 
-        // Find where they diverge
-        let i = 0;
-        while (i < oldOutput.length && oldOutput[i] === newOutput[i]) {
-            i++;
+        const oldLines = new Set(oldOutput.split('\n').map(l => l.trim()).filter(l => l.length > 0));
+        const newLines = newOutput.split('\n');
+
+        // Find lines that are new (not in old output)
+        const newContentLines: string[] = [];
+
+        for (const line of newLines) {
+            const trimmed = line.trim();
+
+            // Skip empty lines
+            if (trimmed.length === 0) continue;
+
+            // Skip if we've seen this exact line before
+            if (oldLines.has(trimmed)) continue;
+
+            // For non-Claude sessions, filter out shell prompt noise
+            if (!isClaudeCode) {
+                // Skip empty shell prompts: lines that are ONLY a prompt (end with $ and nothing after)
+                // e.g., "(base) MacBook-Pro-183:~ ray$" with nothing typed
+                if (/^.*\$\s*$/.test(trimmed)) {
+                    continue;
+                }
+
+                // Skip bash prompt patterns with no command
+                if (/^\([^)]+\)\s+\S+:\S*\s+\w+\$$/.test(trimmed)) {
+                    continue;
+                }
+
+                // Skip zsh-style prompts
+                if (/^[▸❯>\%]\s*$/.test(trimmed)) {
+                    continue;
+                }
+            }
+
+            newContentLines.push(trimmed);
         }
 
-        const newContent = newOutput.slice(i).trim();
-        return newContent.length > 0 ? newContent : null;
+        // Return only if we have meaningful new content
+        if (newContentLines.length === 0) {
+            return null;
+        }
+
+        return newContentLines.join('\n');
     }
 
     private async checkHealth(): Promise<void> {

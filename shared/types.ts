@@ -43,6 +43,7 @@ export interface Session {
   status: 'active' | 'ended';
   cliType: 'claude' | 'gemini';
   folderPath?: string; // Optional custom working folder
+  interactionToken?: string; // Token to update the ephemeral "Initializing" message
 }
 
 // Approval requests
@@ -63,7 +64,7 @@ export interface ApprovalResponse {
 
 // WebSocket messages
 export interface WebSocketMessage {
-  type: 'approval_request' | 'approval_response' | 'heartbeat' | 'register' | 'session_start' | 'session_end' | 'output' | 'user_message';
+  type: 'approval_request' | 'approval_response' | 'heartbeat' | 'register' | 'session_start' | 'session_ready' | 'session_end' | 'output' | 'user_message' | 'list_terminals' | 'terminal_list' | 'watch_terminal' | 'session_discovered' | 'status' | 'action_item' | 'metadata';
   data: unknown;
 }
 
@@ -127,6 +128,14 @@ export interface SessionStartMessage extends WebSocketMessage {
     runnerId: string;
     cliType: 'claude' | 'gemini';
     folderPath?: string;
+  };
+}
+
+export interface SessionReadyMessage extends WebSocketMessage {
+  type: 'session_ready';
+  data: {
+    sessionId: string;
+    runnerId: string;
   };
 }
 

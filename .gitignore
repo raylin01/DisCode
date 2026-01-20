@@ -4,3 +4,5 @@ node_modules
 poc
 bun.lock
 test-*
+discord-bot/data/*
+.DS_Store

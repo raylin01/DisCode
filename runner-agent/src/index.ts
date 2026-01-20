@@ -15,7 +15,7 @@ import type { ApprovalRequest, WebSocketMessage } from '../shared/types.js';
 import { TerminalSession } from './terminal-session.js';
 import { ClaudeSession } from './claude-session.js';
 import { PluginManager, getPluginManager, type PluginSession } from './plugins/index.ts';
-import { getHookServer } from './hooks/server.ts';
+import { HookEvent } from './plugins/base.js';
 
 // Configuration
 const BOT_WS_URL = process.env.DISCORDE_BOT_URL || 'ws://localhost:8080';
@@ -336,7 +336,11 @@ async function handleWebSocketMessage(message: WebSocketMessage): Promise<void> 
       }
 
       // Validate folder
+      console.log(`[SessionStart] Received request for session ${data.sessionId}`);
+      console.log(`[SessionStart] CWD: ${cwd}`);
+
       if (!fs.existsSync(cwd)) {
+        console.log(`[SessionStart] Folder does not exist: ${cwd}`);
         if ((data as any).create) {
           console.log(`Creating folder ${cwd}...`);
           try {
@@ -355,32 +359,30 @@ async function handleWebSocketMessage(message: WebSocketMessage): Promise<void> 
                 }
               }));
             }
-            break;
+            return;
           }
         } else {
           console.error(`Folder ${cwd} does not exist`);
           if (isConnected && ws) {
-            // Send specific error message that bot checks for
             ws.send(JSON.stringify({
               type: 'output',
               data: {
                 runnerId: RUNNER_ID,
                 sessionId: data.sessionId,
-                content: `❌ Error: Folder ${cwd} does not exist.`, // Special string
+                content: `❌ Error: Folder ${cwd} does not exist.`,
                 outputType: 'error',
                 timestamp: new Date().toISOString()
               }
             }));
-            // Also send a specific event if possible, but output parsing is easier for now with current bot architecture
-            // Actually, let's stick to output error for now, but we might want a specific error type later
-            // Wait, the bot handles "output" type messages. 
-            // We can signal this better by sending a specialized message if valid
           }
-          break;
+          return;
         }
+      } else {
+        console.log(`[SessionStart] Folder exists! Proceeding...`);
       }
 
       try {
+        console.log(`[SessionStart] Initializing PluginManager...`);
         if (!pluginManager) {
           console.error('PluginManager not initialized!');
           break;
@@ -407,6 +409,49 @@ async function handleWebSocketMessage(message: WebSocketMessage): Promise<void> 
           folderPath: data.folderPath,
           runnerId: data.runnerId
         });
+
+        // Notify bot that session is ready
+        // Logic: Try to wait for actual readiness (prompt detection), but fallback to sending
+        // 'session_ready' after a short timeout so the user isn't stuck on "Initializing..." forever.
+        // The runner handles message queuing anyway if the user types too early.
+
+        let sentReady = false;
+        const notifyReady = () => {
+          if (sentReady) return;
+          sentReady = true;
+
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: 'session_ready',
+              data: {
+                runnerId: RUNNER_ID,
+                sessionId: data.sessionId
+              }
+            }));
+            console.log(`Sent session_ready for ${data.sessionId}`);
+          }
+        };
+
+        if (session.isReady) {
+          notifyReady();
+        } else {
+          console.log(`Waiting for session ${data.sessionId} to be ready...`);
+
+          // Listen for ready event
+          session.once('ready', () => {
+            console.log(`Session ${data.sessionId} is now ready (event detected)!`);
+            notifyReady();
+          });
+
+          // Fallback timeout (2 seconds) - assume ready if detection is slow/fails
+          // This ensures the UX doesn't hang.
+          setTimeout(() => {
+            if (!sentReady) {
+              console.log(`Session readiness timeout for ${data.sessionId}. Sending ready signal anyway.`);
+              notifyReady();
+            }
+          }, 2000);
+        }
 
       } catch (error) {
         console.error('Error sending message:', error);
@@ -460,13 +505,53 @@ async function handleWebSocketMessage(message: WebSocketMessage): Promise<void> 
         timestamp: string;
       };
 
-      console.log(`Received message from ${data.username} for session ${data.sessionId}`);
-      console.log(`  Content: ${data.content}`);
+      console.log(`[UserMessage] Received from ${data.username} for session ${data.sessionId}`);
+      console.log(`[UserMessage] Content: ${data.content}`);
+      console.log(`[UserMessage] Available sessions: ${Array.from(cliSessions.keys()).join(', ') || '(none)'}`);
 
       // Get CLI session
-      const session = cliSessions.get(data.sessionId);
+      let session = cliSessions.get(data.sessionId);
+
+      // Auto-recovery: If session not found in memory but exists in tmux, restore it
+      if (!session && pluginManager) {
+        const tmuxPlugin = pluginManager.getPlugin('tmux');
+        if (tmuxPlugin && tmuxPlugin.listSessions && tmuxPlugin.watchSession) {
+          try {
+            const existingSessions = await tmuxPlugin.listSessions();
+            if (existingSessions.includes(data.sessionId)) {
+              console.log(`[Auto-Recovery] Found existing tmux session ${data.sessionId}, restoring watch...`);
+              session = await tmuxPlugin.watchSession(data.sessionId);
+
+              // Register it
+              cliSessions.set(data.sessionId, session);
+              sessionMetadata.set(data.sessionId, {
+                sessionId: data.sessionId,
+                cliType: 'claude', // Default
+                runnerId: RUNNER_ID,
+                folderPath: 'recovered'
+              });
+            }
+          } catch (e) {
+            console.error(`[Auto-Recovery] Failed to recover session ${data.sessionId}:`, e);
+          }
+        }
+      }
+
       if (!session) {
         console.error(`Session ${data.sessionId} not found in CLI sessions`);
+        // Inform user
+        if (isConnected && ws) {
+          ws.send(JSON.stringify({
+            type: 'output',
+            data: {
+              runnerId: RUNNER_ID,
+              sessionId: data.sessionId,
+              content: `❌ Error: Session '${data.sessionId}' not found. It may have been closed or the runner was restarted without recovery. Try /watch again.`,
+              timestamp: new Date().toISOString(),
+              outputType: 'error'
+            }
+          }));
+        }
         break;
       }
 
@@ -508,6 +593,90 @@ async function handleWebSocketMessage(message: WebSocketMessage): Promise<void> 
     }
 
 
+
+    case 'list_terminals': {
+      console.log('Received list_terminals request');
+      if (pluginManager) {
+        const tmuxPlugin = pluginManager.getPlugin('tmux');
+        if (tmuxPlugin && tmuxPlugin.listSessions) {
+          try {
+            const sessions = await tmuxPlugin.listSessions();
+            if (isConnected && ws) {
+              ws.send(JSON.stringify({
+                type: 'terminal_list',
+                data: {
+                  runnerId: RUNNER_ID,
+                  terminals: sessions
+                }
+              }));
+            }
+          } catch (e) {
+            console.error('Error listing terminals:', e);
+          }
+        }
+      }
+      break;
+    }
+
+    case 'watch_terminal': {
+      const data = message.data as {
+        sessionId: string;
+      };
+      console.log(`[Watch] Received watch_terminal request for ${data.sessionId}`);
+
+      if (pluginManager) {
+        const tmuxPlugin = pluginManager.getPlugin('tmux');
+        if (tmuxPlugin && tmuxPlugin.watchSession) {
+          try {
+            console.log(`[Watch] Calling tmuxPlugin.watchSession(${data.sessionId})...`);
+            const session = await tmuxPlugin.watchSession(data.sessionId);
+            console.log(`[Watch] Session created, isReady=${session.isReady}, status=${session.status}`);
+
+            // Register session so user_message can find it
+            cliSessions.set(data.sessionId, session);
+            sessionMetadata.set(data.sessionId, {
+              sessionId: data.sessionId,
+              cliType: 'claude', // Default
+              runnerId: RUNNER_ID,
+              folderPath: 'watched'
+            });
+
+            console.log(`[Watch] Registered watched session in cliSessions: ${data.sessionId}`);
+            console.log(`[Watch] Current cliSessions keys: ${Array.from(cliSessions.keys()).join(', ')}`);
+
+            if (isConnected && ws) {
+              ws.send(JSON.stringify({
+                type: 'session_ready',
+                data: {
+                  runnerId: RUNNER_ID,
+                  sessionId: data.sessionId
+                }
+              }));
+              console.log(`[Watch] Sent session_ready to Discord bot`);
+            }
+          } catch (e: any) {
+            console.error(`[Watch] Error watching terminal ${data.sessionId}:`, e);
+            if (isConnected && ws) {
+              ws.send(JSON.stringify({
+                type: 'output',
+                data: {
+                  runnerId: RUNNER_ID,
+                  sessionId: data.sessionId,
+                  content: `Failed to watch terminal: ${e.message}`,
+                  outputType: 'error',
+                  timestamp: new Date().toISOString()
+                }
+              }));
+            }
+          }
+        } else {
+          console.error(`[Watch] TmuxPlugin not found or doesn't have watchSession method`);
+        }
+      } else {
+        console.error(`[Watch] PluginManager not initialized`);
+      }
+      break;
+    }
 
     default:
       console.log('Unknown message type:', message.type);
@@ -731,6 +900,24 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Hook event from discorde-hook.sh (port 3122/hook)
+  if (req.method === 'POST' && url.pathname === '/hook') {
+    try {
+      const event = await readRequestBody(req) as HookEvent;
+      console.log(`[Hook] Received ${event.type} for session ${event.sessionId || 'unknown'}`);
+
+      if (pluginManager) {
+        pluginManager.emit('hook_event', event);
+      }
+
+      sendJsonResponse(res, { success: true });
+    } catch (error) {
+      console.error('Error handling hook event:', error);
+      sendJsonResponse(res, { error: 'Invalid request' }, 400);
+    }
+    return;
+  }
+
   // 404
   sendJsonResponse(res, { error: 'Not found' }, 404);
 });
@@ -766,15 +953,6 @@ setInterval(() => {
 
 // Start connection
 connect();
-
-// Start Hook Server
-try {
-  const hookServer = getHookServer();
-  hookServer.start();
-  console.log('HookServer started');
-} catch (error) {
-  console.error('Failed to start HookServer:', error);
-}
 
 // Detect CLI paths and initialize PluginManager
 (async () => {
@@ -819,6 +997,8 @@ try {
         }));
       }
     });
+
+
 
     pluginManager.on('approval', (data) => {
       console.log(`[PluginManager] Approval detected for session ${data.sessionId}: ${data.tool}`);
@@ -904,6 +1084,20 @@ try {
       }
     });
 
+    pluginManager.on('session_discovered', (data) => {
+      console.log(`[PluginManager] Session discovered: ${data.sessionId}`);
+      if (isConnected && ws) {
+        ws.send(JSON.stringify({
+          type: 'session_discovered',
+          data: {
+            runnerId: RUNNER_ID,
+            sessionId: data.sessionId,
+            exists: data.exists
+          }
+        }));
+      }
+    });
+
   } catch (error) {
     console.error(`  ✗ PluginManager initialization failed:`, error);
   }
@@ -924,11 +1118,19 @@ console.log(`
 `);
 
 // Handle graceful shutdown
-process.on('SIGINT', () => {
+// Handle graceful shutdown
+process.on('SIGINT', async () => {
   console.log('\nShutting down Runner Agent...');
+
   if (ws) {
     ws.close();
   }
+
+  if (pluginManager) {
+    console.log('Shutting down plugins...');
+    await pluginManager.shutdown();
+  }
+
   server.close(() => {
     console.log('HTTP server closed');
     process.exit(0);

@@ -24,10 +24,10 @@ const RUNNERS_FILE = path.join(STORAGE_PATH, 'runners.yaml');
 const SESSIONS_FILE = path.join(STORAGE_PATH, 'sessions.yaml');
 
 class Storage {
-  private data: StorageData;
+  private _data: StorageData;
 
   constructor() {
-    this.data = {
+    this._data = {
       users: {},
       runners: {},
       sessions: {}
@@ -46,17 +46,17 @@ class Storage {
     try {
       if (fs.existsSync(USERS_FILE)) {
         const usersData = fs.readFileSync(USERS_FILE, 'utf-8');
-        this.data.users = yaml.load(usersData) as Record<string, UserData>;
+        this._data.users = yaml.load(usersData) as Record<string, UserData>;
       }
 
       if (fs.existsSync(RUNNERS_FILE)) {
         const runnersData = fs.readFileSync(RUNNERS_FILE, 'utf-8');
-        this.data.runners = yaml.load(runnersData) as Record<string, RunnerInfo>;
+        this._data.runners = yaml.load(runnersData) as Record<string, RunnerInfo>;
 
         // Clean up null values from authorizedUsers
         let cleaned = false;
-        for (const runnerId in this.data.runners) {
-          const runner = this.data.runners[runnerId];
+        for (const runnerId in this._data.runners) {
+          const runner = this._data.runners[runnerId];
           if (runner.authorizedUsers) {
             const originalLength = runner.authorizedUsers.length;
             runner.authorizedUsers = runner.authorizedUsers.filter((userId): userId is string => !!userId);
@@ -75,7 +75,7 @@ class Storage {
 
       if (fs.existsSync(SESSIONS_FILE)) {
         const sessionsData = fs.readFileSync(SESSIONS_FILE, 'utf-8');
-        this.data.sessions = yaml.load(sessionsData) as Record<string, Session>;
+        this._data.sessions = yaml.load(sessionsData) as Record<string, Session>;
       }
     } catch (error) {
       console.error('Error loading storage:', error);
@@ -84,23 +84,23 @@ class Storage {
   }
 
   private saveUsers(): void {
-    const yamlStr = yaml.dump(this.data.users);
+    const yamlStr = yaml.dump(this._data.users);
     fs.writeFileSync(USERS_FILE, yamlStr, 'utf-8');
   }
 
   private saveRunners(): void {
-    const yamlStr = yaml.dump(this.data.runners);
+    const yamlStr = yaml.dump(this._data.runners);
     fs.writeFileSync(RUNNERS_FILE, yamlStr, 'utf-8');
   }
 
   private saveSessions(): void {
-    const yamlStr = yaml.dump(this.data.sessions);
+    const yamlStr = yaml.dump(this._data.sessions);
     fs.writeFileSync(SESSIONS_FILE, yamlStr, 'utf-8');
   }
 
   // Token operations
   generateToken(userId: string, guildId: string): TokenInfo {
-    const user = this.data.users[userId] || { tokens: [], runners: [] };
+    const user = this._data.users[userId] || { tokens: [], runners: [] };
 
     const token = this.generateRandomToken();
     const tokenInfo: TokenInfo = {
@@ -113,15 +113,15 @@ class Storage {
     };
 
     user.tokens.push(tokenInfo);
-    this.data.users[userId] = user;
+    this._data.users[userId] = user;
     this.saveUsers();
 
     return tokenInfo;
   }
 
   validateToken(token: string): TokenInfo | null {
-    for (const userId in this.data.users) {
-      const user = this.data.users[userId];
+    for (const userId in this._data.users) {
+      const user = this._data.users[userId];
       const tokenInfo = user.tokens.find(t => t.token === token && t.isActive);
 
       if (tokenInfo) {
@@ -136,12 +136,12 @@ class Storage {
   }
 
   getUserTokens(userId: string): TokenInfo[] {
-    const user = this.data.users[userId];
+    const user = this._data.users[userId];
     return user?.tokens.filter(t => t.isActive) || [];
   }
 
   revokeToken(userId: string, token: string): boolean {
-    const user = this.data.users[userId];
+    const user = this._data.users[userId];
     if (!user) return false;
 
     const tokenInfo = user.tokens.find(t => t.token === token);
@@ -154,54 +154,54 @@ class Storage {
 
   // Runner operations
   registerRunner(runner: RunnerInfo): void {
-    this.data.runners[runner.runnerId] = runner;
+    this._data.runners[runner.runnerId] = runner;
 
     // Add to owner's runners list (deduplicate)
-    const user = this.data.users[runner.ownerId] || { tokens: [], runners: [] };
+    const user = this._data.users[runner.ownerId] || { tokens: [], runners: [] };
     if (!user.runners.includes(runner.runnerId)) {
       user.runners.push(runner.runnerId);
     }
     // Remove duplicates
     user.runners = [...new Set(user.runners)];
-    this.data.users[runner.ownerId] = user;
+    this._data.users[runner.ownerId] = user;
 
     this.saveRunners();
     this.saveUsers();
   }
 
   deleteRunner(runnerId: string): void {
-    const runner = this.data.runners[runnerId];
+    const runner = this._data.runners[runnerId];
     if (!runner) return;
 
     // Remove from owner's runners list
-    const user = this.data.users[runner.ownerId];
+    const user = this._data.users[runner.ownerId];
     if (user) {
       user.runners = user.runners.filter(id => id !== runnerId);
-      this.data.users[runner.ownerId] = user;
+      this._data.users[runner.ownerId] = user;
     }
 
     // Remove from runners
-    delete this.data.runners[runnerId];
+    delete this._data.runners[runnerId];
 
     this.saveRunners();
     this.saveUsers();
   }
 
   getRunner(runnerId: string): RunnerInfo | null {
-    return this.data.runners[runnerId] || null;
+    return this._data.runners[runnerId] || null;
   }
 
   getUserRunners(userId: string): RunnerInfo[] {
-    const user = this.data.users[userId];
+    const user = this._data.users[userId];
     if (!user) return [];
 
     return user.runners
-      .map(id => this.data.runners[id])
+      .map(id => this._data.runners[id])
       .filter((r): r is RunnerInfo => r !== undefined);
   }
 
   updateRunnerStatus(runnerId: string, status: 'online' | 'offline'): void {
-    const runner = this.data.runners[runnerId];
+    const runner = this._data.runners[runnerId];
     if (runner) {
       runner.status = status;
       runner.lastHeartbeat = new Date().toISOString();
@@ -225,7 +225,7 @@ class Storage {
   }
 
   unshareRunner(userId: string, runnerId: string, targetUserId: string): boolean {
-    const runner = this.data.runners[runnerId];
+    const runner = this._data.runners[runnerId];
 
     if (!runner || runner.ownerId !== userId) {
       return false;
@@ -237,7 +237,7 @@ class Storage {
   }
 
   canUserAccessRunner(userId: string, runnerId: string): boolean {
-    const runner = this.data.runners[runnerId];
+    const runner = this._data.runners[runnerId];
 
     if (!runner) return false;
     if (runner.ownerId === userId) return true;
@@ -248,45 +248,53 @@ class Storage {
 
   // Session operations
   createSession(session: Session): void {
-    this.data.sessions[session.sessionId] = session;
+    this._data.sessions[session.sessionId] = session;
     this.saveSessions();
   }
 
   getSession(sessionId: string): Session | null {
-    return this.data.sessions[sessionId] || null;
+    return this._data.sessions[sessionId] || null;
   }
 
   getRunnerSessions(runnerId: string): Session[] {
-    return Object.values(this.data.sessions)
+    return Object.values(this._data.sessions)
       .filter(s => s.runnerId === runnerId && s.status === 'active');
   }
 
   endSession(sessionId: string): void {
-    const session = this.data.sessions[sessionId];
+    const session = this._data.sessions[sessionId];
     if (session) {
       session.status = 'ended';
       this.saveSessions();
     }
   }
 
+  updateSession(sessionId: string, updates: Partial<Session>): void {
+    const session = this._data.sessions[sessionId];
+    if (session) {
+      Object.assign(session, updates);
+      this.saveSessions();
+    }
+  }
+
   async cleanupOldSessions(): Promise<number> {
-    const beforeCount = Object.keys(this.data.sessions).length;
+    const beforeCount = Object.keys(this._data.sessions).length;
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     // Remove ended sessions older than 24 hours
-    for (const sessionId in this.data.sessions) {
-      const session = this.data.sessions[sessionId];
+    for (const sessionId in this._data.sessions) {
+      const session = this._data.sessions[sessionId];
       if (session.status === 'ended' && new Date(session.createdAt) < oneDayAgo) {
-        delete this.data.sessions[sessionId];
+        delete this._data.sessions[sessionId];
       }
     }
 
-    const afterCount = Object.keys(this.data.sessions).length;
+    const afterCount = Object.keys(this._data.sessions).length;
     const cleanedCount = beforeCount - afterCount;
 
     if (cleanedCount > 0) {
       // Use async file write to avoid blocking
-      await fs.promises.writeFile(SESSIONS_FILE, yaml.dump(this.data.sessions));
+      await fs.promises.writeFile(SESSIONS_FILE, yaml.dump(this._data.sessions));
       console.log(`Cleaned up ${cleanedCount} old ended sessions`);
     }
 
@@ -301,7 +309,7 @@ class Storage {
 
   // Getter for data (needed for accessing all runners)
   get data(): StorageData {
-    return this.data;
+    return this._data;
   }
 }
 

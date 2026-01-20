@@ -95,6 +95,23 @@ export interface MetadataEvent {
     timestamp: Date;
 }
 
+export interface HookEvent {
+    type: string;
+    sessionId: string;
+    cwd: string;
+    tool?: string;
+    toolInput?: any;
+    toolResponse?: any;
+    menuId?: string;
+    timestamp: number;
+    [key: string]: any;
+}
+
+export interface SessionDiscoveredEvent {
+    sessionId: string;
+    exists: boolean; // true if it's an existing session we found
+}
+
 // ============================================================================
 // Plugin Interface
 // ============================================================================
@@ -123,18 +140,25 @@ export interface CliPlugin extends EventEmitter {
     /** Get all active sessions */
     getSessions(): PluginSession[];
 
+    /** List all discoverable sessions (e.g. existing tmux sessions) */
+    listSessions?(): Promise<string[]>;
+    /** Watch an existing session */
+    watchSession?(sessionId: string): Promise<PluginSession>;
+
     // Event declarations (TypeScript)
     on(event: 'output', listener: (data: OutputEvent) => void): this;
     on(event: 'approval', listener: (data: ApprovalEvent) => void): this;
     on(event: 'status', listener: (data: StatusEvent) => void): this;
     on(event: 'error', listener: (data: ErrorEvent) => void): this;
     on(event: 'metadata', listener: (data: MetadataEvent) => void): this;
+    on(event: 'session_discovered', listener: (data: SessionDiscoveredEvent) => void): this;
 
     emit(event: 'output', data: OutputEvent): boolean;
     emit(event: 'approval', data: ApprovalEvent): boolean;
     emit(event: 'status', data: StatusEvent): boolean;
     emit(event: 'error', data: ErrorEvent): boolean;
     emit(event: 'metadata', data: MetadataEvent): boolean;
+    emit(event: 'session_discovered', data: SessionDiscoveredEvent): boolean;
 }
 
 // ============================================================================
@@ -152,6 +176,9 @@ export interface PluginSession {
     readonly createdAt: Date;
     /** Last activity time */
     lastActivity: Date;
+
+    /** Whether this session is owned by us (true) or just watched (false) */
+    readonly isOwned: boolean;
 
     // Messaging
     /** Send a message/prompt to the CLI */

@@ -14,7 +14,7 @@ set -e
 # Configuration
 # =============================================================================
 
-HOOK_SERVER_URL="${DISCORDE_HOOK_URL:-http://localhost:3000/approval}"
+HOOK_SERVER_URL="${DISCORDE_HOOK_URL:-http://localhost:3122/hook}"
 # Use curl or wget
 CURL="curl"
 if ! command -v curl &> /dev/null; then
