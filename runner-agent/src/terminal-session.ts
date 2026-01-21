@@ -217,7 +217,6 @@ export class TerminalSession extends EventEmitter<TerminalEventMap> {
      * PTY expects Carriage Return (\r) for Enter key, not newline (\n)
      */
     sendMessage(message: string): void {
-        console.log(`[Terminal ${this.sessionId.slice(0, 8)}] Sending: "${message.substring(0, 50)}..."`);
         // Use \r (carriage return) which is what the Enter key sends in a terminal
         this.write(message + '\r');
     }

@@ -28,8 +28,6 @@ export async function handleUserMessage(
     const { wsManager, pluginManager, cliSessions, sessionMetadata } = deps;
 
     console.log(`[UserMessage] Received from ${data.username} for session ${data.sessionId}`);
-    console.log(`[UserMessage] Content: ${data.content}`);
-    console.log(`[UserMessage] Available sessions: ${Array.from(cliSessions.keys()).join(', ') || '(none)'}`);
 
     // Get CLI session
     let session = cliSessions.get(data.sessionId);
@@ -41,7 +39,6 @@ export async function handleUserMessage(
             try {
                 const existingSessions = await tmuxPlugin.listSessions();
                 if (existingSessions.includes(data.sessionId)) {
-                    console.log(`[Auto-Recovery] Found existing tmux session ${data.sessionId}, restoring watch...`);
                     session = await tmuxPlugin.watchSession(data.sessionId);
 
                     // Register it
@@ -76,9 +73,7 @@ export async function handleUserMessage(
 
     const sendMessage = async () => {
         try {
-            console.log(`Sending message to Claude via TmuxPlugin...`);
             await session!.sendMessage(data.content);
-            console.log(`Message sent successfully to session ${data.sessionId}`);
         } catch (error) {
             console.error(`Error sending message to CLI:`, error);
             wsManager.send({
@@ -97,9 +92,7 @@ export async function handleUserMessage(
     if (session.isReady) {
         await sendMessage();
     } else {
-        console.log(`Session ${data.sessionId} NOT READY. Queuing message...`);
         session.once('ready', async () => {
-            console.log(`Session ${data.sessionId} is now READY. Sending queued message.`);
             await sendMessage();
         });
     }
