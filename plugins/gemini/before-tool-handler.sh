@@ -30,7 +30,7 @@ EOF
 )
 
 # Get runner agent URL from environment or use default
-RUNNER_AGENT_URL="${DISCORDE_RUNNER_URL:-http://localhost:3122}"
+RUNNER_AGENT_URL="${DISCODE_RUNNER_URL:-http://localhost:3122}"
 
 # Send approval request to runner agent
 RESPONSE=$(curl -s -X POST \

@@ -68,3 +68,16 @@ export const sessionCreationState = new Map<string, SessionCreationState>();
 // Session status tracker (sessionId -> status)
 export type SessionStatus = 'idle' | 'working' | 'waiting' | 'offline' | 'error';
 export const sessionStatuses = new Map<string, SessionStatus>();
+
+// Pending terminal list requests (runnerId -> interaction info)
+export interface PendingTerminalListRequest {
+    interactionToken: string;
+    applicationId: string;
+    runnerName: string;
+    requestedAt: number;
+}
+export const pendingTerminalListRequests = new Map<string, PendingTerminalListRequest>();
+
+// Assistant streaming messages tracker (runnerId -> message state)
+export const assistantStreamingMessages = new Map<string, StreamingMessage>();
+

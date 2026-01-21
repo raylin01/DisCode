@@ -18,7 +18,7 @@ interface UserData {
   runners: string[]; // runner IDs owned by this user
 }
 
-const STORAGE_PATH = process.env.DISCORDE_STORAGE_PATH || './data';
+const STORAGE_PATH = process.env.DISCODE_STORAGE_PATH || './data';
 const USERS_FILE = path.join(STORAGE_PATH, 'users.yaml');
 const RUNNERS_FILE = path.join(STORAGE_PATH, 'runners.yaml');
 const SESSIONS_FILE = path.join(STORAGE_PATH, 'sessions.yaml');
@@ -329,3 +329,4 @@ class Storage {
 }
 
 export const storage = new Storage();
+export { Storage };

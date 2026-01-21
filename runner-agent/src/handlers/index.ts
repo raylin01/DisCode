@@ -9,6 +9,7 @@ import type { PluginManager, PluginSession } from '../plugins/index.js';
 import type { SessionMetadata, PendingApproval, PendingMessage, CliPaths } from '../types.js';
 import type { WebSocketManager } from '../websocket.js';
 import type { RunnerConfig } from '../config.js';
+import type { AssistantManager } from '../assistant-manager.js';
 
 import { handleSessionStart, handleSessionEnd } from './session.js';
 import { handleUserMessage } from './message.js';
@@ -25,6 +26,7 @@ export interface HandlerDependencies {
     pendingApprovals: Map<string, PendingApproval>;
     pendingMessages: Map<string, PendingMessage[]>;
     cliPaths: CliPaths;
+    assistantManager: AssistantManager | null;
 }
 
 export async function handleWebSocketMessage(
@@ -63,7 +65,8 @@ export async function handleWebSocketMessage(
         case 'approval_response': {
             await handleApprovalResponse(message.data as any, {
                 pendingApprovals: deps.pendingApprovals,
-                cliSessions: deps.cliSessions
+                cliSessions: deps.cliSessions,
+                wsManager: deps.wsManager
             });
             break;
         }
@@ -123,6 +126,33 @@ export async function handleWebSocketMessage(
             await handleInterrupt(message.data as any, {
                 cliSessions: deps.cliSessions
             });
+            break;
+        }
+
+        case 'assistant_message': {
+            const data = message.data as {
+                runnerId: string;
+                userId: string;
+                username: string;
+                content: string;
+                timestamp: string;
+            };
+
+            if (deps.assistantManager && deps.assistantManager.isRunning()) {
+                await deps.assistantManager.sendMessage(data.content, data.username);
+                console.log(`[AssistantMessage] Forwarded from ${data.username}`);
+            } else {
+                console.error('[AssistantMessage] Assistant not running');
+                deps.wsManager.send({
+                    type: 'assistant_output',
+                    data: {
+                        runnerId: deps.wsManager.runnerId,
+                        content: '❌ Assistant is not running. Please wait for it to start or check the configuration.',
+                        timestamp: new Date().toISOString(),
+                        outputType: 'error'
+                    }
+                });
+            }
             break;
         }
 

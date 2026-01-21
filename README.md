@@ -10,6 +10,7 @@ Control Claude Code, Gemini CLI, and Tmux terminals through Discord with interac
 - **Interactive Approvals**: Approve or deny tool usage requests through Discord buttons
 - **Terminal Watching**: Monitor and interact with tmux sessions in real-time
 - **Multi-Runner Support**: Manage multiple machines from a single Discord server
+- **Agent Skills**: Enable CLI agents to control Discord (send messages, rename channels)
 - **Private Sessions**: Each CLI session gets its own private thread
 - **Secure Authentication**: Token-based runner registration
 
@@ -75,10 +76,10 @@ cp .env.example .env
 
 Edit `.env`:
 ```bash
-DISCORDE_DISCORD_TOKEN=your_bot_token_here
-DISCORDE_DISCORD_CLIENT_ID=your_client_id_here
-DISCORDE_WS_PORT=8080
-DISCORDE_STORAGE_PATH=./data
+DISCODE_DISCORD_TOKEN=your_bot_token_here
+DISCODE_DISCORD_CLIENT_ID=your_client_id_here
+DISCODE_WS_PORT=8080
+DISCODE_STORAGE_PATH=./data
 ```
 
 **Runner Agent:**
@@ -89,11 +90,11 @@ cp .env.example .env
 
 Edit `.env`:
 ```bash
-DISCORDE_TOKEN=token_from_discord_bot
-DISCORDE_BOT_URL=ws://localhost:8080
-DISCORDE_RUNNER_NAME=my-machine
-DISCORDE_CLI_TYPE=claude  # or 'gemini'
-DISCORDE_HTTP_PORT=3000
+DISCODE_TOKEN=token_from_discord_bot
+DISCODE_BOT_URL=ws://localhost:8080
+DISCODE_RUNNER_NAME=my-machine
+DISCODE_CLI_TYPE=claude  # or 'gemini'
+DISCODE_HTTP_PORT=3000
 ```
 
 ### 3. Start Discord Bot
@@ -268,31 +269,39 @@ fi
 - HTTP communication with Runner Agent
 - Safe defaults (deny if unreachable)
 
+- Safe defaults (deny if unreachable)
+
+### Agent Skills (Auto-Installed)
+DisCode automatically injects skills into your CLI sessions to enable advanced features:
+- **Discord Integration**: ALlows the agent to send messages to the thread and update the channel name/topic.
+  - *Actions*: `send_message`, `update_channel`
+  - *Installation*: Automatic when a session starts (injected into `.claude/skills` or `.gemini/skills`)
+
 ## Environment Variables
 
 ### Discord Bot
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DISCORDE_DISCORD_TOKEN` | ✅ | - | Discord bot token |
-| `DISCORDE_DISCORD_CLIENT_ID` | ✅ | - | Discord application client ID |
-| `DISCORDE_WS_PORT` | ❌ | 8080 | WebSocket server port |
-| `DISCORDE_STORAGE_PATH` | ❌ | ./data | YAML storage directory |
+| `DISCODE_DISCORD_TOKEN` | ✅ | - | Discord bot token |
+| `DISCODE_DISCORD_CLIENT_ID` | ✅ | - | Discord application client ID |
+| `DISCODE_WS_PORT` | ❌ | 8080 | WebSocket server port |
+| `DISCODE_STORAGE_PATH` | ❌ | ./data | YAML storage directory |
 
 ### Runner Agent
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DISCORDE_TOKEN` | ✅ | - | Token from Discord bot |
-| `DISCORDE_BOT_URL` | ❌ | ws://localhost:8080 | Discord bot WebSocket URL |
-| `DISCORDE_RUNNER_NAME` | ❌ | local-runner | Human-readable runner name |
-| `DISCORDE_CLI_TYPE` | ❌ | claude | CLI type (claude/gemini) |
-| `DISCORDE_HTTP_PORT` | ❌ | 3000 | HTTP server port for plugin |
-| `DISCORDE_TMUX_POLLING` | ❌ | true | Enable polling for new tmux sessions |
+| `DISCODE_TOKEN` | ✅ | - | Token from Discord bot |
+| `DISCODE_BOT_URL` | ❌ | ws://localhost:8080 | Discord bot WebSocket URL |
+| `DISCODE_RUNNER_NAME` | ❌ | local-runner | Human-readable runner name |
+| `DISCODE_CLI_TYPE` | ❌ | claude | CLI type (claude/gemini) |
+| `DISCODE_HTTP_PORT` | ❌ | 3000 | HTTP server port for plugin |
+| `DISCODE_TMUX_POLLING` | ❌ | true | Enable polling for new tmux sessions |
 
 ## Storage
 
-YAML files are stored in `./data` (or `DISCORDE_STORAGE_PATH`):
+YAML files are stored in `./data` (or `DISCODE_STORAGE_PATH`):
 
 - `users.yaml` - User tokens and runner associations
 - `runners.yaml` - Runner registration data
@@ -316,7 +325,7 @@ YAML files are stored in `./data` (or `DISCORDE_STORAGE_PATH`):
 
 **Can't connect to bot:**
 - Verify bot WebSocket server is running
-- Check `DISCORDE_BOT_URL` is correct
+- Check `DISCODE_BOT_URL` is correct
 - Check token is valid
 
 **Approvals timing out:**

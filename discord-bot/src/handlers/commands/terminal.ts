@@ -35,13 +35,21 @@ export async function handleTerminals(interaction: any, userId: string): Promise
             return;
         }
 
+        // Store request info to update response when we get terminal list
+        botState.pendingTerminalListRequests.set(runnerId, {
+            interactionToken: interaction.token,
+            applicationId: interaction.applicationId,
+            runnerName: runner.name,
+            requestedAt: Date.now()
+        });
+
         ws.send(JSON.stringify({
             type: 'list_terminals',
-            data: {}
+            data: { runnerId }
         }));
 
         await interaction.reply({
-            content: `Requesting terminal list from \`${runner.name}\`...`,
+            content: `🔄 Requesting terminal list from \`${runner.name}\`...`,
             flags: 64
         });
         return;
@@ -75,13 +83,21 @@ export async function handleTerminals(interaction: any, userId: string): Promise
         return;
     }
 
+    // Store request info to update response when we get terminal list
+    botState.pendingTerminalListRequests.set(runner.runnerId, {
+        interactionToken: interaction.token,
+        applicationId: interaction.applicationId,
+        runnerName: runner.name,
+        requestedAt: Date.now()
+    });
+
     ws.send(JSON.stringify({
         type: 'list_terminals',
-        data: {}
+        data: { runnerId: runner.runnerId }
     }));
 
     await interaction.reply({
-        content: `Requesting terminal list from \`${runner.name}\`...`,
+        content: `🔄 Requesting terminal list from \`${runner.name}\`...`,
         flags: 64
     });
 }

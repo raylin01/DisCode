@@ -11,8 +11,8 @@ async function installHooks() {
   console.log('📦 Installing DisCode Hooks...');
 
   const homeDir = os.homedir();
-  const discordeDir = path.join(homeDir, '.discorde');
-  const hooksDir = path.join(discordeDir, 'hooks');
+  const discodeDir = path.join(homeDir, '.discode');
+  const hooksDir = path.join(discodeDir, 'hooks');
   const claudeConfigPath = path.join(homeDir, '.claude', 'config.json');
 
   // 1. Create directory structure
@@ -22,8 +22,8 @@ async function installHooks() {
   }
 
   // 2. Copy hook script
-  const sourceScript = path.resolve(__dirname, '../../hooks/discorde-hook.sh');
-  const targetScript = path.join(hooksDir, 'discorde-hook.sh');
+  const sourceScript = path.resolve(__dirname, '../../hooks/discode-hook.sh');
+  const targetScript = path.join(hooksDir, 'discode-hook.sh');
 
   if (!fs.existsSync(sourceScript)) {
     console.error(`❌ Source script not found at ${sourceScript}`);
@@ -77,7 +77,7 @@ async function installHooks() {
   let addedCount = 0;
   for (const hookName of hooks) {
     // Check if we already have this hook registered to our script
-    const existing = config.commands.find(c => c.type === hookName && c.command.includes('discorde-hook.sh'));
+    const existing = config.commands.find(c => c.type === hookName && c.command.includes('discode-hook.sh'));
     
     if (existing) {
       // Update command path just in case

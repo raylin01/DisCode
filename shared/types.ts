@@ -31,6 +31,7 @@ export interface RunnerInfo {
   cliTypes: ('claude' | 'gemini')[];
   privateChannelId?: string; // ID of the private channel for this runner
   defaultWorkspace?: string;
+  assistantEnabled?: boolean;  // Whether assistant is enabled for this runner
 }
 
 // Session-related types
@@ -65,7 +66,7 @@ export interface ApprovalResponse {
 
 // WebSocket messages
 export interface WebSocketMessage {
-  type: 'approval_request' | 'approval_response' | 'heartbeat' | 'register' | 'session_start' | 'session_ready' | 'session_end' | 'output' | 'user_message' | 'list_terminals' | 'terminal_list' | 'watch_terminal' | 'session_discovered' | 'status' | 'action_item' | 'metadata';
+  type: 'approval_request' | 'approval_response' | 'heartbeat' | 'register' | 'session_start' | 'session_ready' | 'session_end' | 'output' | 'user_message' | 'list_terminals' | 'terminal_list' | 'watch_terminal' | 'session_discovered' | 'status' | 'action_item' | 'metadata' | 'discord_action' | 'assistant_message' | 'assistant_output' | 'spawn_thread';
   data: unknown;
 }
 
@@ -155,5 +156,37 @@ export interface UserMessage extends WebSocketMessage {
     username: string;
     content: string;
     timestamp: string;
+  };
+}
+
+// Assistant-specific messages
+export interface AssistantMessageWS extends WebSocketMessage {
+  type: 'assistant_message';
+  data: {
+    runnerId: string;
+    userId: string;
+    username: string;
+    content: string;
+    timestamp: string;
+  };
+}
+
+export interface AssistantOutputMessage extends WebSocketMessage {
+  type: 'assistant_output';
+  data: {
+    runnerId: string;
+    content: string;
+    timestamp: string;
+    outputType?: 'stdout' | 'stderr' | 'tool_use' | 'tool_result' | 'error';
+  };
+}
+
+export interface SpawnThreadMessage extends WebSocketMessage {
+  type: 'spawn_thread';
+  data: {
+    runnerId: string;
+    folder: string;
+    cliType?: 'claude' | 'gemini' | 'auto';
+    initialMessage?: string;
   };
 }

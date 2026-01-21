@@ -18,5 +18,10 @@
     "healthCheckInterval": 5000,
     "sessionDiscoveryInterval": 5000,
     "discoveryEnabled": true
+  },
+
+  "assistant": {
+    "enabled": true,
+    "plugin": "tmux"
   }
 }

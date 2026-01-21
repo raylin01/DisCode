@@ -18,6 +18,7 @@ export interface WebSocketManagerConfig {
     defaultWorkspace?: string;
     heartbeatInterval: number;
     reconnectDelay: number;
+    assistantEnabled: boolean;
 }
 
 export class WebSocketManager extends EventEmitter {
@@ -54,9 +55,13 @@ export class WebSocketManager extends EventEmitter {
                     runnerName: this.config.runnerName,
                     token: this.config.token,
                     cliTypes: this.config.cliTypes,
-                    defaultWorkspace: this.config.defaultWorkspace
+                    defaultWorkspace: this.config.defaultWorkspace,
+                    assistantEnabled: this.config.assistantEnabled
                 }
             });
+
+            // Emit connected event for assistant startup
+            this.emit('connected');
 
             // Start heartbeat
             this.startHeartbeat();
@@ -149,5 +154,6 @@ export function createWebSocketManager(config: RunnerConfig): WebSocketManager {
         defaultWorkspace: config.defaultWorkspace,
         heartbeatInterval: config.heartbeatInterval,
         reconnectDelay: config.reconnectDelay,
+        assistantEnabled: config.assistant.enabled,
     });
 }

@@ -16,8 +16,8 @@ Runners can now support **multiple CLI types simultaneously**!
 
 **After:**
 - Each runner can support **both claude AND gemini**
-- Configured via `DISCORDE_CLI_TYPES` environment variable
-- Example: `DISCORDE_CLI_TYPES=claude,gemini`
+- Configured via `DISCODE_CLI_TYPES` environment variable
+- Example: `DISCODE_CLI_TYPES=claude,gemini`
 
 ### 2. Default Port Changed
 Changed from port 3000 to **3122** to avoid conflicts with Next.js.
@@ -32,22 +32,22 @@ Changed from port 3000 to **3122** to avoid conflicts with Next.js.
 
 ```bash
 # OLD (v0.3.0)
-DISCORDE_CLI_TYPE=claude
-DISCORDE_HTTP_PORT=3000
+DISCODE_CLI_TYPE=claude
+DISCODE_HTTP_PORT=3000
 
 # NEW (v0.4.0)
-DISCORDE_CLI_TYPES=claude          # Single CLI
+DISCODE_CLI_TYPES=claude          # Single CLI
 # OR
-DISCORDE_CLI_TYPES=claude,gemini   # Multiple CLIs
-DISCORDE_HTTP_PORT=3122            # New default port
+DISCODE_CLI_TYPES=claude,gemini   # Multiple CLIs
+DISCODE_HTTP_PORT=3122            # New default port
 ```
 
 ### Environment Variables
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `DISCORDE_CLI_TYPES` | List | `claude` | Comma-separated CLI types (claude, gemini) |
-| `DISCORDE_HTTP_PORT` | Number | `3122` | HTTP server port for CLI plugins |
+| `DISCODE_CLI_TYPES` | List | `claude` | Comma-separated CLI types (claude, gemini) |
+| `DISCODE_HTTP_PORT` | Number | `3122` | HTTP server port for CLI plugins |
 
 ---
 
@@ -90,7 +90,7 @@ interface RegisterMessage {
 ### Runner Agent (`runner-agent/src/index.ts`)
 
 **Changes:**
-1. Accepts `DISCORDE_CLI_TYPES` (comma-separated)
+1. Accepts `DISCODE_CLI_TYPES` (comma-separated)
 2. Sends 'register' message on connection (includes token)
 3. Reports all supported CLI types in heartbeat
 4. Updated startup banner to show all CLI types
@@ -211,14 +211,14 @@ cd runner-agent
 nano .env
 
 # Change:
-DISCORDE_CLI_TYPE=claude
+DISCODE_CLI_TYPE=claude
 # To:
-DISCORDE_CLI_TYPES=claude,gemini
+DISCODE_CLI_TYPES=claude,gemini
 
 # Change:
-DISCORDE_HTTP_PORT=3000
+DISCODE_HTTP_PORT=3000
 # To:
-DISCORDE_HTTP_PORT=3122
+DISCODE_HTTP_PORT=3122
 ```
 
 **2. Reinstall Plugins (for new port):**
@@ -247,8 +247,8 @@ Just follow the updated README.md - defaults are already set to the new values!
 
 ```bash
 # In runner-agent/.env
-DISCORDE_CLI_TYPES=claude,gemini
-DISCORDE_HTTP_PORT=3122
+DISCODE_CLI_TYPES=claude,gemini
+DISCODE_HTTP_PORT=3122
 
 # Start runner agent
 bun run src/index.ts

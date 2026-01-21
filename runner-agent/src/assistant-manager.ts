@@ -1,0 +1,257 @@
+/**
+ * Assistant Manager
+ * 
+ * Manages the main channel CLI assistant session for a runner.
+ * The assistant can spawn sub-threads in different folders.
+ */
+
+import { EventEmitter } from 'events';
+import { randomUUID } from 'crypto';
+import type { PluginManager, PluginSession } from './plugins/index.js';
+import type { RunnerConfig, AssistantConfig } from './config.js';
+import type { WebSocketManager } from './websocket.js';
+import { findCliPath, expandPath, validateOrCreateFolder } from './utils.js';
+
+// Session ID prefix for assistant sessions
+const ASSISTANT_SESSION_PREFIX = 'assistant-';
+
+export interface AssistantManagerDeps {
+    config: RunnerConfig;
+    wsManager: WebSocketManager;
+    pluginManager: PluginManager;
+    cliPaths: { claude: string | null; gemini: string | null };
+}
+
+export interface AssistantOutput {
+    content: string;
+    outputType: 'stdout' | 'stderr' | 'tool_use' | 'tool_result' | 'error';
+    timestamp: string;
+}
+
+export class AssistantManager extends EventEmitter {
+    private session: PluginSession | null = null;
+    private sessionId: string | null = null;
+    private deps: AssistantManagerDeps;
+    private config: AssistantConfig;
+    private cliType: 'claude' | 'gemini' | null = null;
+
+    constructor(deps: AssistantManagerDeps) {
+        super();
+        this.deps = deps;
+        this.config = deps.config.assistant;
+    }
+
+    /**
+     * Check if assistant is enabled
+     */
+    isEnabled(): boolean {
+        return this.config.enabled && this.deps.config.cliTypes.length > 0;
+    }
+
+    /**
+     * Check if assistant session is running
+     */
+    isRunning(): boolean {
+        return this.session !== null;
+    }
+
+    /**
+     * Get the session ID
+     */
+    getSessionId(): string | null {
+        return this.sessionId;
+    }
+
+    /**
+     * Get the CLI type being used
+     */
+    getCliType(): 'claude' | 'gemini' | null {
+        return this.cliType;
+    }
+
+    /**
+     * Get available CLI types for this runner
+     */
+    getAvailableCliTypes(): ('claude' | 'gemini')[] {
+        return this.deps.config.cliTypes;
+    }
+
+    /**
+     * Start the assistant session
+     */
+    async start(): Promise<void> {
+        if (!this.isEnabled()) {
+            console.log('[AssistantManager] Assistant is disabled or no CLI types available');
+            return;
+        }
+
+        if (this.session) {
+            console.log('[AssistantManager] Session already running');
+            return;
+        }
+
+        // Use first available CLI type
+        this.cliType = this.deps.config.cliTypes[0];
+        const cliPath = this.deps.cliPaths[this.cliType];
+
+        if (!cliPath) {
+            // Try to find CLI path
+            const detected = await findCliPath(this.cliType, this.deps.config.cliSearchPaths);
+            if (detected) {
+                this.deps.cliPaths[this.cliType] = detected;
+            } else {
+                console.error(`[AssistantManager] CLI '${this.cliType}' not found`);
+                return;
+            }
+        }
+
+        // Resolve working directory
+        const folder = this.config.folder || this.deps.config.defaultWorkspace || process.cwd();
+        const cwd = expandPath(folder, this.deps.config.defaultWorkspace);
+
+        // Validate folder
+        const validation = validateOrCreateFolder(cwd, false);
+        if (!validation.exists) {
+            console.error(`[AssistantManager] Folder error: ${validation.error}`);
+            return;
+        }
+
+        // Generate session ID
+        this.sessionId = `${ASSISTANT_SESSION_PREFIX}${randomUUID().slice(0, 8)}`;
+
+        console.log(`[AssistantManager] Starting assistant session ${this.sessionId}`);
+        console.log(`[AssistantManager] CLI: ${this.cliType}, Folder: ${cwd}`);
+
+        try {
+            // Create the session via PluginManager
+            this.session = await this.deps.pluginManager.createSession({
+                cliPath: this.deps.cliPaths[this.cliType]!,
+                cwd,
+                sessionId: this.sessionId,
+                cliType: this.cliType,
+                options: {
+                    skipPermissions: false,
+                    continueConversation: true
+                }
+            }, this.config.plugin);
+
+            // Wire up output events
+            // PluginSession emits via EventEmitter, but interface only declares 'ready'
+            // We use the underlying implementation which supports more events
+            (this.session as any).on('output', (data: { content: string; type?: string }) => {
+                this.emit('output', {
+                    content: data.content,
+                    outputType: data.type || 'stdout',
+                    timestamp: new Date().toISOString()
+                });
+
+                // Send to Discord bot via WebSocket
+                this.deps.wsManager.send({
+                    type: 'assistant_output',
+                    data: {
+                        runnerId: this.deps.wsManager.runnerId,
+                        content: data.content,
+                        timestamp: new Date().toISOString(),
+                        outputType: data.type || 'stdout'
+                    }
+                });
+            });
+
+            // Wait for ready or timeout
+            if (!this.session.isReady) {
+                await new Promise<void>((resolve) => {
+                    const timeout = setTimeout(() => {
+                        console.log('[AssistantManager] Session ready timeout, continuing anyway');
+                        resolve();
+                    }, this.deps.config.sessionReadyTimeout);
+
+                    this.session!.once('ready', () => {
+                        clearTimeout(timeout);
+                        resolve();
+                    });
+                });
+            }
+
+            console.log(`[AssistantManager] Assistant session ${this.sessionId} ready`);
+
+            // Send initial system prompt with available CLIs
+            await this.sendSystemPrompt();
+
+        } catch (error) {
+            console.error('[AssistantManager] Failed to start assistant:', error);
+            this.session = null;
+            this.sessionId = null;
+        }
+    }
+
+    /**
+     * Send the system prompt to the assistant
+     */
+    private async sendSystemPrompt(): Promise<void> {
+        if (!this.session) return;
+
+        const cliTypes = this.deps.config.cliTypes.join(', ');
+        const prompt = `You are the main assistant for this runner. You can help users with general tasks and spawn dedicated threads for specific projects.
+
+Available CLIs on this runner: ${cliTypes}
+
+When users ask about specific folders or projects:
+1. Clone repositories if needed
+2. Use the spawn-thread.sh script to create a dedicated thread in that folder
+3. Inform the user the thread has been created
+
+The spawn-thread skill is available at: spawn-thread.sh "<folder>" "<cli_type>" "<message>"
+- folder: absolute path or relative to workspace
+- cli_type: "claude", "gemini", or "auto" (uses first available: ${this.deps.config.cliTypes[0]})
+- message: optional initial message for the new thread`;
+
+        // Note: We don't actually send this as a message - it will be installed as a skill
+        console.log(`[AssistantManager] System prompt prepared (${prompt.length} chars)`);
+    }
+
+    /**
+     * Send a message to the assistant
+     */
+    async sendMessage(content: string, username?: string): Promise<void> {
+        if (!this.session) {
+            console.error('[AssistantManager] No active session');
+            return;
+        }
+
+        const prefix = username ? `[${username}] ` : '';
+        await this.session.sendMessage(`${prefix}${content}`);
+    }
+
+    /**
+     * Stop the assistant session
+     */
+    async stop(): Promise<void> {
+        if (!this.session) {
+            return;
+        }
+
+        console.log(`[AssistantManager] Stopping assistant session ${this.sessionId}`);
+
+        try {
+            await this.session.close();
+        } catch (error) {
+            console.error('[AssistantManager] Error closing session:', error);
+        }
+
+        this.session = null;
+        this.sessionId = null;
+        this.cliType = null;
+    }
+
+    /**
+     * Handle approval request for assistant session
+     */
+    async sendApproval(optionNumber: string): Promise<void> {
+        if (!this.session) {
+            console.error('[AssistantManager] No active session for approval');
+            return;
+        }
+
+        await this.session.sendApproval(optionNumber);
+    }
+}

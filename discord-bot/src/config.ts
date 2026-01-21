@@ -2,7 +2,7 @@
  * Discord Bot Configuration
  * 
  * Loads configuration from:
- * 1. Config file (./config.json or DISCORDE_CONFIG_PATH)
+ * 1. Config file (./config.json or DISCODE_CONFIG_PATH)
  * 2. Environment variables (override file values)
  * 
  * Secrets (DISCORD_TOKEN, DISCORD_CLIENT_ID) must always be in environment.
@@ -21,6 +21,10 @@ export interface SessionDefaults {
     inactivityTimeout: number;
 }
 
+export interface AssistantBotConfig {
+    mode: 'all' | 'command';   // 'all' = forward all messages, 'command' = only /assistant
+}
+
 export interface BotConfig {
     // Discord credentials (env only)
     discordToken: string;
@@ -34,16 +38,20 @@ export interface BotConfig {
 
     // Session defaults
     sessionDefaults: SessionDefaults;
+
+    // Assistant settings
+    assistant: AssistantBotConfig;
 }
 
 interface FileConfig {
     wsPort?: number;
     notifications?: Partial<NotificationConfig>;
     sessionDefaults?: Partial<SessionDefaults>;
+    assistant?: Partial<AssistantBotConfig>;
 }
 
 function loadConfigFile(): FileConfig {
-    const configPath = process.env.DISCORDE_CONFIG_PATH || './config.json';
+    const configPath = process.env.DISCODE_CONFIG_PATH || './config.json';
 
     try {
         if (fs.existsSync(configPath)) {
@@ -64,11 +72,11 @@ export function loadConfig(): BotConfig {
     const fileConfig = loadConfigFile();
 
     // Tokens are always from env (security)
-    const discordToken = process.env.DISCORDE_DISCORD_TOKEN;
-    const discordClientId = process.env.DISCORDE_DISCORD_CLIENT_ID;
+    const discordToken = process.env.DISCODE_DISCORD_TOKEN;
+    const discordClientId = process.env.DISCODE_DISCORD_CLIENT_ID;
 
     if (!discordToken || !discordClientId) {
-        console.error('Missing DISCORDE_DISCORD_TOKEN or DISCORDE_DISCORD_CLIENT_ID environment variables');
+        console.error('Missing DISCODE_DISCORD_TOKEN or DISCODE_DISCORD_CLIENT_ID environment variables');
         process.exit(1);
     }
 
@@ -91,7 +99,7 @@ export function loadConfig(): BotConfig {
 
         // WS port - env overrides file
         wsPort: parseInt(
-            process.env.DISCORDE_WS_PORT ||
+            process.env.DISCODE_WS_PORT ||
             String(fileConfig.wsPort || 8080)
         ),
 
@@ -105,6 +113,13 @@ export function loadConfig(): BotConfig {
         sessionDefaults: {
             ...sessionDefaultsConfig,
             ...fileConfig.sessionDefaults,
+        },
+
+        // Assistant - env overrides file
+        assistant: {
+            mode: (process.env.DISCODE_ASSISTANT_MODE as 'all' | 'command') ||
+                fileConfig.assistant?.mode ||
+                'all',
         },
     };
 }

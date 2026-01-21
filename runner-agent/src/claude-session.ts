@@ -95,7 +95,7 @@ export class ClaudeSession extends EventEmitter {
           PATH: process.env.PATH,
           FORCE_COLOR: '0',
           DISCODE_SESSION_ID: this.sessionId,
-          DISCODE_RUNNER_ID: process.env.DISCORDE_RUNNER_NAME || 'local-runner'
+          DISCODE_RUNNER_ID: process.env.DISCODE_RUNNER_NAME || 'local-runner'
         }
       });
 

@@ -148,33 +148,83 @@ botState.client.on(Events.MessageCreate, async (message) => {
   // Ignore bot messages
   if (message.author.bot) return;
 
-  // Ignore messages not in threads
-  if (!message.channel.isThread()) return;
+  // Handle thread messages (existing logic)
+  if (message.channel.isThread()) {
+    // Find the session for this thread
+    const allSessions = Object.values(storage.data.sessions);
+    const session = allSessions.find(s => s.threadId === message.channel.id && s.status === 'active');
 
-  // Find the session for this thread
-  const allSessions = Object.values(storage.data.sessions);
-  const session = allSessions.find(s => s.threadId === message.channel.id && s.status === 'active');
+    if (!session) return;
 
-  if (!session) return;
+    // Check if user has access
+    const runner = storage.getRunner(session.runnerId);
+    if (!runner || !storage.canUserAccessRunner(message.author.id, session.runnerId)) {
+      return;
+    }
 
-  // Check if user has access
-  const runner = storage.getRunner(session.runnerId);
-  if (!runner || !storage.canUserAccessRunner(message.author.id, session.runnerId)) {
+    // Get the WebSocket connection for this runner
+    const ws = botState.runnerConnections.get(runner.runnerId);
+    if (!ws) {
+      console.log(`Runner ${runner.runnerId} not connected, cannot forward message`);
+      return;
+    }
+
+    // Forward the message to the runner
+    ws.send(JSON.stringify({
+      type: 'user_message',
+      data: {
+        sessionId: session.sessionId,
+        userId: message.author.id,
+        username: message.author.username,
+        content: message.content,
+        timestamp: new Date().toISOString()
+      }
+    }));
+
+    console.log(`Forwarded message from ${message.author.username} to runner ${runner.name} for session ${session.sessionId}`);
+
+    // Clear streaming message state so next output is a new message
+    botState.streamingMessages.delete(session.sessionId);
+
+    // Add a reaction to indicate the message was sent
+    try {
+      await message.react('✅');
+    } catch (error) {
+      // Ignore reaction errors
+    }
     return;
   }
+
+  // Handle main channel messages for assistant (new logic)
+  // Check if assistant mode is 'all' (forward all messages) vs 'command' (only /assistant)
+  if (config.assistant.mode !== 'all') return;
+
+  // Check if this is a runner's private channel
+  const allRunners = Object.values(storage.data.runners);
+  const runner = allRunners.find(r => r.privateChannelId === message.channel.id && r.status === 'online');
+
+  if (!runner) return;
+
+  // Check if user has access to this runner
+  if (!storage.canUserAccessRunner(message.author.id, runner.runnerId)) {
+    return;
+  }
+
+  // Check if assistant is enabled for this runner
+  if (!runner.assistantEnabled) return;
 
   // Get the WebSocket connection for this runner
   const ws = botState.runnerConnections.get(runner.runnerId);
   if (!ws) {
-    console.log(`Runner ${runner.runnerId} not connected, cannot forward message`);
+    console.log(`Runner ${runner.runnerId} not connected, cannot forward assistant message`);
     return;
   }
 
-  // Forward the message to the runner
+  // Forward the message to the runner's assistant
   ws.send(JSON.stringify({
-    type: 'user_message',
+    type: 'assistant_message',
     data: {
-      sessionId: session.sessionId,
+      runnerId: runner.runnerId,
       userId: message.author.id,
       username: message.author.username,
       content: message.content,
@@ -182,10 +232,10 @@ botState.client.on(Events.MessageCreate, async (message) => {
     }
   }));
 
-  console.log(`Forwarded message from ${message.author.username} to runner ${runner.name} for session ${session.sessionId}`);
+  console.log(`Forwarded assistant message from ${message.author.username} to runner ${runner.name}`);
 
-  // Clear streaming message state so next output is a new message
-  botState.streamingMessages.delete(session.sessionId);
+  // Clear assistant streaming message state so next output is a new message
+  botState.assistantStreamingMessages.delete(runner.runnerId);
 
   // Add a reaction to indicate the message was sent
   try {

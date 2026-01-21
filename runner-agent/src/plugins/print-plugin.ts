@@ -16,6 +16,8 @@ import {
     SessionStatus,
     OutputEvent,
 } from './base.js';
+import { SkillManager } from '../utils/skill-manager.js';
+import { getConfig } from '../config.js';
 
 // ============================================================================
 // Constants
@@ -118,7 +120,8 @@ class PrintSession implements PluginSession {
                     PATH: process.env.PATH,
                     FORCE_COLOR: '0',
                     DISCODE_SESSION_ID: this.sessionId,
-                    DISCODE_RUNNER_ID: process.env.DISCORDE_RUNNER_NAME || 'local-runner',
+                    DISCODE_RUNNER_ID: process.env.DISCODE_RUNNER_NAME || 'local-runner',
+                    DISCODE_HTTP_PORT: getConfig().httpPort.toString(),
                     ...this.config.options?.env
                 }
             });
@@ -251,12 +254,21 @@ export class PrintPlugin extends BasePlugin {
     readonly type = 'print' as const;
     readonly isPersistent = false; // Each message is a new process
 
+    private skillManager?: SkillManager;
+
     async initialize(): Promise<void> {
         await super.initialize();
+        this.skillManager = new SkillManager(process.cwd()); // config.cliSearchPaths? 
         this.log('Initialized (stateless mode, approvals via HTTP hooks)');
     }
 
     async createSession(config: SessionConfig): Promise<PluginSession> {
+        // Install skills
+        if (this.skillManager) {
+            const cliType = config.cliType === 'gemini' ? 'gemini' : 'claude';
+            await this.skillManager.installSkills(config.cwd, cliType);
+        }
+
         const session = new PrintSession(config, this);
         this.sessions.set(config.sessionId, session);
 

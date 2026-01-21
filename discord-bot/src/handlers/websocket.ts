@@ -34,7 +34,7 @@ export function createWebSocketServer(port: number): WebSocketServer {
 
     wss.on('error', (error: Error) => {
         if ((error as any).code === 'EADDRINUSE') {
-            console.error(`Port ${port} is already in use. Please stop the other process or change DISCORDE_WS_PORT.`);
+            console.error(`Port ${port} is already in use. Please stop the other process or change DISCODE_WS_PORT.`);
             process.exit(1);
         } else {
             console.error('WebSocket server error:', error);
@@ -254,6 +254,18 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
             await handleTerminalList(message.data);
             break;
 
+        case 'discord_action':
+            await handleDiscordAction(message.data);
+            break;
+
+        case 'assistant_output':
+            await handleAssistantOutput(message.data);
+            break;
+
+        case 'spawn_thread':
+            await handleSpawnThread(ws, message.data);
+            break;
+
         default:
             console.log('Unknown message type:', message.type);
     }
@@ -366,7 +378,8 @@ async function handleRegister(ws: any, data: any): Promise<void> {
             lastHeartbeat: new Date().toISOString(),
             authorizedUsers: [tokenInfo.userId],
             cliTypes: data.cliTypes,
-            defaultWorkspace: data.defaultWorkspace
+            defaultWorkspace: data.defaultWorkspace,
+            assistantEnabled: data.assistantEnabled ?? true
         };
 
         try {
@@ -860,8 +873,8 @@ async function handleSessionDiscovered(data: any): Promise<void> {
                             console.log(`[handleSessionDiscovered] Notified existing thread ${existingByShortId.threadId} of restoration`);
                         }
                     }
-                } catch (err) {
-                    console.error(`[handleSessionDiscovered] Failed to notify existing thread:`, err);
+                } catch (error) {
+                    console.error(`[handleSessionDiscovered] Failed to notify thread:`, error);
                 }
             } else if (wasAlreadyActive) {
                 console.log(`[handleSessionDiscovered] Session ${existingByShortId.sessionId} was already active, skipping restoration notification`);
@@ -958,8 +971,279 @@ async function handleSessionDiscovered(data: any): Promise<void> {
 async function handleTerminalList(data: any): Promise<void> {
     const { runnerId, terminals } = data;
     console.log(`[handleTerminalList] Runner ${runnerId} has terminals:`, terminals);
-    // This is handled by the /terminals command response
+
+    // Find the pending request for this runner
+    const pendingRequest = botState.pendingTerminalListRequests.get(runnerId);
+    if (!pendingRequest) {
+        console.log(`[handleTerminalList] No pending request for runner ${runnerId}`);
+        return;
+    }
+
+    // Remove from pending
+    botState.pendingTerminalListRequests.delete(runnerId);
+
+    try {
+        const webhook = new WebhookClient({
+            id: pendingRequest.applicationId,
+            token: pendingRequest.interactionToken
+        });
+
+        if (!terminals || terminals.length === 0) {
+            await webhook.editMessage('@original', {
+                content: `📺 **Terminal List for \`${pendingRequest.runnerName}\`**\n\nNo active terminals found.`
+            });
+        } else {
+            const terminalList = terminals.map((t: string) => `• \`${t}\``).join('\n');
+            await webhook.editMessage('@original', {
+                content: `📺 **Terminal List for \`${pendingRequest.runnerName}\`**\n\n${terminalList}\n\n_Use \`/watch session:<name>\` to connect to a terminal._`
+            });
+        }
+
+        console.log(`[handleTerminalList] Updated response for runner ${runnerId}`);
+    } catch (error) {
+        console.error(`[handleTerminalList] Failed to update response:`, error);
+    }
+}
+
+/**
+ * Handle discord actions triggered from CLI skills
+ */
+async function handleDiscordAction(data: any): Promise<void> {
+    const { action, sessionId, content, name, description } = data;
+    console.log(`[DiscordAction] Received action ${action} for session ${sessionId}`);
+
+    const session = storage.getSession(sessionId);
+    if (!session) {
+        console.error(`[DiscordAction] Session not found: ${sessionId}`);
+        return;
+    }
+
+    const thread = await botState.client.channels.fetch(session.threadId);
+    if (!thread || !('send' in thread)) {
+        console.error(`[DiscordAction] Thread not found or invalid: ${session.threadId}`);
+        return;
+    }
+
+    try {
+        if (action === 'send_message') {
+            const { embeds } = data;
+            await thread.send({ content, embeds });
+        } else if (action === 'update_channel') {
+            // Update thread name
+            if (name) {
+                // Thread names must be 1-100 chars
+                const safeName = name.substring(0, 100);
+                if ('setName' in thread) {
+                    await (thread as any).setName(safeName);
+                }
+            }
+            // Update thread description (send as message)
+            if (description) {
+                await thread.send({
+                    embeds: [{
+                        title: 'Session Goal Update',
+                        description: description,
+                        color: 0x3498db
+                    }]
+                });
+            }
+        }
+    } catch (error) {
+        console.error(`[DiscordAction] Failed to execute action ${action}:`, error);
+        await thread.send({
+            content: `⚠️ Failed to execute skill action: ${error instanceof Error ? error.message : String(error)}`
+        });
+    }
+}
+
+/**
+ * Handle assistant output from runner
+ * Displays CLI output in the runner's main channel
+ */
+async function handleAssistantOutput(data: any): Promise<void> {
+    const { runnerId, content, outputType, timestamp } = data;
+
+    const runner = storage.getRunner(runnerId);
+    if (!runner || !runner.privateChannelId) {
+        console.error(`[AssistantOutput] Runner not found or no private channel: ${runnerId}`);
+        return;
+    }
+
+    const channel = await botState.client.channels.fetch(runner.privateChannelId);
+    if (!channel || !('send' in channel)) {
+        console.error(`[AssistantOutput] Channel not found or invalid: ${runner.privateChannelId}`);
+        return;
+    }
+
+    const now = Date.now();
+    const STREAMING_TIMEOUT = 10000;
+
+    const streaming = botState.assistantStreamingMessages.get(runnerId);
+    const shouldStream = streaming &&
+        (now - streaming.lastUpdateTime) < STREAMING_TIMEOUT &&
+        streaming.outputType === (outputType || 'stdout');
+
+    // Create embed for output
+    const embed = createOutputEmbed(outputType || 'stdout', content);
+
+    if (shouldStream) {
+        try {
+            // Edit the existing streaming message
+            const message = await (channel as any).messages.fetch(streaming.messageId);
+            await message.edit({ embeds: [embed] });
+
+            botState.assistantStreamingMessages.set(runnerId, {
+                messageId: streaming.messageId,
+                lastUpdateTime: now,
+                content: content,
+                outputType: outputType || 'stdout'
+            });
+        } catch (error) {
+            // If editing fails, send a new message
+            console.error('[AssistantOutput] Error editing message:', error);
+            const newMessage = await channel.send({ embeds: [embed] });
+            botState.assistantStreamingMessages.set(runnerId, {
+                messageId: newMessage.id,
+                lastUpdateTime: now,
+                content: content,
+                outputType: outputType || 'stdout'
+            });
+        }
+    } else {
+        // Send a new message
+        const sentMessage = await channel.send({ embeds: [embed] });
+        botState.assistantStreamingMessages.set(runnerId, {
+            messageId: sentMessage.id,
+            lastUpdateTime: now,
+            content: content,
+            outputType: outputType || 'stdout'
+        });
+    }
+}
+
+/**
+ * Handle spawn thread request from assistant
+ * Creates a new session and Discord thread
+ */
+async function handleSpawnThread(ws: any, data: any): Promise<void> {
+    const { runnerId, folder, cliType, initialMessage } = data;
+
+    console.log(`[SpawnThread] Received request from runner ${runnerId}`);
+    console.log(`[SpawnThread] Folder: ${folder}, CLI: ${cliType}`);
+
+    const runner = storage.getRunner(runnerId);
+    if (!runner) {
+        console.error(`[SpawnThread] Unknown runner: ${runnerId}`);
+        return;
+    }
+
+    if (!runner.privateChannelId) {
+        console.error(`[SpawnThread] Runner has no private channel: ${runnerId}`);
+        return;
+    }
+
+    // Determine CLI type
+    let resolvedCliType: 'claude' | 'gemini' =
+        cliType === 'auto' || !cliType
+            ? runner.cliTypes[0]
+            : cliType;
+
+    if (!runner.cliTypes.includes(resolvedCliType)) {
+        console.error(`[SpawnThread] CLI type '${resolvedCliType}' not available on runner`);
+        resolvedCliType = runner.cliTypes[0];
+    }
+
+    try {
+        // Get the private channel
+        const channel = await botState.client.channels.fetch(runner.privateChannelId);
+        if (!channel || !('threads' in channel)) {
+            console.error(`[SpawnThread] Invalid channel: ${runner.privateChannelId}`);
+            return;
+        }
+
+        // Generate session ID
+        const sessionId = `${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+
+        // Create Discord thread
+        const folderName = folder.split('/').pop() || 'project';
+        const threadName = `${resolvedCliType}-${folderName}`.substring(0, 100);
+
+        const thread = await (channel as any).threads.create({
+            name: threadName,
+            autoArchiveDuration: 1440, // 24 hours
+            reason: 'Spawned by assistant'
+        });
+
+        console.log(`[SpawnThread] Created thread ${thread.id}: ${threadName}`);
+
+        // Create session record
+        const session: Session = {
+            sessionId,
+            runnerId: runner.runnerId,
+            channelId: runner.privateChannelId,
+            threadId: thread.id,
+            createdAt: new Date().toISOString(),
+            status: 'active',
+            cliType: resolvedCliType,
+            folderPath: folder,
+            creatorId: runner.ownerId
+        };
+
+        storage.createSession(session);
+
+        // Send session_start to runner
+        ws.send(JSON.stringify({
+            type: 'session_start',
+            data: {
+                sessionId,
+                runnerId: runner.runnerId,
+                cliType: resolvedCliType,
+                plugin: 'tmux',
+                folderPath: folder,
+                create: true
+            }
+        }));
+
+        // Send initial message if provided
+        if (initialMessage) {
+            // Wait a bit for the session to start
+            setTimeout(() => {
+                ws.send(JSON.stringify({
+                    type: 'user_message',
+                    data: {
+                        sessionId,
+                        userId: 'assistant',
+                        username: 'Assistant',
+                        content: initialMessage,
+                        timestamp: new Date().toISOString()
+                    }
+                }));
+            }, 2000);
+        }
+
+        // Notify in the thread
+        await thread.send({
+            embeds: [{
+                color: 0x00FF00,
+                title: '🧵 Thread Spawned by Assistant',
+                description: `The main assistant spawned this dedicated thread for:\n\`${folder}\``,
+                fields: [
+                    { name: 'CLI', value: resolvedCliType, inline: true },
+                    { name: 'Session ID', value: sessionId.slice(0, 8), inline: true }
+                ],
+                timestamp: new Date().toISOString()
+            }]
+        });
+
+        console.log(`[SpawnThread] Session ${sessionId} created successfully`);
+
+    } catch (error) {
+        console.error('[SpawnThread] Error creating thread:', error);
+    }
 }
 
 // Export action items for external access
 export { botState };
+
+
+

@@ -6,10 +6,12 @@
 
 import type { PluginSession } from '../plugins/index.js';
 import type { PendingApproval } from '../types.js';
+import type { WebSocketManager } from '../websocket.js';
 
 export interface ApprovalHandlerDeps {
     pendingApprovals: Map<string, PendingApproval>;
     cliSessions: Map<string, PluginSession>;
+    wsManager: WebSocketManager;
 }
 
 export async function handleApprovalResponse(
@@ -23,7 +25,7 @@ export async function handleApprovalResponse(
     },
     deps: ApprovalHandlerDeps
 ): Promise<void> {
-    const { pendingApprovals, cliSessions } = deps;
+    const { pendingApprovals, cliSessions, wsManager } = deps;
 
     // Flow 1: HTTP approval (legacy, for PrintPlugin)
     if (data.requestId) {
@@ -48,6 +50,18 @@ export async function handleApprovalResponse(
             try {
                 await approvalSession.sendApproval(option);
                 console.log(`[Approval] Sent option ${option} to session ${data.sessionId}`);
+
+                // Send status update to Discord - mark as 'working' since approval was handled
+                wsManager.send({
+                    type: 'status',
+                    data: {
+                        runnerId: wsManager.runnerId,
+                        sessionId: data.sessionId,
+                        status: 'working',
+                        currentTool: undefined
+                    }
+                });
+                console.log(`[Approval] Sent status update (working) for session ${data.sessionId}`);
             } catch (error) {
                 console.error(`[Approval] Failed to send option ${option} to session ${data.sessionId}:`, error);
             }

@@ -16,6 +16,7 @@ import { createWebSocketManager } from './websocket.js';
 import { createHttpServer } from './http-server.js';
 import { handleWebSocketMessage } from './handlers/index.js';
 import { wirePluginEvents } from './plugin-events.js';
+import { AssistantManager } from './assistant-manager.js';
 import type { SessionMetadata, PendingApproval, PendingMessage, CliPaths } from './types.js';
 
 // Load configuration
@@ -39,6 +40,9 @@ const wsManager = createWebSocketManager(config);
 // PluginManager instance (initialized asynchronously)
 let pluginManager = getPluginManager();
 
+// AssistantManager instance (initialized after PluginManager)
+let assistantManager: AssistantManager | null = null;
+
 // Wire WebSocket messages to handlers
 wsManager.on('message', async (message: WebSocketMessage) => {
   try {
@@ -50,7 +54,8 @@ wsManager.on('message', async (message: WebSocketMessage) => {
       sessionMetadata,
       pendingApprovals,
       pendingMessages,
-      cliPaths
+      cliPaths,
+      assistantManager
     });
   } catch (error) {
     console.error('Error handling WebSocket message:', error);
@@ -104,6 +109,18 @@ async function startup(): Promise<void> {
 
     // Wire plugin events to WebSocket
     wirePluginEvents(pluginManager, wsManager);
+
+    // Initialize AssistantManager if enabled
+    if (config.assistant.enabled) {
+      console.log('\nInitializing AssistantManager...');
+      assistantManager = new AssistantManager({
+        config,
+        wsManager,
+        pluginManager,
+        cliPaths
+      });
+      console.log(`  ✓ AssistantManager initialized (enabled: ${assistantManager.isEnabled()})`);
+    }
   } catch (error) {
     console.error(`  ✗ PluginManager initialization failed:`, error);
   }
@@ -125,6 +142,7 @@ console.log(`
 ║  Runner ID: ${wsManager.runnerId.padEnd(48)}║
 ║  Runner Name: ${config.runnerName.padEnd(44)}║
 ║  CLI Types: ${config.cliTypes.join(', ').padEnd(47)}║
+║  Assistant: ${(config.assistant.enabled ? 'Enabled' : 'Disabled').padEnd(47)}║
 ║  HTTP Server: http://localhost:${config.httpPort.toString().padEnd(39)}║
 ║  Bot WebSocket: ${config.botWsUrl.padEnd(43)}║
 ╚════════════════════════════════════════════════════════════╝
@@ -136,6 +154,12 @@ process.on('SIGINT', async () => {
 
   wsManager.close();
 
+  // Stop assistant if running
+  if (assistantManager) {
+    console.log('Stopping assistant...');
+    await assistantManager.stop();
+  }
+
   if (pluginManager) {
     console.log('Shutting down plugins...');
     await pluginManager.shutdown();
@@ -145,4 +169,12 @@ process.on('SIGINT', async () => {
     console.log('HTTP server closed');
     process.exit(0);
   });
+});
+
+// Start assistant when WebSocket connects
+wsManager.on('connected', async () => {
+  if (assistantManager && assistantManager.isEnabled() && !assistantManager.isRunning()) {
+    console.log('[AssistantManager] Starting assistant session on connect...');
+    await assistantManager.start();
+  }
 });

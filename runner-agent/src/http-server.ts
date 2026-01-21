@@ -156,7 +156,7 @@ export function createHttpServer(
                     data: {
                         requestId,
                         sessionId: approvalReq.sessionId,
-                        runnerId: approvalReq.runnerId,
+                        runnerId: wsManager.runnerId,
                         toolName: approvalReq.toolName,
                         toolInput: approvalReq.toolInput,
                         cli: approvalReq.cli,
@@ -217,8 +217,17 @@ export function createHttpServer(
         if (req.method === 'POST' && url.pathname === '/session-event') {
             try {
                 const event = await readRequestBody(req);
-                console.log(`Session event: ${event.action}`);
-                // TODO: Send to Discord bot
+                console.log(`Session event: ${event.type} - ${event.action}`);
+
+                if (event.type === 'discord_action') {
+                    wsManager.send({
+                        type: 'discord_action',
+                        data: event
+                    });
+                } else {
+                    // TODO: Other session events
+                }
+
                 sendJsonResponse(res, { success: true });
             } catch (error) {
                 console.error('Error handling session event:', error);
@@ -270,7 +279,7 @@ export function createHttpServer(
             return;
         }
 
-        // Hook event from discorde-hook.sh
+        // Hook event from discode-hook.sh
         if (req.method === 'POST' && url.pathname === '/hook') {
             try {
                 const event = await readRequestBody(req) as HookEvent;
@@ -283,6 +292,57 @@ export function createHttpServer(
                 sendJsonResponse(res, { success: true });
             } catch (error) {
                 console.error('Error handling hook event:', error);
+                sendJsonResponse(res, { error: 'Invalid request' }, 400);
+            }
+            return;
+        }
+
+        // Spawn thread request from assistant
+        if (req.method === 'POST' && url.pathname === '/spawn-thread') {
+            try {
+                const data = await readRequestBody(req);
+
+                const { folder, cliType, message } = data;
+
+                if (!folder) {
+                    sendJsonResponse(res, { error: 'folder is required' }, 400);
+                    return;
+                }
+
+                if (!wsManager.isConnected) {
+                    sendJsonResponse(res, {
+                        error: 'Not connected to Discord bot'
+                    }, 503);
+                    return;
+                }
+
+                console.log(`[SpawnThread] Spawning thread in folder: ${folder}, CLI: ${cliType || 'auto'}`);
+
+                // Send spawn_thread message to Discord bot
+                const sent = wsManager.send({
+                    type: 'spawn_thread',
+                    data: {
+                        runnerId: wsManager.runnerId,
+                        folder: folder,
+                        cliType: cliType || 'auto',
+                        initialMessage: message || undefined
+                    }
+                });
+
+                if (!sent) {
+                    sendJsonResponse(res, {
+                        error: 'Failed to send spawn request'
+                    }, 500);
+                    return;
+                }
+
+                sendJsonResponse(res, {
+                    success: true,
+                    message: 'Thread spawn request sent'
+                });
+
+            } catch (error) {
+                console.error('Error handling spawn-thread:', error);
                 sendJsonResponse(res, { error: 'Invalid request' }, 400);
             }
             return;

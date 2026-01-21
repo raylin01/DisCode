@@ -16,7 +16,7 @@ describe('loadConfigFile', () => {
   beforeEach(() => {
     vi.mock('fs');
     vi.clearAllMocks();
-    delete process.env.DISCORDE_CONFIG_PATH;
+    delete process.env.DISCODE_CONFIG_PATH;
   });
 
   it('should return empty object when file does not exist', () => {
@@ -37,8 +37,8 @@ describe('loadConfigFile', () => {
     expect(config).toEqual(testConfig);
   });
 
-  it('should read from DISCORDE_CONFIG_PATH env var', () => {
-    process.env.DISCORDE_CONFIG_PATH = '/custom/path/config.json';
+  it('should read from DISCODE_CONFIG_PATH env var', () => {
+    process.env.DISCODE_CONFIG_PATH = '/custom/path/config.json';
     vi.spyOn(fs, 'existsSync').mockReturnValue(true);
     vi.spyOn(fs, 'readFileSync').mockReturnValue('{}');
 
@@ -215,14 +215,14 @@ describe('loadConfig', () => {
 
   afterEach(() => {
     process.exit = originalExit;
-    delete process.env.DISCORDE_TOKEN;
-    delete process.env.DISCORDE_CLI_TYPES;
-    delete process.env.DISCORDE_BOT_URL;
-    delete process.env.DISCORDE_RUNNER_NAME;
-    delete process.env.DISCORDE_HTTP_PORT;
+    delete process.env.DISCODE_TOKEN;
+    delete process.env.DISCODE_CLI_TYPES;
+    delete process.env.DISCODE_BOT_URL;
+    delete process.env.DISCODE_RUNNER_NAME;
+    delete process.env.DISCODE_HTTP_PORT;
   });
 
-  it('should exit when DISCORDE_TOKEN is missing', () => {
+  it('should exit when DISCODE_TOKEN is missing', () => {
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
     loadConfig();
@@ -230,8 +230,8 @@ describe('loadConfig', () => {
     expect(process.exit).toHaveBeenCalledWith(1);
   });
 
-  it('should load token from DISCORDE_TOKEN env', () => {
-    process.env.DISCORDE_TOKEN = 'test-token-123';
+  it('should load token from DISCODE_TOKEN env', () => {
+    process.env.DISCODE_TOKEN = 'test-token-123';
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
     const config = loadConfig();
@@ -240,8 +240,8 @@ describe('loadConfig', () => {
   });
 
   it('should exit when no valid CLI types', () => {
-    process.env.DISCORDE_TOKEN = 'test-token';
-    process.env.DISCORDE_CLI_TYPES = 'invalid,another-invalid';
+    process.env.DISCODE_TOKEN = 'test-token';
+    process.env.DISCODE_CLI_TYPES = 'invalid,another-invalid';
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
     loadConfig();
@@ -250,7 +250,7 @@ describe('loadConfig', () => {
   });
 
   it('should use default botWsUrl when not specified', () => {
-    process.env.DISCORDE_TOKEN = 'test-token';
+    process.env.DISCODE_TOKEN = 'test-token';
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
     const config = loadConfig();
@@ -259,8 +259,8 @@ describe('loadConfig', () => {
   });
 
   it('should use env botWsUrl over file config', () => {
-    process.env.DISCORDE_TOKEN = 'test-token';
-    process.env.DISCORDE_BOT_URL = 'ws://env:8080';
+    process.env.DISCODE_TOKEN = 'test-token';
+    process.env.DISCODE_BOT_URL = 'ws://env:8080';
     vi.spyOn(fs, 'existsSync').mockReturnValue(true);
     vi.spyOn(fs, 'readFileSync').mockReturnValue(
       JSON.stringify({ botWsUrl: 'ws://file:8080' })
@@ -272,7 +272,7 @@ describe('loadConfig', () => {
   });
 
   it('should use default runnerName when not specified', () => {
-    process.env.DISCORDE_TOKEN = 'test-token';
+    process.env.DISCODE_TOKEN = 'test-token';
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
     const config = loadConfig();
@@ -281,8 +281,8 @@ describe('loadConfig', () => {
   });
 
   it('should use env runnerName over file config', () => {
-    process.env.DISCORDE_TOKEN = 'test-token';
-    process.env.DISCORDE_RUNNER_NAME = 'env-runner';
+    process.env.DISCODE_TOKEN = 'test-token';
+    process.env.DISCODE_RUNNER_NAME = 'env-runner';
     vi.spyOn(fs, 'existsSync').mockReturnValue(true);
     vi.spyOn(fs, 'readFileSync').mockReturnValue(
       JSON.stringify({ runnerName: 'file-runner' })
@@ -294,7 +294,7 @@ describe('loadConfig', () => {
   });
 
   it('should use default httpPort when not specified', () => {
-    process.env.DISCORDE_TOKEN = 'test-token';
+    process.env.DISCODE_TOKEN = 'test-token';
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
     const config = loadConfig();
@@ -303,8 +303,8 @@ describe('loadConfig', () => {
   });
 
   it('should parse httpPort from env', () => {
-    process.env.DISCORDE_TOKEN = 'test-token';
-    process.env.DISCORDE_HTTP_PORT = '4000';
+    process.env.DISCODE_TOKEN = 'test-token';
+    process.env.DISCODE_HTTP_PORT = '4000';
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
     const config = loadConfig();
@@ -313,8 +313,8 @@ describe('loadConfig', () => {
   });
 
   it('should parse CLI types from env', () => {
-    process.env.DISCORDE_TOKEN = 'test-token';
-    process.env.DISCORDE_CLI_TYPES = 'claude,gemini';
+    process.env.DISCODE_TOKEN = 'test-token';
+    process.env.DISCODE_CLI_TYPES = 'claude,gemini';
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
     const config = loadConfig();
@@ -323,7 +323,7 @@ describe('loadConfig', () => {
   });
 
   it('should use default heartbeatInterval', () => {
-    process.env.DISCORDE_TOKEN = 'test-token';
+    process.env.DISCODE_TOKEN = 'test-token';
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
     const config = loadConfig();
@@ -332,8 +332,8 @@ describe('loadConfig', () => {
   });
 
   it('should parse heartbeatInterval from env', () => {
-    process.env.DISCORDE_TOKEN = 'test-token';
-    process.env.DISCORDE_HEARTBEAT_INTERVAL = '60000';
+    process.env.DISCODE_TOKEN = 'test-token';
+    process.env.DISCODE_HEARTBEAT_INTERVAL = '60000';
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
     const config = loadConfig();
@@ -342,7 +342,7 @@ describe('loadConfig', () => {
   });
 
   it('should use default reconnectDelay', () => {
-    process.env.DISCORDE_TOKEN = 'test-token';
+    process.env.DISCODE_TOKEN = 'test-token';
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
     const config = loadConfig();
@@ -351,7 +351,7 @@ describe('loadConfig', () => {
   });
 
   it('should use default approvalTimeout', () => {
-    process.env.DISCORDE_TOKEN = 'test-token';
+    process.env.DISCODE_TOKEN = 'test-token';
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
     const config = loadConfig();
@@ -360,7 +360,7 @@ describe('loadConfig', () => {
   });
 
   it('should use default sessionReadyTimeout', () => {
-    process.env.DISCORDE_TOKEN = 'test-token';
+    process.env.DISCODE_TOKEN = 'test-token';
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
     const config = loadConfig();
@@ -369,7 +369,7 @@ describe('loadConfig', () => {
   });
 
   it('should have default tmux config', () => {
-    process.env.DISCORDE_TOKEN = 'test-token';
+    process.env.DISCODE_TOKEN = 'test-token';
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
     const config = loadConfig();
@@ -380,9 +380,9 @@ describe('loadConfig', () => {
     expect(config.tmux.discoveryEnabled).toBe(true);
   });
 
-  it('should disable tmux discovery when DISCORDE_TMUX_POLLING=false', () => {
-    process.env.DISCORDE_TOKEN = 'test-token';
-    process.env.DISCORDE_TMUX_POLLING = 'false';
+  it('should disable tmux discovery when DISCODE_TMUX_POLLING=false', () => {
+    process.env.DISCODE_TOKEN = 'test-token';
+    process.env.DISCODE_TMUX_POLLING = 'false';
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
     const config = loadConfig();
@@ -391,7 +391,7 @@ describe('loadConfig', () => {
   });
 
   it('should merge tmux config from file', () => {
-    process.env.DISCORDE_TOKEN = 'test-token';
+    process.env.DISCODE_TOKEN = 'test-token';
     vi.spyOn(fs, 'existsSync').mockReturnValue(true);
     vi.spyOn(fs, 'readFileSync').mockReturnValue(
       JSON.stringify({
@@ -418,13 +418,13 @@ describe('getConfig (singleton)', () => {
     vi.clearAllMocks();
     originalExit = process.exit;
     process.exit = vi.fn() as any;
-    process.env.DISCORDE_TOKEN = 'test-token';
+    process.env.DISCODE_TOKEN = 'test-token';
     resetConfig();
   });
 
   afterEach(() => {
     process.exit = originalExit;
-    delete process.env.DISCORDE_TOKEN;
+    delete process.env.DISCODE_TOKEN;
     resetConfig();
   });
 

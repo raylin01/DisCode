@@ -33,6 +33,8 @@ import {
 } from './base.js';
 import { getPluginManager } from './plugin-manager.js';
 import { getParser, type CliParser } from './parsers/index.js';
+import { SkillManager } from '../utils/skill-manager.js';
+import { getConfig } from '../config.js';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -481,8 +483,12 @@ export class TmuxPlugin extends BasePlugin {
     private sessionDiscoveryInterval?: NodeJS.Timeout;
     private discoveredSessions = new Set<string>();
 
+
+    private skillManager?: SkillManager;
+
     async initialize(): Promise<void> {
         await super.initialize();
+        this.skillManager = new SkillManager(process.cwd());
 
         // Check tmux is available
         try {
@@ -523,12 +529,12 @@ export class TmuxPlugin extends BasePlugin {
         this.startPolling();
 
         // Start session discovery if enabled (default true)
-        const pollingEnabled = process.env.DISCORDE_TMUX_POLLING !== 'false';
+        const pollingEnabled = process.env.DISCODE_TMUX_POLLING !== 'false';
         if (pollingEnabled) {
             this.log('Starting session discovery polling...');
             this.startSessionDiscovery();
         } else {
-            this.log('Session discovery polling disabled via DISCORDE_TMUX_POLLING=false');
+            this.log('Session discovery polling disabled via DISCODE_TMUX_POLLING=false');
         }
 
         // Listen for hook events via PluginManager
@@ -733,8 +739,26 @@ export class TmuxPlugin extends BasePlugin {
 
         this.log(`Creating ${config.cliType} session: ${tmuxSession} with cmd: ${cliCmd}`);
 
+        // Install skills
+        if (this.skillManager) {
+            const cliType = config.cliType === 'gemini' ? 'gemini' : 'claude';
+            await this.skillManager.installSkills(config.cwd, cliType);
+        }
+
+        // Env vars to inject
+        const envVars = {
+            DISCODE_SESSION_ID: config.sessionId,
+            DISCODE_HTTP_PORT: getConfig().httpPort.toString(),
+            DISCODE_RUNNER_ID: process.env.DISCODE_RUNNER_NAME || 'local-runner',
+            ...config.options?.env
+        };
+
+        const envString = Object.entries(envVars)
+            .map(([k, v]) => `${k}='${v}'`)
+            .join(' ');
+
         // Wrap command in shell to keep pane open on failure for debugging
-        const safeCmd = `bash -c "${cliCmd.replace(/"/g, '\\"')} || (echo 'Command failed with exit code $?'; echo 'Keeping pane open for debugging...'; sleep 60)"`;
+        const safeCmd = `bash -c "export ${envString}; ${cliCmd.replace(/"/g, '\\"')} || (echo 'Command failed with exit code $?'; echo 'Keeping pane open for debugging...'; sleep 60)"`;
 
         // Create tmux session
         await execFileAsync(this.tmuxPath, [
@@ -817,6 +841,25 @@ export class TmuxPlugin extends BasePlugin {
                 status: 'waiting',
                 currentTool: event.tool
             });
+        }
+
+        // Handle UserPrompt (Stop hook) - detection of idle state
+        if (event.type === 'UserPrompt' || event.type === 'user_prompt') {
+            this.log(`[Hook] UserPrompt event received (Stop signal)`);
+            const tmuxSession = (session as TmuxSession);
+
+            tmuxSession.status = 'idle';
+            tmuxSession.currentTool = undefined;
+            tmuxSession.currentActivity = undefined; // Clear activity
+            tmuxSession.lastHookEvent = Date.now();
+
+            this.emit('status', {
+                sessionId: session.sessionId,
+                status: 'idle'
+            });
+
+            // Force immediate poll to capture the prompt text
+            this.pollSession(tmuxSession).catch(e => console.error(e));
         }
     }
 

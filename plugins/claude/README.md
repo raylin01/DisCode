@@ -51,7 +51,7 @@ Set these to customize plugin behavior:
 
 ```bash
 # Default: http://localhost:3000
-export DISCORDE_RUNNER_URL="http://localhost:3000"
+export DISCODE_RUNNER_URL="http://localhost:3000"
 ```
 
 ## Testing the Plugin
@@ -267,7 +267,7 @@ The hook must respond with this JSON structure via stdout:
 
 3. Try setting custom URL:
    ```bash
-   export DISCORDE_RUNNER_URL="http://localhost:3001"
+   export DISCODE_RUNNER_URL="http://localhost:3001"
    ```
 
 ### Hook times out?

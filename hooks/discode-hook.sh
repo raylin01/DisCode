@@ -6,7 +6,7 @@
 # 2. Transforms it into our event format (optional, we mostly pass raw)
 # 3. Notifies the local Runner Agent via HTTP
 #
-# Installed to: ~/.discorde/hooks/discorde-hook.sh
+# Installed to: ~/.discode/hooks/discode-hook.sh
 
 set -e
 
@@ -14,7 +14,7 @@ set -e
 # Configuration
 # =============================================================================
 
-HOOK_SERVER_URL="${DISCORDE_HOOK_URL:-http://localhost:3122/hook}"
+HOOK_SERVER_URL="${DISCODE_HOOK_URL:-http://localhost:3122/hook}"
 # Use curl or wget
 CURL="curl"
 if ! command -v curl &> /dev/null; then
@@ -34,8 +34,8 @@ fi
 input=$(cat)
 
 # DEBUG: Log to file
-echo "[$(date)] Hook triggered" >> /tmp/discorde-hook.log
-# echo "$input" >> /tmp/discorde-hook.log
+echo "[$(date)] Hook triggered" >> /tmp/discode-hook.log
+# echo "$input" >> /tmp/discode-hook.log
 
 # fire and forget to the server so we don't block Claude
 if [ "$CURL" = "curl" ]; then
@@ -44,7 +44,7 @@ if [ "$CURL" = "curl" ]; then
         -d "$input" \
         --connect-timeout 1 \
         --max-time 2 \
-        >> /tmp/discorde-hook.log 2>&1 &
+        >> /tmp/discode-hook.log 2>&1 &
 else
     # wget version
     wget -qO- --post-data="$input" \

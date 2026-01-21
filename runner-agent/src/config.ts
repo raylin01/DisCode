@@ -2,10 +2,10 @@
  * Runner Agent Configuration
  * 
  * Loads configuration from:
- * 1. Config file (./config.json or DISCORDE_CONFIG_PATH)
+ * 1. Config file (./config.json or DISCODE_CONFIG_PATH)
  * 2. Environment variables (override file values)
  * 
- * Secrets (DISCORDE_TOKEN) must always be in environment.
+ * Secrets (DISCODE_TOKEN) must always be in environment.
  */
 
 import fs from 'fs';
@@ -17,6 +17,12 @@ export interface TmuxConfig {
     healthCheckInterval: number;
     sessionDiscoveryInterval: number;
     discoveryEnabled: boolean;
+}
+
+export interface AssistantConfig {
+    enabled: boolean;           // Whether assistant is enabled (default: true if cliTypes has entries)
+    folder?: string;            // Working folder for assistant (default: defaultWorkspace)
+    plugin: 'tmux' | 'print';   // Plugin to use for assistant session
 }
 
 export interface RunnerConfig {
@@ -39,6 +45,9 @@ export interface RunnerConfig {
 
     // Tmux settings
     tmux: TmuxConfig;
+
+    // Assistant settings
+    assistant: AssistantConfig;
 }
 
 interface FileConfig {
@@ -53,10 +62,11 @@ interface FileConfig {
     sessionReadyTimeout?: number;
     cliSearchPaths?: string[];
     tmux?: Partial<TmuxConfig>;
+    assistant?: Partial<AssistantConfig>;
 }
 
 export function loadConfigFile(): FileConfig {
-    const configPath = process.env.DISCORDE_CONFIG_PATH || './config.json';
+    const configPath = process.env.DISCODE_CONFIG_PATH || './config.json';
 
     try {
         if (fs.existsSync(configPath)) {
@@ -110,15 +120,15 @@ export function loadConfig(): RunnerConfig {
     const fileConfig = loadConfigFile();
 
     // Token is always from env (security)
-    const token = process.env.DISCORDE_TOKEN;
+    const token = process.env.DISCODE_TOKEN;
     if (!token) {
-        console.error('Missing DISCORDE_TOKEN environment variable');
+        console.error('Missing DISCODE_TOKEN environment variable');
         process.exit(1);
     }
 
     // CLI types - env overrides file
     const cliTypes = parseCliTypes(
-        process.env.DISCORDE_CLI_TYPES || fileConfig.cliTypes
+        process.env.DISCODE_CLI_TYPES || fileConfig.cliTypes
     );
 
     if (cliTypes.length === 0) {
@@ -140,45 +150,54 @@ export function loadConfig(): RunnerConfig {
     };
 
     // Override tmux discovery from env if set
-    if (process.env.DISCORDE_TMUX_POLLING === 'false') {
+    if (process.env.DISCODE_TMUX_POLLING === 'false') {
         tmuxConfig.discoveryEnabled = false;
     }
 
     return {
         // Core - env overrides file
-        botWsUrl: process.env.DISCORDE_BOT_URL || fileConfig.botWsUrl || 'ws://localhost:8080',
+        botWsUrl: process.env.DISCODE_BOT_URL || fileConfig.botWsUrl || 'ws://localhost:8080',
         token,
-        runnerName: process.env.DISCORDE_RUNNER_NAME || fileConfig.runnerName || 'local-runner',
-        httpPort: parseInt(process.env.DISCORDE_HTTP_PORT || String(fileConfig.httpPort || 3122)),
-        defaultWorkspace: process.env.DISCORDE_DEFAULT_WORKSPACE || fileConfig.defaultWorkspace,
+        runnerName: process.env.DISCODE_RUNNER_NAME || fileConfig.runnerName || 'local-runner',
+        httpPort: parseInt(process.env.DISCODE_HTTP_PORT || String(fileConfig.httpPort || 3122)),
+        defaultWorkspace: process.env.DISCODE_DEFAULT_WORKSPACE || fileConfig.defaultWorkspace,
         cliTypes,
 
         // Timing - env overrides file
         heartbeatInterval: parseInt(
-            process.env.DISCORDE_HEARTBEAT_INTERVAL ||
+            process.env.DISCODE_HEARTBEAT_INTERVAL ||
             String(fileConfig.heartbeatInterval || 30000)
         ),
         reconnectDelay: parseInt(
-            process.env.DISCORDE_RECONNECT_DELAY ||
+            process.env.DISCODE_RECONNECT_DELAY ||
             String(fileConfig.reconnectDelay || 5000)
         ),
         approvalTimeout: parseInt(
-            process.env.DISCORDE_APPROVAL_TIMEOUT ||
+            process.env.DISCODE_APPROVAL_TIMEOUT ||
             String(fileConfig.approvalTimeout || 30000)
         ),
         sessionReadyTimeout: parseInt(
-            process.env.DISCORDE_SESSION_READY_TIMEOUT ||
+            process.env.DISCODE_SESSION_READY_TIMEOUT ||
             String(fileConfig.sessionReadyTimeout || 10000)
         ),
 
         // CLI search paths
         cliSearchPaths: parseSearchPaths(
-            process.env.DISCORDE_CLI_SEARCH_PATHS,
+            process.env.DISCODE_CLI_SEARCH_PATHS,
             fileConfig.cliSearchPaths
         ),
 
         // Tmux config
         tmux: tmuxConfig,
+
+        // Assistant config
+        assistant: {
+            enabled: process.env.DISCODE_ASSISTANT_ENABLED !== 'false' &&
+                (fileConfig.assistant?.enabled !== false) &&
+                cliTypes.length > 0,
+            folder: process.env.DISCODE_ASSISTANT_FOLDER || fileConfig.assistant?.folder,
+            plugin: (fileConfig.assistant?.plugin as 'tmux' | 'print') || 'tmux',
+        },
     };
 }
 

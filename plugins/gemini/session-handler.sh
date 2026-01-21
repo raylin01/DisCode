@@ -32,7 +32,7 @@ EOF
 )
 
 # Get runner agent URL
-RUNNER_AGENT_URL="${DISCORDE_RUNNER_URL:-http://localhost:3122}"
+RUNNER_AGENT_URL="${DISCODE_RUNNER_URL:-http://localhost:3122}"
 
 # Send session event to runner agent (fire and forget)
 curl -s -X POST \

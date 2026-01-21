@@ -37,7 +37,7 @@ const event = {
 };
 
 // Get runner agent URL from environment or use default
-const RUNNER_AGENT_URL = process.env.DISCORDE_RUNNER_URL || 'http://localhost:3122';
+const RUNNER_AGENT_URL = process.env.DISCODE_RUNNER_URL || 'http://localhost:3122';
 
 // Send session event to runner agent
 async function sendSessionEvent() {

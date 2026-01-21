@@ -93,8 +93,8 @@ Plugins also send session start/end events to track usage.
 
 Plugins use the following environment variables:
 
-- `DISCORDE_RUNNER_URL` - Runner Agent URL (default: `http://localhost:3122`)
-- `DISCORDE_RUNNER_ID` - Runner ID (optional, for multi-runner setups)
+- `DISCODE_RUNNER_URL` - Runner Agent URL (default: `http://localhost:3122`)
+- `DISCODE_RUNNER_ID` - Runner ID (optional, for multi-runner setups)
 
 ## Troubleshooting
 

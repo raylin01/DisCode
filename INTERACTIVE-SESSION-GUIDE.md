@@ -145,7 +145,7 @@ To set a default working directory for sessions, configure it in your Runner Age
 **Option 1: Environment Variable (Future)**
 ```bash
 # In runner-agent/.env
-DISCORDE_DEFAULT_WORKSPACE=/Users/yourname/projects
+DISCODE_DEFAULT_WORKSPACE=/Users/yourname/projects
 ```
 
 **Option 2: Per-Session (Current)**
@@ -196,18 +196,18 @@ Bot: Shows runners (fresh start)
 ### 1. Use Descriptive Runner Names
 ```bash
 # Good
-DISCORDE_RUNNER_NAME=production-macbook
-DISCORDE_RUNNER_NAME=testing-pc
+DISCODE_RUNNER_NAME=production-macbook
+DISCODE_RUNNER_NAME=testing-pc
 
 # Avoid
-DISCORDE_RUNNER_NAME=runner1
-DISCORDE_RUNNER_NAME=abc
+DISCODE_RUNNER_NAME=runner1
+DISCODE_RUNNER_NAME=abc
 ```
 
 ### 2. Configure CLI Types Upfront
 ```bash
 # Set all CLI types you'll use
-DISCORDE_CLI_TYPES=claude,gemini
+DISCODE_CLI_TYPES=claude,gemini
 ```
 
 ### 3. Check Runner Status First
@@ -248,7 +248,7 @@ DISCORDE_CLI_TYPES=claude,gemini
 **Problem:** Runner shows wrong CLI types
 
 **Solutions:**
-- Restart Runner Agent with correct `DISCORDE_CLI_TYPES`
+- Restart Runner Agent with correct `DISCODE_CLI_TYPES`
 - Wait 30 seconds for heartbeat
 - Runner will auto-update in Discord bot
 
