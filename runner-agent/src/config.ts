@@ -55,7 +55,7 @@ interface FileConfig {
     tmux?: Partial<TmuxConfig>;
 }
 
-function loadConfigFile(): FileConfig {
+export function loadConfigFile(): FileConfig {
     const configPath = process.env.DISCORDE_CONFIG_PATH || './config.json';
 
     try {
@@ -72,7 +72,7 @@ function loadConfigFile(): FileConfig {
     return {};
 }
 
-function parseCliTypes(input: string | string[] | undefined): ('claude' | 'gemini')[] {
+export function parseCliTypes(input: string | string[] | undefined): ('claude' | 'gemini')[] {
     if (!input) return ['claude'];
 
     const arr = Array.isArray(input) ? input : input.split(',');
@@ -83,7 +83,7 @@ function parseCliTypes(input: string | string[] | undefined): ('claude' | 'gemin
         );
 }
 
-function parseSearchPaths(envInput: string | undefined, fileInput: string[] | undefined): string[] {
+export function parseSearchPaths(envInput: string | undefined, fileInput: string[] | undefined): string[] {
     const defaultPaths = [
         `${os.homedir()}/.local/bin`,
         '/usr/local/bin',
@@ -190,4 +190,9 @@ export function getConfig(): RunnerConfig {
         configInstance = loadConfig();
     }
     return configInstance;
+}
+
+// Reset config singleton (for testing)
+export function resetConfig(): void {
+    configInstance = null;
 }
