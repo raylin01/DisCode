@@ -7,7 +7,10 @@
     "start": "bun run src/index.ts",
     "start:node18": "./start-node18.sh",
     "dev": "bun run --watch src/index.ts",
-    "setup-hooks": "node scripts/install-hooks.js"
+    "setup-hooks": "node scripts/install-hooks.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "bun-pty": "^0.4.8",
@@ -20,7 +23,9 @@
     "@types/bun": "^1.3.6",
     "@types/node": "^22.10.2",
     "@types/ws": "^8.5.13",
+    "@vitest/coverage-v8": "^1.6.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^1.6.0"
   }
 }
