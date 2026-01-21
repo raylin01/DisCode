@@ -28,6 +28,7 @@ import {
   handleWatch,
   handleUnwatch,
   handleInterrupt,
+  handleAssistantCommand,
 } from './handlers/index.js';
 
 // Load configuration
@@ -128,6 +129,10 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
         await handleInterrupt(interaction, userId);
         break;
 
+      case 'assistant':
+        await handleAssistantCommand(interaction, userId);
+        break;
+
       default:
         await interaction.reply({
           content: 'Unknown command',
@@ -197,13 +202,18 @@ botState.client.on(Events.MessageCreate, async (message) => {
 
   // Handle main channel messages for assistant (new logic)
   // Check if assistant mode is 'all' (forward all messages) vs 'command' (only /assistant)
+  console.log(`[MessageCreate] Main channel check - channel.id: ${message.channel.id}, mode: ${config.assistant.mode}`);
   if (config.assistant.mode !== 'all') return;
 
   // Check if this is a runner's private channel
   const allRunners = Object.values(storage.data.runners);
   const runner = allRunners.find(r => r.privateChannelId === message.channel.id && r.status === 'online');
 
-  if (!runner) return;
+  if (!runner) {
+    console.log(`[MessageCreate] No online runner found with privateChannelId: ${message.channel.id}`);
+    console.log(`[MessageCreate] Available runners:`, allRunners.map(r => ({ id: r.runnerId, channelId: r.privateChannelId, status: r.status })));
+    return;
+  }
 
   // Check if user has access to this runner
   if (!storage.canUserAccessRunner(message.author.id, runner.runnerId)) {
@@ -211,7 +221,10 @@ botState.client.on(Events.MessageCreate, async (message) => {
   }
 
   // Check if assistant is enabled for this runner
-  if (!runner.assistantEnabled) return;
+  if (!runner.assistantEnabled) {
+    console.log(`[MessageCreate] Assistant not enabled for runner ${runner.runnerId}`);
+    return;
+  }
 
   // Get the WebSocket connection for this runner
   const ws = botState.runnerConnections.get(runner.runnerId);
@@ -389,6 +402,20 @@ async function registerCommands(): Promise<void> {
       .addStringOption(option =>
         option.setName('session')
           .setDescription('Session ID (optional - auto-detects from current thread)')
+          .setRequired(false)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('assistant')
+      .setDescription('Send a message to the runner assistant')
+      .addStringOption(option =>
+        option.setName('message')
+          .setDescription('Message to send to the assistant')
+          .setRequired(true)
+      )
+      .addStringOption(option =>
+        option.setName('runner')
+          .setDescription('Runner ID (optional - uses current channel runner)')
           .setRequired(false)
       )
   ];

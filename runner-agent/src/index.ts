@@ -128,11 +128,10 @@ async function startup(): Promise<void> {
   console.log('');
 }
 
-// Start everything
-startup();
-
-// Connect to Discord bot
-wsManager.connect();
+// Start everything, then connect to Discord bot
+startup().then(() => {
+  wsManager.connect();
+});
 
 // Startup banner
 console.log(`

@@ -17,7 +17,7 @@ When users ask for something **specific to a folder or project**, you should:
 
 2. **Spawn a dedicated thread** for the folder:
    ```bash
-   spawn-thread.sh "<folder>" "auto" "<initial_task>"
+   /path/to/bin/spawn-thread.sh "<folder>" "auto" "<initial_task>"
    ```
 
 3. **Inform the user** that the thread has been created
@@ -43,10 +43,10 @@ Keep the conversation here when:
 **User**: "Clone https://github.com/user/project and open claude in it"
 ```bash
 git clone https://github.com/user/project ~/projects/project
-spawn-thread.sh ~/projects/project "claude" "I'm ready to explore this project. What would you like to do?"
+/path/to/bin/spawn-thread.sh ~/projects/project "claude" "I'm ready to explore this project. What would you like to do?"
 ```
 
 **User**: "Can you help me debug my app in ~/myapp?"
 ```bash
-spawn-thread.sh ~/myapp "auto" "Let me help debug your app. What issue are you experiencing?"
+/path/to/bin/spawn-thread.sh ~/myapp "auto" "Let me help debug your app. What issue are you experiencing?"
 ```

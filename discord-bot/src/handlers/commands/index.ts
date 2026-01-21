@@ -35,3 +35,7 @@ export {
 
 // Interrupt command
 export { handleInterrupt } from './interrupt.js';
+
+// Assistant command
+export { handleAssistantCommand } from './assistant.js';
+

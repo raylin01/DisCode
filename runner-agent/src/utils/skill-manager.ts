@@ -13,89 +13,130 @@ export class SkillManager {
     /**
      * Installs skills into the session's workspace
      */
-    async installSkills(cwd: string, cliType: 'claude' | 'gemini'): Promise<void> {
-        const skillName = 'discord-integration';
-        const sourcePath = path.join(this.runnerRoot, 'resources', 'skills', skillName);
-
-        // Target path depends on CLI type
-        const skillDirName = cliType === 'claude' ? '.claude' : '.gemini';
-        const targetPath = path.join(cwd, skillDirName, 'skills', skillName);
+    /**
+     * Installs skills into the session's workspace
+     */
+    async installSkills(cwd: string, cliType: 'claude' | 'gemini', excludedSkills: string[] = []): Promise<void> {
+        const skillsRoot = path.join(this.runnerRoot, 'resources', 'skills');
 
         try {
-            // Check if source exists
-            await fs.access(sourcePath);
+            const skillDirs = await fs.readdir(skillsRoot);
 
-            // Create target directory
-            await fs.mkdir(targetPath, { recursive: true });
+            for (const skillName of skillDirs) {
+                // Skip excluded skills
+                if (excludedSkills.includes(skillName)) {
+                    console.log(`[SkillManager] Skipping excluded skill: ${skillName}`);
+                    continue;
+                }
 
-            // Copy SKILL.md
-            await fs.copyFile(
-                path.join(sourcePath, 'SKILL.md'),
-                path.join(targetPath, 'SKILL.md')
-            );
+                const sourcePath = path.join(skillsRoot, skillName);
 
-            // Copy bin directory
-            const sourceBin = path.join(sourcePath, 'bin');
-            const targetBin = path.join(targetPath, 'bin');
-            await fs.mkdir(targetBin, { recursive: true });
+                // Skip if not a directory
+                const stats = await fs.stat(sourcePath);
+                if (!stats.isDirectory()) continue;
 
-            const scripts = await fs.readdir(sourceBin);
-            for (const script of scripts) {
-                const srcFile = path.join(sourceBin, script);
-                const destFile = path.join(targetBin, script);
-                await fs.copyFile(srcFile, destFile);
+                // Target path depends on CLI type
+                const skillDirName = cliType === 'claude' ? '.claude' : '.gemini';
+                const targetPath = path.join(cwd, skillDirName, 'skills', skillName);
 
-                // Make executable
-                await fs.chmod(destFile, 0o755);
-            }
-
-            // Update SKILL.md to point to absolute paths? 
-            // Better to use relative paths if possible, but the skill definition might need absolute paths 
-            // if the tool execution context is weird.
-            // For now, let's assume the user/AI runs the script from the bin folder or we update SKILL.md content.
-            // Actually, the SKILL.md I wrote uses /path/to/bin generic path. I should probably replace it 
-            // with the actual path in the copied file so the AI knows exactly what to run.
-
-            // Copy instruction files
-            // CLAUDE.md should go to the session root or .claude/
-            // GEMINI.md should go to session root or .gemini/
-
-            const instructionFile = cliType === 'claude' ? 'CLAUDE.md' : 'GEMINI.md';
-            const sourceInstruction = path.join(sourcePath, instructionFile);
-
-            // We'll place it in the session root (cwd) so it's picked up by the CLI immediately
-            // But checking if it exists first to avoid overwriting user's own file?
-            // User requested proactive behavior, so we might want to prioritize it or append.
-            // For now, let's copy it to the .claude/.gemini root to avoid polluting the actual project root too much,
-            // but for CLAUDE.md it usually looks in current dir.
-
-            // Actually, best place is CWD/CLAUDE.md or CWD/.gemini/GEMINI.md
-            // Let's put it in the hidden folder to strictly associate it with this session context if possible
-            // OR put it in the skill directory and referenced?
-            // "The CLAUDE.md file... automatically loading context... Place in ~/.claude or root of project."
-
-            const targetInstruction = path.join(cwd, instructionFile);
-            try {
-                // simple check to avoid overwriting existing project configuration
-                await fs.access(targetInstruction);
-                console.log(`[SkillManager] ${instructionFile} already exists in ${cwd}, skipping overwrite.`);
-            } catch {
                 try {
-                    await fs.copyFile(sourceInstruction, targetInstruction);
-                    console.log(`[SkillManager] Copied ${instructionFile} to ${cwd}`);
-                } catch (copyErr) {
-                    console.warn(`[SkillManager] Failed to copy instruction file:`, copyErr);
+                    // Create target directory
+                    await fs.mkdir(targetPath, { recursive: true });
+
+                    // Copy SKILL.md
+                    if (await this.fileExists(path.join(sourcePath, 'SKILL.md'))) {
+                        // Read, replace bin path, and write
+                        let skillContent = await fs.readFile(path.join(sourcePath, 'SKILL.md'), 'utf8');
+
+                        // Setup bin path for this skill
+                        const targetBin = path.join(targetPath, 'bin');
+
+                        // Replace generic placeholder with actual path
+                        skillContent = skillContent.replace(/\/path\/to\/bin/g, targetBin);
+
+                        await fs.writeFile(path.join(targetPath, 'SKILL.md'), skillContent);
+                    }
+
+                    // Copy bin directory (scripts)
+                    const sourceBin = path.join(sourcePath, 'bin');
+                    if (await this.directoryExists(sourceBin)) {
+                        const targetBin = path.join(targetPath, 'bin');
+                        await fs.mkdir(targetBin, { recursive: true });
+
+                        const scripts = await fs.readdir(sourceBin);
+                        for (const script of scripts) {
+                            const srcFile = path.join(sourceBin, script);
+                            const destFile = path.join(targetBin, script);
+                            await fs.copyFile(srcFile, destFile);
+
+                            // Make executable
+                            await fs.chmod(destFile, 0o755);
+                        }
+                    }
+
+                    // Copy instruction files (CLAUDE.md / GEMINI.md)
+                    // Logic: If there is an ASSISTANT.md and we are installing for an assistant session...
+                    // But here we don't know if it's an assistant session.
+                    // We can check if 'thread-spawning' skill has special handling?
+                    // Actually, the excludedSkills logic handles the "which skills" part.
+                    // The "which instructions" part is tricky.
+                    // For now, let's just stick to copying CLAUDE.md/GEMINI.md if present.
+                    // But wait, thread-spawning/ASSISTANT.md was part of the plan.
+
+                    const instructionFile = cliType === 'claude' ? 'CLAUDE.md' : 'GEMINI.md';
+                    const sourceInstruction = path.join(sourcePath, instructionFile);
+
+                    if (await this.fileExists(sourceInstruction)) {
+                        const targetInstruction = path.join(cwd, instructionFile);
+                        try {
+                            await fs.access(targetInstruction);
+                            // console.log(`[SkillManager] ${instructionFile} already exists in ${cwd}, skipping.`);
+                        } catch {
+                            try {
+                                await fs.copyFile(sourceInstruction, targetInstruction);
+                                console.log(`[SkillManager] Copied ${instructionFile} for ${skillName}`);
+                            } catch (copyErr) {
+                                console.warn(`[SkillManager] Failed to copy instruction file:`, copyErr);
+                            }
+                        }
+                    }
+
+                    // Special handling for ASSISTANT.md (if this is the thread-spawning skill)
+                    // If we see ASSISTANT.md, should we append it to CLAUDE.md?
+                    // Or let the system prompt handle it?
+                    // The plan said "Special instructions ONLY for the main assistant session".
+                    // The assistant session WILL have 'thread-spawning' skill.
+                    // So we can copy ASSISTANT.md content into CLAUDE.md if it exists?
+                    // NO, let's keep it simple for now and rely on SKILL.md being enough.
+                    // The implementation plan had ASSISTANT.md but I haven't implemented logic to use it yet.
+
+                    console.log(`[SkillManager] Installed ${skillName} skill`);
+
+                } catch (error) {
+                    console.error(`[SkillManager] Failed to install skill ${skillName}:`, error);
                 }
             }
 
-            let skillContent = await fs.readFile(path.join(targetPath, 'SKILL.md'), 'utf8');
-            skillContent = skillContent.replace(/\/path\/to\/bin/g, targetBin);
-            await fs.writeFile(path.join(targetPath, 'SKILL.md'), skillContent);
-
-            console.log(`[SkillManager] Installed ${skillName} skill to ${targetPath}`);
-
         } catch (error) {
             console.error(`[SkillManager] Failed to install skills:`, error);
+        }
+    }
+
+    private async fileExists(path: string): Promise<boolean> {
+        try {
+            await fs.access(path);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    private async directoryExists(path: string): Promise<boolean> {
+        try {
+            const stats = await fs.stat(path);
+            return stats.isDirectory();
+        } catch {
+            return false;
         }
     }
 }

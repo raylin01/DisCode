@@ -66,7 +66,8 @@ export async function handleWebSocketMessage(
             await handleApprovalResponse(message.data as any, {
                 pendingApprovals: deps.pendingApprovals,
                 cliSessions: deps.cliSessions,
-                wsManager: deps.wsManager
+                wsManager: deps.wsManager,
+                assistantManager: deps.assistantManager
             });
             break;
         }

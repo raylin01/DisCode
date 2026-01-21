@@ -1,0 +1,27 @@
+{
+  "_comment": "DisCode Runner Agent Configuration - Copy to config.json and customize",
+  
+  "botWsUrl": "ws://localhost:8080",
+  "runnerName": "my-macbook-pro",
+  "httpPort": 3122,
+  "cliTypes": ["claude"],
+  
+  "heartbeatInterval": 30000,
+  "reconnectDelay": 5000,
+  "approvalTimeout": 30000,
+  "sessionReadyTimeout": 2000,
+  
+  "cliSearchPaths": [],
+  
+  "tmux": {
+    "pollInterval": 1000,
+    "healthCheckInterval": 5000,
+    "sessionDiscoveryInterval": 5000,
+    "discoveryEnabled": true
+  },
+
+  "assistant": {
+    "enabled": true,
+    "plugin": "tmux"
+  }
+}

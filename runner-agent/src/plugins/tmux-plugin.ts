@@ -666,6 +666,14 @@ export class TmuxPlugin extends BasePlugin {
                     if (!this.discoveredSessions.has(session)) {
                         this.discoveredSessions.add(session);
 
+                        // Skip assistant sessions - they are managed separately by AssistantManager
+                        // Note: tmux session name is 'discode-' + first 8 chars of sessionId (which starts with 'assistant-')
+                        // After removing dashes and taking 8 chars, 'assistant-...' becomes 'assistan' (truncated)
+                        if (session.includes('assistan')) {
+                            this.log(`Skipping assistant session: ${session}`);
+                            continue;
+                        }
+
                         // We want to discover discode- sessions if we restarted !
                         // Only skip if we are already managing it
                         if (this.sessions.has(session)) {
@@ -742,7 +750,7 @@ export class TmuxPlugin extends BasePlugin {
         // Install skills
         if (this.skillManager) {
             const cliType = config.cliType === 'gemini' ? 'gemini' : 'claude';
-            await this.skillManager.installSkills(config.cwd, cliType);
+            await this.skillManager.installSkills(config.cwd, cliType, config.options?.excludedSkills);
         }
 
         // Env vars to inject

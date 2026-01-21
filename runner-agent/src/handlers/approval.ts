@@ -7,11 +7,13 @@
 import type { PluginSession } from '../plugins/index.js';
 import type { PendingApproval } from '../types.js';
 import type { WebSocketManager } from '../websocket.js';
+import type { AssistantManager } from '../assistant-manager.js';
 
 export interface ApprovalHandlerDeps {
     pendingApprovals: Map<string, PendingApproval>;
     cliSessions: Map<string, PluginSession>;
     wsManager: WebSocketManager;
+    assistantManager: AssistantManager | null;
 }
 
 export async function handleApprovalResponse(
@@ -42,7 +44,15 @@ export async function handleApprovalResponse(
     // Flow 2: TmuxPlugin approval (Discord buttons)
     if (data.sessionId) {
         console.log(`[Approval] Received approval response for session ${data.sessionId}: ${data.approved ? 'APPROVED' : 'DENIED'}`);
-        const approvalSession = cliSessions.get(data.sessionId);
+
+        let approvalSession: { sendApproval: (opt: string) => Promise<void> } | undefined = cliSessions.get(data.sessionId);
+
+        // Use assistant manager if session not found in standard sessions
+        const { assistantManager } = deps;
+        if (!approvalSession && assistantManager && assistantManager.getSessionId() === data.sessionId) {
+            approvalSession = assistantManager;
+        }
+
         if (approvalSession) {
             // Map boolean to option number if not provided
             // 1 = Yes (approve), 3 = No (deny)

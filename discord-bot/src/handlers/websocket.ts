@@ -344,6 +344,8 @@ async function handleRegister(ws: any, data: any): Promise<void> {
         existingRunner.status = 'online';
         existingRunner.lastHeartbeat = new Date().toISOString();
         if (data.defaultWorkspace) existingRunner.defaultWorkspace = data.defaultWorkspace;
+        // Update assistantEnabled from registration message
+        existingRunner.assistantEnabled = data.assistantEnabled ?? true;
 
         if (!existingRunner.privateChannelId) {
             try {
@@ -426,6 +428,83 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
             type: 'approval_response',
             data: { requestId: data.requestId, allow: false, message: `Unknown runner: ${data.runnerId}` }
         }));
+        return;
+    }
+
+    // Check if this is an assistant session
+    if (data.sessionId && data.sessionId.startsWith('assistant-')) {
+        console.log(`[Approval] Handling assistant usage approval for ${data.sessionId}`);
+
+        const channel = await botState.client.channels.fetch(runner.privateChannelId);
+        if (!channel || !('send' in channel)) {
+            console.error('[Approval] Invalid private channel for assistant');
+            return;
+        }
+
+        // Create approval buttons
+        let row: ActionRowBuilder<ButtonBuilder>;
+
+        if (data.options && data.options.length > 0) {
+            const buttons = data.options.map((option: string, index: number) => {
+                const optionNumber = index + 1;
+                let style = ButtonStyle.Secondary;
+                if (index === 0) style = ButtonStyle.Success;
+                else if (index === data.options.length - 1) style = ButtonStyle.Danger;
+                else style = ButtonStyle.Primary;
+
+                return new ButtonBuilder()
+                    .setCustomId(`option_${data.requestId}_${optionNumber}`)
+                    .setLabel(option)
+                    .setStyle(style);
+            });
+
+            row = new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons);
+        } else {
+            // Default buttons
+            const allowButton = new ButtonBuilder()
+                .setCustomId(`allow_${data.requestId}`)
+                .setLabel('✅ Allow Once')
+                .setStyle(ButtonStyle.Success);
+
+            const denyButton = new ButtonBuilder()
+                .setCustomId(`deny_${data.requestId}`)
+                .setLabel('❌ Deny')
+                .setStyle(ButtonStyle.Danger);
+
+            row = new ActionRowBuilder<ButtonBuilder>().addComponents(allowButton, denyButton);
+        }
+
+        // Create embed
+        const toolInputStr = typeof data.toolInput === 'string'
+            ? data.toolInput
+            : JSON.stringify(data.toolInput, null, 2);
+
+        const embed = new EmbedBuilder()
+            .setColor(0xFFD700) // Warning color
+            .setTitle('Tool Use Approval Required')
+            .addFields(
+                { name: 'Runner', value: `\`${runner.name}\``, inline: true },
+                { name: 'Tool', value: `\`${data.toolName}\``, inline: true },
+                { name: 'Input', value: `\`\`\`json\n${toolInputStr.substring(0, 1000)}\n\`\`\``, inline: false }
+            )
+            .setTimestamp()
+            .setFooter({ text: `Runner ID: ${runner.runnerId}` });
+
+        const message = await channel.send({
+            embeds: [embed],
+            components: [row]
+        });
+
+        botState.pendingApprovals.set(data.requestId, {
+            requestId: data.requestId,
+            runnerId: data.runnerId,
+            sessionId: data.sessionId,
+            messageId: message.id,
+            channelId: runner.privateChannelId,
+            toolName: data.toolName,
+            toolInput: data.toolInput,
+            timestamp: new Date()
+        });
         return;
     }
 

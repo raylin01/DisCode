@@ -8,3 +8,7 @@ discord-bot/data/*
 internal/
 .claude/
 .gemini/
+
+# Ignored test documentation
+TEST_PLAN.md
+TESTING_PROGRESS.md

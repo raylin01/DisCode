@@ -199,11 +199,15 @@ async function handleCreateFolderRetry(interaction: any, userId: string, customI
  * Handle TmuxPlugin option buttons
  */
 async function handleOptionButton(interaction: any, userId: string, customId: string): Promise<void> {
-    const parts = customId.split('_');
-    if (parts.length < 3) return;
+    // Format: option_<requestId>_<optionNumber>
+    // requestId may contain underscores (e.g. req_123_abc)
 
-    const requestId = parts[1];
-    const optionNumber = parts[2];
+    // Find last underscore for option number
+    const lastUnderscoreIndex = customId.lastIndexOf('_');
+    const optionNumber = customId.substring(lastUnderscoreIndex + 1);
+
+    // Extract requestId (everything between 'option_' and last underscore)
+    const requestId = customId.substring('option_'.length, lastUnderscoreIndex);
 
     const pending = botState.pendingApprovals.get(requestId);
     if (!pending) {
@@ -269,10 +273,14 @@ async function handleApprovalButton(interaction: any, userId: string, customId: 
         return;
     }
 
-    const [action, requestId] = customId.split('_');
+    const action = customId.split('_')[0];
+    const requestId = customId.substring(action.length + 1);
 
+    console.log(`[Button] Action: ${action}, RequestId: ${requestId}`);
     const pending = botState.pendingApprovals.get(requestId);
+
     if (!pending) {
+        console.log(`[Button] Request not found! Keys in map: ${Array.from(botState.pendingApprovals.keys()).join(', ')}`);
         await interaction.reply({
             embeds: [createErrorEmbed('Expired', 'This approval request has expired.')],
             flags: 64
@@ -317,6 +325,11 @@ async function handleApprovalButton(interaction: any, userId: string, customId: 
         components: [row]
     });
 
+    if (pending.sessionId.startsWith('assistant-')) {
+        botState.assistantStreamingMessages.delete(pending.runnerId);
+    } else {
+        botState.streamingMessages.delete(pending.sessionId);
+    }
     botState.pendingApprovals.delete(requestId);
 }
 
@@ -376,6 +389,11 @@ async function handleAllowAll(interaction: any, userId: string, requestId: strin
         components: [row]
     });
 
+    if (pending.sessionId.startsWith('assistant-')) {
+        botState.assistantStreamingMessages.delete(pending.runnerId);
+    } else {
+        botState.streamingMessages.delete(pending.sessionId);
+    }
     botState.pendingApprovals.delete(requestId);
 }
 

@@ -24,7 +24,7 @@ Creates a new Discord thread with a CLI session in the specified folder.
 
 **Usage**:
 ```bash
-spawn-thread.sh "<folder_path>" "<cli_type>" "<initial_message>"
+/path/to/bin/spawn-thread.sh "<folder_path>" "<cli_type>" "<initial_message>"
 ```
 
 **Arguments**:
@@ -36,11 +36,11 @@ spawn-thread.sh "<folder_path>" "<cli_type>" "<initial_message>"
 
 ```bash
 # Open a project in a new thread
-spawn-thread.sh "/Users/user/projects/myapp" "auto" "Let's review the codebase"
+/path/to/bin/spawn-thread.sh "/Users/user/projects/myapp" "auto" "Let's review the codebase"
 
 # Clone and open in new thread
 git clone https://github.com/user/repo /tmp/repo
-spawn-thread.sh "/tmp/repo" "claude" "Explore this project structure"
+/path/to/bin/spawn-thread.sh "/tmp/repo" "claude" "Explore this project structure"
 ```
 
 ## Notes

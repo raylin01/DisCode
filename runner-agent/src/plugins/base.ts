@@ -34,6 +34,8 @@ export interface PluginOptions {
     skipPermissions?: boolean;
     /** Custom environment variables */
     env?: Record<string, string>;
+    /** Skills to exclude from installation */
+    excludedSkills?: string[];
 }
 
 // ============================================================================

@@ -122,6 +122,17 @@ export class AssistantManager extends EventEmitter {
         console.log(`[AssistantManager] Starting assistant session ${this.sessionId}`);
         console.log(`[AssistantManager] CLI: ${this.cliType}, Folder: ${cwd}`);
 
+        // Notify Discord that assistant is starting
+        this.deps.wsManager.send({
+            type: 'assistant_output',
+            data: {
+                runnerId: this.deps.wsManager.runnerId,
+                content: `🤖 Starting assistant session (${this.cliType})...`,
+                timestamp: new Date().toISOString(),
+                outputType: 'info'
+            }
+        });
+
         try {
             // Create the session via PluginManager
             this.session = await this.deps.pluginManager.createSession({
@@ -131,17 +142,24 @@ export class AssistantManager extends EventEmitter {
                 cliType: this.cliType,
                 options: {
                     skipPermissions: false,
-                    continueConversation: true
+                    continueConversation: true,
+                    // Exclude Discord integration skills (channel updates) for assistant
+                    // But keep thread-spawning and other skills
+                    excludedSkills: ['discord-integration']
                 }
             }, this.config.plugin);
 
-            // Wire up output events
-            // PluginSession emits via EventEmitter, but interface only declares 'ready'
-            // We use the underlying implementation which supports more events
-            (this.session as any).on('output', (data: { content: string; type?: string }) => {
+            // Wire up output events from PluginManager (not session - TmuxPlugin emits through PluginManager)
+            // Filter events by our session ID
+            this.deps.pluginManager.on('output', (data: { sessionId: string; content: string; outputType?: string }) => {
+                // Only handle output from our assistant session
+                if (data.sessionId !== this.sessionId) return;
+
+                console.log(`[AssistantManager] Received output (${data.content.length} chars)`);
+
                 this.emit('output', {
                     content: data.content,
-                    outputType: data.type || 'stdout',
+                    outputType: data.outputType || 'stdout',
                     timestamp: new Date().toISOString()
                 });
 
@@ -152,7 +170,7 @@ export class AssistantManager extends EventEmitter {
                         runnerId: this.deps.wsManager.runnerId,
                         content: data.content,
                         timestamp: new Date().toISOString(),
-                        outputType: data.type || 'stdout'
+                        outputType: data.outputType || 'stdout'
                     }
                 });
             });
@@ -174,11 +192,34 @@ export class AssistantManager extends EventEmitter {
 
             console.log(`[AssistantManager] Assistant session ${this.sessionId} ready`);
 
+            // Notify Discord that assistant is ready
+            this.deps.wsManager.send({
+                type: 'assistant_output',
+                data: {
+                    runnerId: this.deps.wsManager.runnerId,
+                    content: `✅ Assistant ready in \`${cwd}\`. You can now send messages.`,
+                    timestamp: new Date().toISOString(),
+                    outputType: 'info'
+                }
+            });
+
             // Send initial system prompt with available CLIs
             await this.sendSystemPrompt();
 
         } catch (error) {
             console.error('[AssistantManager] Failed to start assistant:', error);
+
+            // Notify Discord of failure
+            this.deps.wsManager.send({
+                type: 'assistant_output',
+                data: {
+                    runnerId: this.deps.wsManager.runnerId,
+                    content: `❌ Failed to start assistant: ${error instanceof Error ? error.message : String(error)}`,
+                    timestamp: new Date().toISOString(),
+                    outputType: 'error'
+                }
+            });
+
             this.session = null;
             this.sessionId = null;
         }
@@ -191,14 +232,26 @@ export class AssistantManager extends EventEmitter {
         if (!this.session) return;
 
         const cliTypes = this.deps.config.cliTypes.join(', ');
-        const prompt = `You are the main assistant for this runner. You can help users with general tasks and spawn dedicated threads for specific projects.
+        const prompt = `You are the main assistant for this runner. Your primary goal is to triage requests and spawn dedicated threads for actual work.
 
 Available CLIs on this runner: ${cliTypes}
 
-When users ask about specific folders or projects:
-1. Clone repositories if needed
-2. Use the spawn-thread.sh script to create a dedicated thread in that folder
-3. Inform the user the thread has been created
+PROACTIVE THREAD SPAWNING START:
+When a user asks to work on a specific project, folder, repository, or task:
+1. ALWAYS offer to create a dedicated thread for that workspace.
+2. If the user mentions a git repo, clone it first, then IMMEDIATELY spawn a thread for that folder.
+3. Use the 'spawn-thread.sh' tool to create threads.
+4. Defaults to "auto" for cli_type unless specified otherwise.
+
+You should be aggressive about moving work to threads. The main channel is for coordination and dispatching only.
+DO NOT try to do complex coding or file editing in this main channel. Spawn a thread instead.
+
+Example:
+User: "I want to work on my-app"
+Assistant: "I'll start a thread for my-app." -> Calls spawn-thread.sh
+
+User: "Clone https://github.com/foo/bar"
+Assistant: "Cloning repo..." -> git clone ... -> "Repo cloned. Spawning thread..." -> spawn-thread.sh
 
 The spawn-thread skill is available at: spawn-thread.sh "<folder>" "<cli_type>" "<message>"
 - folder: absolute path or relative to workspace

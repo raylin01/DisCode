@@ -170,6 +170,11 @@ async function handleModifyModal(interaction: any, userId: string, customId: str
         flags: 64
     });
 
+    if (pending.sessionId.startsWith('assistant-')) {
+        botState.assistantStreamingMessages.delete(pending.runnerId);
+    } else {
+        botState.streamingMessages.delete(pending.sessionId);
+    }
     botState.pendingApprovals.delete(requestId);
     console.log(`Approval request ${requestId} modified and approved by user ${userId}`);
 }

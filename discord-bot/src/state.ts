@@ -26,13 +26,15 @@ export const runnerConnections = new Map<string, any>();
 
 // Pending approvals (requestId -> approval info)
 export interface PendingApproval {
-    userId: string;
+    userId?: string;
     channelId: string;
     messageId: string;
     runnerId: string;
     sessionId: string;
     toolName: string;
     toolInput: unknown;
+    requestId?: string;
+    timestamp?: Date;
 }
 export const pendingApprovals = new Map<string, PendingApproval>();
 
