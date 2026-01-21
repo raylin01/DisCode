@@ -14,6 +14,12 @@ Control Claude Code, Gemini CLI, and Tmux terminals through Discord with interac
 - **Private Sessions**: Each CLI session gets its own private thread
 - **Secure Authentication**: Token-based runner registration
 
+## Deployment & Hosting
+
+For an easy way to host the Discord bot and Runner Agent, we recommend using **[TaskServer](https://github.com/raylin01/TaskServer)**. 
+
+TaskServer provides a simple web dashboard to manage long-running scripts (like the bot and runner), view logs, and handle auto-restarts. It also integrates with Cloudflare Tunnel for secure remote access without port forwarding.
+
 ## Architecture
 
 ```

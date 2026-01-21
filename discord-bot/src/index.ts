@@ -44,7 +44,7 @@ createWebSocketServer(WS_PORT);
 botState.client.once(Events.ClientReady, () => {
   console.log(`Discord bot logged in as ${botState.client.user?.tag}`);
   botState.setBotReady(true);
-  console.log(`Bot is ready to handle runner connections`);
+
 });
 
 botState.client.on(Events.InteractionCreate, async (interaction) => {
@@ -170,7 +170,7 @@ botState.client.on(Events.MessageCreate, async (message) => {
     // Get the WebSocket connection for this runner
     const ws = botState.runnerConnections.get(runner.runnerId);
     if (!ws) {
-      console.log(`Runner ${runner.runnerId} not connected, cannot forward message`);
+
       return;
     }
 
@@ -186,7 +186,7 @@ botState.client.on(Events.MessageCreate, async (message) => {
       }
     }));
 
-    console.log(`Forwarded message from ${message.author.username} to runner ${runner.name} for session ${session.sessionId}`);
+
 
     // Clear streaming message state so next output is a new message
     botState.streamingMessages.delete(session.sessionId);
@@ -202,7 +202,7 @@ botState.client.on(Events.MessageCreate, async (message) => {
 
   // Handle main channel messages for assistant (new logic)
   // Check if assistant mode is 'all' (forward all messages) vs 'command' (only /assistant)
-  console.log(`[MessageCreate] Main channel check - channel.id: ${message.channel.id}, mode: ${config.assistant.mode}`);
+
   if (config.assistant.mode !== 'all') return;
 
   // Check if this is a runner's private channel
@@ -210,8 +210,7 @@ botState.client.on(Events.MessageCreate, async (message) => {
   const runner = allRunners.find(r => r.privateChannelId === message.channel.id && r.status === 'online');
 
   if (!runner) {
-    console.log(`[MessageCreate] No online runner found with privateChannelId: ${message.channel.id}`);
-    console.log(`[MessageCreate] Available runners:`, allRunners.map(r => ({ id: r.runnerId, channelId: r.privateChannelId, status: r.status })));
+
     return;
   }
 
@@ -222,14 +221,14 @@ botState.client.on(Events.MessageCreate, async (message) => {
 
   // Check if assistant is enabled for this runner
   if (!runner.assistantEnabled) {
-    console.log(`[MessageCreate] Assistant not enabled for runner ${runner.runnerId}`);
+
     return;
   }
 
   // Get the WebSocket connection for this runner
   const ws = botState.runnerConnections.get(runner.runnerId);
   if (!ws) {
-    console.log(`Runner ${runner.runnerId} not connected, cannot forward assistant message`);
+
     return;
   }
 
@@ -245,7 +244,7 @@ botState.client.on(Events.MessageCreate, async (message) => {
     }
   }));
 
-  console.log(`Forwarded assistant message from ${message.author.username} to runner ${runner.name}`);
+
 
   // Clear assistant streaming message state so next output is a new message
   botState.assistantStreamingMessages.delete(runner.runnerId);
@@ -423,15 +422,14 @@ async function registerCommands(): Promise<void> {
   const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 
   try {
-    console.log('Started refreshing application (/) commands.');
+
 
     await rest.put(
       Routes.applicationCommands(DISCORD_CLIENT_ID!),
       { body: commands }
     );
 
-    console.log('Successfully reloaded application (/) commands.');
-    console.log(`Registered ${commands.length} commands`);
+
   } catch (error) {
     console.error('Error registering commands:', error);
   }
@@ -439,14 +437,12 @@ async function registerCommands(): Promise<void> {
 
 // Start the bot
 async function main(): Promise<void> {
-  console.log('Starting DisCode Discord Bot...');
-  console.log('Modular architecture enabled');
-  console.log('');
+
 
   // Clean up old ended sessions on startup
   const cleanedCount = await storage.cleanupOldSessions();
   if (cleanedCount > 0) {
-    console.log(`✅ Cleaned up ${cleanedCount} old ended sessions from storage`);
+
   }
 
   await registerCommands();

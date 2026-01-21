@@ -42,12 +42,12 @@ export function createWebSocketServer(port: number): WebSocketServer {
     });
 
     wss.on('connection', (ws, req) => {
-        console.log('New WebSocket connection');
+
 
         ws.on('message', async (data: Buffer) => {
             try {
                 const message: WebSocketMessage = JSON.parse(data.toString());
-                console.log(`[WS] Received message type: ${message.type}`);
+
                 await handleWebSocketMessage(ws, message);
             } catch (error) {
                 console.error('Error handling WebSocket message:', error);
@@ -55,7 +55,7 @@ export function createWebSocketServer(port: number): WebSocketServer {
         });
 
         ws.on('close', async () => {
-            console.log('WebSocket connection closed');
+
             // Remove connection
             for (const [runnerId, connection] of botState.runnerConnections.entries()) {
                 if (connection === ws) {
@@ -69,7 +69,7 @@ export function createWebSocketServer(port: number): WebSocketServer {
                         await notifyRunnerOffline(runner);
                     }
 
-                    console.log(`Runner ${runnerId} went offline`);
+
                     break;
                 }
             }
@@ -100,7 +100,7 @@ async function endAllRunnerSessions(runner: RunnerInfo): Promise<void> {
                 const thread = await botState.client.channels.fetch(session.threadId);
                 if (thread && thread.isThread()) {
                     await thread.setArchived(true);
-                    console.log(`Archived thread ${thread.id} for ended session ${session.sessionId}`);
+
                 }
             } catch (error) {
                 console.error(`Failed to archive thread for session ${session.sessionId}:`, error);
@@ -120,7 +120,7 @@ async function notifyRunnerOffline(runner: RunnerInfo): Promise<void> {
 
     // Only send notification if bot is ready
     if (!botState.isBotReady) {
-        console.log('Bot not ready yet, skipping runner offline notification');
+
         return;
     }
 
@@ -158,7 +158,7 @@ async function notifyRunnerOffline(runner: RunnerInfo): Promise<void> {
                     .setTimestamp();
 
                 await channel.send({ embeds: [embed] });
-                console.log(`Sent offline notification to runner channel ${runner.privateChannelId}`);
+
             }
         } catch (error) {
             console.error('Failed to send notification to runner channel:', error);
@@ -171,12 +171,12 @@ async function notifyRunnerOffline(runner: RunnerInfo): Promise<void> {
  */
 export async function notifyRunnerOnline(runner: RunnerInfo, wasReclaimed: boolean = false): Promise<void> {
     if (!runner.privateChannelId) {
-        console.log('Runner has no private channel, skipping online notification');
+
         return;
     }
 
     if (!botState.isBotReady) {
-        console.log('Bot not ready yet, skipping runner online notification');
+
         return;
     }
 
@@ -202,7 +202,7 @@ export async function notifyRunnerOnline(runner: RunnerInfo, wasReclaimed: boole
             }
 
             await channel.send({ embeds: [embed] });
-            console.log(`Sent online notification to runner channel ${runner.privateChannelId}`);
+
         }
     } catch (error) {
         console.error('Failed to send runner online notification:', error);
@@ -411,7 +411,7 @@ async function handleHeartbeat(ws: any, data: any): Promise<void> {
 
     if (!botState.runnerConnections.has(data.runnerId)) {
         botState.runnerConnections.set(data.runnerId, ws);
-        console.log(`Runner ${data.runnerId} heartbeat received`);
+
     }
 }
 
@@ -419,7 +419,7 @@ async function handleHeartbeat(ws: any, data: any): Promise<void> {
  * Handle approval request from runner
  */
 async function handleApprovalRequest(ws: any, data: any): Promise<void> {
-    console.log('[Approval] Received request:', JSON.stringify(data, null, 2));
+
 
     const runner = storage.getRunner(data.runnerId);
     if (!runner) {
@@ -521,7 +521,7 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
     // Check if this tool is auto-approved for this session
     const sessionAllowedTools = botState.allowedTools.get(data.sessionId);
     if (sessionAllowedTools && sessionAllowedTools.has(data.toolName)) {
-        console.log(`Tool ${data.toolName} is auto-approved for session ${data.sessionId}`);
+
         ws.send(JSON.stringify({
             type: 'approval_response',
             data: { requestId: data.requestId, allow: true, message: `Auto-approved (tool ${data.toolName} was previously allowed for all)` }
@@ -604,7 +604,7 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
         toolInput: data.toolInput
     });
 
-    console.log(`Approval request ${data.requestId} sent to Discord`);
+
 }
 
 /**
@@ -725,7 +725,7 @@ async function handleMetadata(data: any): Promise<void> {
  */
 async function handleSessionReady(data: any): Promise<void> {
     const { runnerId, sessionId } = data;
-    console.log(`[handleSessionReady] Session ${sessionId} is ready for runner ${runnerId}`);
+
 
     const session = storage.getSession(sessionId);
     if (!session) {
@@ -781,7 +781,7 @@ async function handleSessionReady(data: any): Promise<void> {
                         embeds: [readyEmbed],
                         components: [buttonRow]
                     });
-                    console.log(`Updated ephemeral message for session ${session.sessionId}`);
+
                 } catch (error) {
                     console.error('Failed to update ephemeral message:', error);
                 }
@@ -826,7 +826,7 @@ async function handleRunnerStatusUpdate(data: any): Promise<void> {
     }
 
     // TODO: Add visual status updates to thread if needed
-    console.log(`[Status] Session ${sessionId}: ${status}${currentTool ? ` (${currentTool})` : ''}${isCommandRunning !== undefined ? ` running=${isCommandRunning}` : ''}`);
+
 }
 
 /**
@@ -1049,7 +1049,7 @@ async function handleSessionDiscovered(data: any): Promise<void> {
  */
 async function handleTerminalList(data: any): Promise<void> {
     const { runnerId, terminals } = data;
-    console.log(`[handleTerminalList] Runner ${runnerId} has terminals:`, terminals);
+
 
     // Find the pending request for this runner
     const pendingRequest = botState.pendingTerminalListRequests.get(runnerId);
@@ -1078,7 +1078,7 @@ async function handleTerminalList(data: any): Promise<void> {
             });
         }
 
-        console.log(`[handleTerminalList] Updated response for runner ${runnerId}`);
+
     } catch (error) {
         console.error(`[handleTerminalList] Failed to update response:`, error);
     }
@@ -1089,7 +1089,7 @@ async function handleTerminalList(data: any): Promise<void> {
  */
 async function handleDiscordAction(data: any): Promise<void> {
     const { action, sessionId, content, name, description } = data;
-    console.log(`[DiscordAction] Received action ${action} for session ${sessionId}`);
+
 
     const session = storage.getSession(sessionId);
     if (!session) {

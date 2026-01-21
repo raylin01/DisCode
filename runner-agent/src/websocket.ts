@@ -39,12 +39,12 @@ export class WebSocketManager extends EventEmitter {
     }
 
     connect(): void {
-        console.log(`Connecting to Discord bot at ${this.config.botWsUrl}...`);
+
 
         this.ws = new WebSocket(this.config.botWsUrl);
 
         this.ws.on('open', () => {
-            console.log('Connected to Discord bot');
+
             this._isConnected = true;
 
             // Send registration message
@@ -70,10 +70,8 @@ export class WebSocketManager extends EventEmitter {
         this.ws.on('message', async (rawData: Buffer) => {
             try {
                 const message: WebSocketMessage = JSON.parse(rawData.toString());
-                console.log(`[WebSocket] Received message type: ${message.type}`);
-                if (message.type === 'approval_response') {
-                    console.log(`[WebSocket] Payload:`, JSON.stringify(message.data, null, 2));
-                }
+
+
                 this.emit('message', message);
             } catch (error) {
                 console.error('Error parsing WebSocket message:', error);
@@ -81,13 +79,13 @@ export class WebSocketManager extends EventEmitter {
         });
 
         this.ws.on('close', () => {
-            console.log('Disconnected from Discord bot');
+
             this._isConnected = false;
             this.stopHeartbeat();
 
             // Reconnect after delay
             setTimeout(() => {
-                console.log('Attempting to reconnect...');
+
                 this.connect();
             }, this.config.reconnectDelay);
         });
