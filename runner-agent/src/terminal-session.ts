@@ -28,7 +28,7 @@ export interface TerminalOutput {
 
 export type TerminalEventMap = {
     output: [TerminalOutput];
-    exit: [{ exitCode: number; signal?: string }];
+    exit: [{ exitCode: number; signal?: number }];
     error: [Error];
     ready: [];
 };

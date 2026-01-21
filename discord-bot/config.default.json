@@ -1,0 +1,16 @@
+{
+  "_comment": "DisCode Discord Bot Configuration - Copy to config.json and customize",
+  
+  "wsPort": 8080,
+  
+  "notifications": {
+    "pingOnApproval": true,
+    "pingOnCompletion": false,
+    "useAtHere": false
+  },
+  
+  "sessionDefaults": {
+    "autoArchiveDuration": 60,
+    "inactivityTimeout": 3600000
+  }
+}

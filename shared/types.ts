@@ -41,9 +41,10 @@ export interface Session {
   threadId: string;
   createdAt: string;
   status: 'active' | 'ended';
-  cliType: 'claude' | 'gemini';
+  cliType: 'claude' | 'gemini' | 'generic';
   folderPath?: string; // Optional custom working folder
   interactionToken?: string; // Token to update the ephemeral "Initializing" message
+  creatorId?: string; // ID of the user who created the session
 }
 
 // Approval requests

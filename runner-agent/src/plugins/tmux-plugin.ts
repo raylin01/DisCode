@@ -30,8 +30,9 @@ import {
     StatusEvent,
     MetadataEvent,
     HookEvent,
-} from './base.js'; // Use .js for implementation
+} from './base.js';
 import { getPluginManager } from './plugin-manager.js';
+import { getParser, type CliParser } from './parsers/index.js';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -99,6 +100,9 @@ class TmuxSession extends EventEmitter implements PluginSession {
     /** Whether this session is owned by us (true) or just watched (false) */
     readonly isOwned: boolean;
 
+    /** Whether a command is currently running (for watched terminals) */
+    isCommandRunning: boolean = false;
+
     constructor(config: SessionConfig, tmuxSession: string, tmuxPath: string, isOwned = true) {
         super();
         this.sessionId = config.sessionId;
@@ -154,6 +158,23 @@ class TmuxSession extends EventEmitter implements PluginSession {
         }
         this.status = 'offline';
         this.removeAllListeners();
+    }
+
+    /**
+     * Interrupt the current CLI execution by sending Ctrl+C
+     */
+    async interrupt(): Promise<void> {
+        console.log(`[TmuxSession] Sending interrupt (Ctrl+C) to ${this.tmuxSession}`);
+        try {
+            // Send Ctrl+C (C-c in tmux notation)
+            await execFileAsync(this.tmuxPath, ['send-keys', '-t', this.tmuxSession, 'C-c'], EXEC_OPTIONS);
+            console.log(`[TmuxSession] Interrupt sent successfully`);
+            this.status = 'idle';
+            this.lastActivity = new Date();
+        } catch (e) {
+            console.error(`[TmuxSession] Failed to send interrupt:`, e);
+            throw e;
+        }
     }
 
     // Internal method to mark as ready
@@ -408,6 +429,40 @@ function parseMode(output: string): string | null {
     return null;
 }
 
+/**
+ * Detect if output ends with a shell prompt (terminal is idle/not running)
+ * Returns true if a shell prompt is detected at the end of the output
+ */
+function detectShellPrompt(output: string): boolean {
+    // Get last few non-empty lines
+    const lines = output.split('\n').filter(l => l.trim().length > 0);
+    if (lines.length === 0) return true; // Empty = probably idle
+
+    const lastLine = lines[lines.length - 1].trim();
+
+    // Common shell prompt patterns:
+    // Bash: "user@host:~$ " or "(base) MacBook-Pro-183:~ ray$"
+    // Zsh: "➜ ~" or "❯" or "%"
+    // Generic: ends with $ or # or % or > with optional space
+
+    // Pattern 1: Ends with common prompt characters
+    if (/[$#%>❯➜]\s*$/.test(lastLine)) {
+        return true;
+    }
+
+    // Pattern 2: Bash/conda style prompt (hostname:path user$)
+    if (/^(\([^)]+\)\s+)?\S+:\S*\s+\w+\$$/.test(lastLine)) {
+        return true;
+    }
+
+    // Pattern 3: Just a prompt symbol
+    if (/^[❯➜>%$#]\s*$/.test(lastLine)) {
+        return true;
+    }
+
+    return false;
+}
+
 // ============================================================================
 // TmuxPlugin
 // ============================================================================
@@ -526,6 +581,24 @@ export class TmuxPlugin extends BasePlugin {
         }
     }
 
+    /**
+     * Get the current working directory of a tmux session
+     */
+    async getSessionCwd(sessionId: string): Promise<string | null> {
+        try {
+            const { stdout } = await execFileAsync(
+                this.tmuxPath,
+                ['display-message', '-t', sessionId, '-p', '#{pane_current_path}'],
+                EXEC_OPTIONS
+            );
+            const cwd = stdout.trim();
+            return cwd || null;
+        } catch (e) {
+            this.debug(`Failed to get cwd for session ${sessionId}: ${e}`);
+            return null;
+        }
+    }
+
     async watchSession(sessionId: string): Promise<PluginSession> {
         // Verify session exists
         const sessions = await this.listSessions();
@@ -533,10 +606,14 @@ export class TmuxPlugin extends BasePlugin {
             throw new Error(`Session ${sessionId} not found`);
         }
 
+        // Get the actual working directory of the session
+        const cwd = await this.getSessionCwd(sessionId) || '/';
+        this.log(`Session ${sessionId} cwd: ${cwd}`);
+
         // Create a config for this watched session
         const config: SessionConfig = {
             cliPath: 'watched', // Placeholder
-            cwd: '/', // Unknown, doesn't matter for watching
+            cwd: cwd, // Actual cwd from tmux
             sessionId: sessionId, // Use the tmux session name as our ID
             cliType: 'claude', // Default to claude for now, or maybe generic
             options: {
@@ -545,6 +622,20 @@ export class TmuxPlugin extends BasePlugin {
         };
 
         const session = new TmuxSession(config, sessionId, this.tmuxPath, false); // isOwned = false
+
+        // CAPTURE INITIAL OUTPUT AS BASELINE
+        // This prevents the first poll from emitting all visible content
+        try {
+            const initialOutput = await capturePane(sessionId, 100, this.tmuxPath);
+            const cleaned = initialOutput.replace(/\x1b\[[0-9;]*[mGKH]/g, '')
+                .replace(/[\x00-\x1F]/g, (c) => c === '\n' || c === '\r' ? c : '')
+                .trim();
+            session.lastOutput = cleaned;
+            this.log(`Captured initial output baseline (${cleaned.length} chars)`);
+        } catch (e) {
+            this.log(`Warning: Could not capture initial output for ${sessionId}`);
+        }
+
         this.sessions.set(sessionId, session);
 
         // Mark as immediately ready since it's an existing session
@@ -569,8 +660,9 @@ export class TmuxPlugin extends BasePlugin {
                     if (!this.discoveredSessions.has(session)) {
                         this.discoveredSessions.add(session);
 
-                        // Ignore internal sessions (created by us)
-                        if (session.startsWith('discode-')) {
+                        // We want to discover discode- sessions if we restarted !
+                        // Only skip if we are already managing it
+                        if (this.sessions.has(session)) {
                             continue;
                         }
 
@@ -580,10 +672,13 @@ export class TmuxPlugin extends BasePlugin {
                         // We only care about EXTERNAL sessions or sessions we don't know about.
 
                         if (!this.sessions.has(session)) {
-                            this.log(`Discovered new external session: ${session}`);
+                            // Get the cwd for the discovered session
+                            const cwd = await this.getSessionCwd(session);
+                            this.log(`Discovered new external session: ${session} (cwd: ${cwd || 'unknown'})`);
                             this.emit('session_discovered', {
                                 sessionId: session,
-                                exists: true
+                                exists: true,
+                                cwd: cwd
                             });
                         }
                     }
@@ -595,34 +690,51 @@ export class TmuxPlugin extends BasePlugin {
     }
 
     /**
-     * Create a new Claue CLI session in tmux
+     * Get the appropriate parser for a session's CLI type
+     */
+    private getCliParser(session: TmuxSession): CliParser {
+        return getParser(session.config.cliType);
+    }
+
+    /**
+     * Create a new CLI session in tmux
+     * Supports both Claude and Gemini CLIs
      */
     async createSession(config: SessionConfig): Promise<PluginSession> {
-        const tmuxSession = `discode-${shortId()}`;
+        // Use the first 8 chars of the actual session ID so discovery can match it
+        const sessionIdShort = config.sessionId.replace(/-/g, '').slice(0, 8);
+        const tmuxSession = `discode-${sessionIdShort}`;
 
-        // Build claude command
+        // Build CLI-specific command
         const args: string[] = [];
+        let cliCmd: string;
 
-        if (config.options?.continueConversation !== false) {
-            // Vibecraft typically runs 'claude' without -c for interactive mode
-            // '-c' might be interpreted as "continue last" which fails if none exists
-            // Leaving args empty defaults to new/interactive session
-            // args.push('-c'); 
+        if (config.cliType === 'claude') {
+            // Claude-specific args
+            if (config.options?.skipPermissions !== false) {
+                args.push('--permission-mode=bypassPermissions');
+                args.push('--dangerously-skip-permissions');
+            }
+            cliCmd = args.length > 0
+                ? `${config.cliPath} ${args.join(' ')}`
+                : config.cliPath;
+        } else if (config.cliType === 'gemini') {
+            // Gemini-specific args
+            if (config.options?.skipPermissions !== false) {
+                args.push('--yolo');  // Auto-approve all actions
+            }
+            cliCmd = args.length > 0
+                ? `${config.cliPath} ${args.join(' ')}`
+                : config.cliPath;
+        } else {
+            // Generic CLI - no special args
+            cliCmd = config.cliPath;
         }
-        if (config.options?.skipPermissions !== false) {
-            args.push('--permission-mode=bypassPermissions');
-            args.push('--dangerously-skip-permissions');
-        }
 
-        const claudeCmd = args.length > 0
-            ? `${config.cliPath} ${args.join(' ')}`
-            : config.cliPath;
-
-        this.log(`Creating session: ${tmuxSession} with cmd: ${claudeCmd}`);
+        this.log(`Creating ${config.cliType} session: ${tmuxSession} with cmd: ${cliCmd}`);
 
         // Wrap command in shell to keep pane open on failure for debugging
-        // This ensures output is captured before the pane closes
-        const safeCmd = `bash -c "${claudeCmd.replace(/"/g, '\\"')} || (echo 'Command failed with exit code $?'; echo 'Keeping pane open for debugging...'; sleep 60)"`;
+        const safeCmd = `bash -c "${cliCmd.replace(/"/g, '\\"')} || (echo 'Command failed with exit code $?'; echo 'Keeping pane open for debugging...'; sleep 60)"`;
 
         // Create tmux session
         await execFileAsync(this.tmuxPath, [
@@ -712,44 +824,44 @@ export class TmuxPlugin extends BasePlugin {
         try {
             const output = await capturePane(session.tmuxSession, 100, session.tmuxPath);
 
-            // For watched sessions (not owned by us/Claude), use raw output (but strip ANSI for diffing clarity?)
-            // Actually, we want to preserve layout but maybe strip colors for the text content check? 
-            // Or better: use a less aggressive cleaner for watched sessions.
+            // Get the appropriate parser for this CLI type
+            const parser = this.getCliParser(session);
+
+            // Use parser-specific cleaning for owned sessions
             let cleaned: string;
-
-            // Detect if this is a Claude Code session (even if watched)
-            // by looking for Claude Code markers in the raw output
-            const isClaudeCodeSession = session.isOwned ||
-                output.includes('Claude Code') ||
-                output.includes('⏺') ||
-                output.includes('Sonnet') ||
-                output.includes('Opus');
-
-            if (isClaudeCodeSession) {
-                // Claude Code session: use aggressive cleaning to hide UI noise
-                cleaned = cleanOutput(output);
+            if (session.isOwned) {
+                // Owned session: use CLI-specific cleaning
+                cleaned = parser.cleanOutput(output);
             } else {
-                // Generic terminal: minimal cleaning (just ANSI)
-                cleaned = output.replace(/\x1b\[[0-9;]*[mGKH]/g, '') // Basic ANSI strip
-                    .replace(/[\x00-\x1F]/g, (c) => c === '\n' || c === '\r' ? c : '')
-                    .trim();
+                // Watched session: detect CLI type from output
+                const isClaudeSession = output.includes('Claude Code') ||
+                    output.includes('⏺') ||
+                    output.includes('Sonnet') ||
+                    output.includes('Opus');
+
+                if (isClaudeSession) {
+                    cleaned = getParser('claude').cleanOutput(output);
+                } else {
+                    // Generic terminal: minimal cleaning (just ANSI)
+                    cleaned = getParser('generic').cleanOutput(output);
+                }
             }
 
             // Startup Phase Handling
             if (session.isBooting()) {
-                // If we see the prompt ">", we are ready
-                // NOTE: We check 'output' (rawish) because 'cleanOutput' might now strip the prompt
-                // But we should strip ANSI to be safe
-                const rawStripped = output.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
-
-                if (rawStripped.includes('>')) {
-                    this.log(`Session ${session.sessionId} is ready (prompt detected)`);
+                // Use parser to detect readiness
+                if (parser.detectReady(output)) {
+                    this.log(`Session ${session.sessionId} is ready (${parser.name} detected prompt)`);
                     session.setReady();
 
-                    // Emit fake output to signal readiness cleanly
+                    // Emit CLI-specific ready message
+                    const cliName = session.config.cliType === 'claude' ? 'Claude Code' :
+                        session.config.cliType === 'gemini' ? 'Gemini CLI' :
+                            'CLI';
+
                     this.emit('output', {
                         sessionId: session.sessionId,
-                        content: '✨ Claude Code Ready',
+                        content: `${cliName} Ready`,
                         isComplete: true,
                         outputType: 'info',
                         timestamp: new Date()
@@ -852,7 +964,9 @@ export class TmuxPlugin extends BasePlugin {
             // Emit output if changed significantly
             if (cleaned !== session.lastOutput && cleaned.length > 0) {
                 // Use diff-based approach for all sessions
-                const contentToEmit = this.getNewContent(session.lastOutput, cleaned, isClaudeCodeSession);
+                // For CLI-owned sessions, use aggressive diffing
+                const isCliSession = session.isOwned || session.config.cliType === 'claude' || session.config.cliType === 'gemini';
+                const contentToEmit = this.getNewContent(session.lastOutput, cleaned, isCliSession);
 
                 if (contentToEmit) {
                     this.emit('output', {
@@ -897,6 +1011,28 @@ export class TmuxPlugin extends BasePlugin {
                 metadataChanged = true;
             }
 
+            // For watched terminals (generic, not CLI sessions), detect if a command is running
+            // by checking if the output ends with a shell prompt
+            const isGenericWatchedSession = !session.isOwned && session.config.cliType !== 'claude' && session.config.cliType !== 'gemini';
+            if (isGenericWatchedSession) {
+                const hasPrompt = detectShellPrompt(cleaned);
+                const wasRunning = session.isCommandRunning;
+                session.isCommandRunning = !hasPrompt;
+
+                // Emit status change when running state changes
+                if (wasRunning !== session.isCommandRunning) {
+                    const newStatus = session.isCommandRunning ? 'working' : 'idle';
+                    this.log(`Terminal ${session.sessionId} is now ${newStatus}`);
+                    session.status = newStatus;
+
+                    this.emit('status', {
+                        sessionId: session.sessionId,
+                        status: newStatus,
+                        isCommandRunning: session.isCommandRunning
+                    });
+                }
+            }
+
             // Emit metadata event only if something meaningful changed
             if (metadataChanged) {
                 this.log(`Metadata: tokens=${session.lastTokenCount} activity=${session.currentActivity} mode=${session.currentMode}`);
@@ -906,6 +1042,7 @@ export class TmuxPlugin extends BasePlugin {
                     cumulativeTokens: session.cumulativeTokens || undefined,
                     mode: session.currentMode,
                     activity: session.currentActivity,
+                    isCommandRunning: session.isCommandRunning,
                     timestamp: new Date()
                 });
             }

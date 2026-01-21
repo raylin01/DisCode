@@ -1,0 +1,965 @@
+/**
+ * WebSocket Handlers
+ * 
+ * Handles all WebSocket messages from runner agents.
+ */
+
+import { WebSocketServer } from 'ws';
+import { EmbedBuilder, WebhookClient, ButtonBuilder, ButtonStyle, ActionRowBuilder } from 'discord.js';
+import * as botState from '../state.js';
+import { storage } from '../storage.js';
+import { getConfig } from '../config.js';
+import {
+    createToolUseEmbed,
+    createOutputEmbed,
+    createActionItemEmbed,
+    createRunnerOfflineEmbed,
+} from '../utils/embeds.js';
+import {
+    getOrCreateRunnerChannel,
+} from '../utils/channels.js';
+import type { WebSocketMessage, RunnerInfo, Session } from '../../../shared/types.ts';
+
+const config = getConfig();
+
+/**
+ * Create and configure the WebSocket server
+ */
+export function createWebSocketServer(port: number): WebSocketServer {
+    const wss = new WebSocketServer({ port, noServer: false });
+
+    wss.on('listening', () => {
+        console.log(`WebSocket server listening on port ${port}`);
+    });
+
+    wss.on('error', (error: Error) => {
+        if ((error as any).code === 'EADDRINUSE') {
+            console.error(`Port ${port} is already in use. Please stop the other process or change DISCORDE_WS_PORT.`);
+            process.exit(1);
+        } else {
+            console.error('WebSocket server error:', error);
+        }
+    });
+
+    wss.on('connection', (ws, req) => {
+        console.log('New WebSocket connection');
+
+        ws.on('message', async (data: Buffer) => {
+            try {
+                const message: WebSocketMessage = JSON.parse(data.toString());
+                console.log(`[WS] Received message type: ${message.type}`);
+                await handleWebSocketMessage(ws, message);
+            } catch (error) {
+                console.error('Error handling WebSocket message:', error);
+            }
+        });
+
+        ws.on('close', async () => {
+            console.log('WebSocket connection closed');
+            // Remove connection
+            for (const [runnerId, connection] of botState.runnerConnections.entries()) {
+                if (connection === ws) {
+                    botState.runnerConnections.delete(runnerId);
+                    storage.updateRunnerStatus(runnerId, 'offline');
+
+                    // Notify owner about runner going offline
+                    const runner = storage.getRunner(runnerId);
+                    if (runner) {
+                        await endAllRunnerSessions(runner);
+                        await notifyRunnerOffline(runner);
+                    }
+
+                    console.log(`Runner ${runnerId} went offline`);
+                    break;
+                }
+            }
+        });
+
+        ws.on('error', (error) => {
+            console.error('WebSocket error:', error);
+        });
+    });
+
+    return wss;
+}
+
+/**
+ * End all sessions for a runner when it goes offline
+ */
+async function endAllRunnerSessions(runner: RunnerInfo): Promise<void> {
+    const sessions = storage.getRunnerSessions(runner.runnerId);
+
+    for (const session of sessions) {
+        if (session.status === 'active') {
+            // Mark session as ended
+            session.status = 'ended';
+            storage.updateSession(session.sessionId, session);
+
+            // Archive the thread
+            try {
+                const thread = await botState.client.channels.fetch(session.threadId);
+                if (thread && thread.isThread()) {
+                    await thread.setArchived(true);
+                    console.log(`Archived thread ${thread.id} for ended session ${session.sessionId}`);
+                }
+            } catch (error) {
+                console.error(`Failed to archive thread for session ${session.sessionId}:`, error);
+            }
+        }
+    }
+}
+
+/**
+ * Notify when a runner goes offline
+ */
+async function notifyRunnerOffline(runner: RunnerInfo): Promise<void> {
+    if (!runner.ownerId) {
+        console.error('Runner has no ownerId, cannot notify:', runner.runnerId);
+        return;
+    }
+
+    // Only send notification if bot is ready
+    if (!botState.isBotReady) {
+        console.log('Bot not ready yet, skipping runner offline notification');
+        return;
+    }
+
+    // Try to send DM to owner (may fail if user has DMs disabled)
+    try {
+        const user = await botState.client.users.fetch(runner.ownerId);
+        await user.send({
+            embeds: [createRunnerOfflineEmbed(runner)]
+        });
+    } catch (error: any) {
+        if (error.code === 50007) {
+            console.log(`Could not send DM to user ${runner.ownerId} (DMs disabled or bot blocked)`);
+        } else {
+            console.error('Failed to send DM to runner owner:', error);
+        }
+    }
+
+    // Send notification to the runner's private channel
+    if (runner.privateChannelId) {
+        try {
+            const channel = await botState.client.channels.fetch(runner.privateChannelId);
+            if (channel && 'send' in channel) {
+                const sessions = storage.getRunnerSessions(runner.runnerId);
+                const endedSessions = sessions.filter(s => s.status === 'ended');
+
+                const embed = new EmbedBuilder()
+                    .setColor(0xFF6600)
+                    .setTitle('Runner Offline - Sessions Ended')
+                    .setDescription(`The runner \`${runner.name}\` has gone offline.\n\n**${endedSessions.length} active session(s) automatically ended.**`)
+                    .addFields(
+                        { name: 'Status', value: '🔴 Offline', inline: true },
+                        { name: 'Sessions Ended', value: `${endedSessions.length}`, inline: true },
+                        { name: 'Action', value: 'Start a new session when the Runner Agent comes back online', inline: false }
+                    )
+                    .setTimestamp();
+
+                await channel.send({ embeds: [embed] });
+                console.log(`Sent offline notification to runner channel ${runner.privateChannelId}`);
+            }
+        } catch (error) {
+            console.error('Failed to send notification to runner channel:', error);
+        }
+    }
+}
+
+/**
+ * Notify when a runner comes online
+ */
+export async function notifyRunnerOnline(runner: RunnerInfo, wasReclaimed: boolean = false): Promise<void> {
+    if (!runner.privateChannelId) {
+        console.log('Runner has no private channel, skipping online notification');
+        return;
+    }
+
+    if (!botState.isBotReady) {
+        console.log('Bot not ready yet, skipping runner online notification');
+        return;
+    }
+
+    try {
+        const channel = await botState.client.channels.fetch(runner.privateChannelId);
+        if (channel && 'send' in channel) {
+            const embed = new EmbedBuilder()
+                .setColor(0x00FF00)
+                .setTitle('🟢 Runner Online')
+                .setDescription(`Runner \`${runner.name}\` is now online and ready.`)
+                .addFields(
+                    { name: 'Status', value: '🟢 Online', inline: true },
+                    { name: 'CLI Types', value: runner.cliTypes.join(', ') || 'N/A', inline: true }
+                )
+                .setTimestamp();
+
+            if (wasReclaimed) {
+                embed.addFields({
+                    name: 'Note',
+                    value: 'Runner was restarted and reclaimed from previous offline state.',
+                    inline: false
+                });
+            }
+
+            await channel.send({ embeds: [embed] });
+            console.log(`Sent online notification to runner channel ${runner.privateChannelId}`);
+        }
+    } catch (error) {
+        console.error('Failed to send runner online notification:', error);
+    }
+}
+
+/**
+ * Main WebSocket message handler
+ */
+async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promise<void> {
+    switch (message.type) {
+        case 'register':
+            await handleRegister(ws, message.data);
+            break;
+
+        case 'heartbeat':
+            await handleHeartbeat(ws, message.data);
+            break;
+
+        case 'approval_request':
+            await handleApprovalRequest(ws, message.data);
+            break;
+
+        case 'output':
+            await handleOutput(message.data);
+            break;
+
+        case 'action_item':
+            await handleActionItem(message.data);
+            break;
+
+        case 'metadata':
+            await handleMetadata(message.data);
+            break;
+
+        case 'session_ready':
+            await handleSessionReady(message.data);
+            break;
+
+        case 'status':
+            await handleRunnerStatusUpdate(message.data);
+            break;
+
+        case 'session_discovered':
+            await handleSessionDiscovered(message.data);
+            break;
+
+        case 'terminal_list':
+            await handleTerminalList(message.data);
+            break;
+
+        default:
+            console.log('Unknown message type:', message.type);
+    }
+}
+
+/**
+ * Handle runner registration
+ */
+async function handleRegister(ws: any, data: any): Promise<void> {
+    // Validate token
+    const tokenInfo = storage.validateToken(data.token);
+
+    if (!tokenInfo) {
+        console.error(`Runner ${data.runnerId} attempted to register with invalid token`);
+        ws.send(JSON.stringify({
+            type: 'error',
+            data: { message: 'Invalid token' }
+        }));
+        ws.close();
+        return;
+    }
+
+    // Check if this token is already in use by a DIFFERENT runner
+    const allRunners = Object.values(storage.data.runners);
+    const tokenInUse = allRunners.find(r => r.token === data.token && r.runnerId !== data.runnerId);
+
+    if (tokenInUse) {
+        if (tokenInUse.status === 'online') {
+            console.error(`Token already in use by ONLINE runner ${tokenInUse.runnerId}, rejecting registration from ${data.runnerId}`);
+            ws.send(JSON.stringify({
+                type: 'error',
+                data: { message: `Token already in use by online runner '${tokenInUse.name}'. Stop the other instance first or wait for it to go offline.` }
+            }));
+            ws.close();
+            return;
+        }
+
+        // Allow takeover of offline runner
+        console.log(`Token used by OFFLINE runner ${tokenInUse.runnerId}, allowing takeover by ${data.runnerId}`);
+        const oldRunnerId = tokenInUse.runnerId;
+        storage.deleteRunner(oldRunnerId);
+
+        tokenInUse.runnerId = data.runnerId;
+        tokenInUse.name = data.runnerName;
+        tokenInUse.status = 'online';
+        tokenInUse.lastHeartbeat = new Date().toISOString();
+        tokenInUse.cliTypes = data.cliTypes;
+        tokenInUse.defaultWorkspace = data.defaultWorkspace;
+
+        if (!tokenInUse.privateChannelId) {
+            try {
+                tokenInUse.privateChannelId = await getOrCreateRunnerChannel(tokenInUse, tokenInfo.guildId);
+            } catch (error) {
+                console.error(`Failed to create private channel for reclaimed runner: ${error}`);
+            }
+        }
+
+        storage.registerRunner(tokenInUse);
+        botState.runnerConnections.set(data.runnerId, ws);
+        console.log(`Reclaimed offline runner: ${data.runnerId} (old: ${oldRunnerId}, CLI types: ${data.cliTypes.join(', ')})`);
+
+        await notifyRunnerOnline(tokenInUse, true);
+
+        ws.send(JSON.stringify({
+            type: 'registered',
+            data: { runnerId: data.runnerId, cliTypes: data.cliTypes, reclaimed: true }
+        }));
+        return;
+    }
+
+    // Check if runner already exists
+    const existingRunner = storage.getRunner(data.runnerId);
+
+    if (existingRunner) {
+        existingRunner.cliTypes = data.cliTypes;
+        existingRunner.status = 'online';
+        existingRunner.lastHeartbeat = new Date().toISOString();
+        if (data.defaultWorkspace) existingRunner.defaultWorkspace = data.defaultWorkspace;
+
+        if (!existingRunner.privateChannelId) {
+            try {
+                existingRunner.privateChannelId = await getOrCreateRunnerChannel(existingRunner, tokenInfo.guildId);
+            } catch (error) {
+                console.error(`Failed to create private channel for existing runner: ${error}`);
+            }
+        }
+
+        storage.registerRunner(existingRunner);
+        botState.runnerConnections.set(data.runnerId, ws);
+        console.log(`Runner ${data.runnerId} re-registered (CLI types: ${data.cliTypes.join(', ')})`);
+
+        await notifyRunnerOnline(existingRunner, false);
+    } else {
+        if (!tokenInfo.userId) {
+            console.error('Token does not have a valid userId, cannot register runner');
+            ws.send(JSON.stringify({
+                type: 'error',
+                data: { message: 'Invalid token: missing user ID. Please regenerate your token with /generate-token' }
+            }));
+            ws.close();
+            return;
+        }
+
+        const newRunner: RunnerInfo = {
+            runnerId: data.runnerId,
+            name: data.runnerName,
+            ownerId: tokenInfo.userId,
+            token: data.token,
+            status: 'online',
+            lastHeartbeat: new Date().toISOString(),
+            authorizedUsers: [tokenInfo.userId],
+            cliTypes: data.cliTypes,
+            defaultWorkspace: data.defaultWorkspace
+        };
+
+        try {
+            newRunner.privateChannelId = await getOrCreateRunnerChannel(newRunner, tokenInfo.guildId);
+        } catch (error) {
+            console.error(`Failed to create private channel for runner: ${error}`);
+        }
+
+        storage.registerRunner(newRunner);
+        botState.runnerConnections.set(data.runnerId, ws);
+        console.log(`New runner registered: ${data.runnerId} (CLI types: ${data.cliTypes.join(', ')})`);
+
+        await notifyRunnerOnline(newRunner, false);
+    }
+
+    ws.send(JSON.stringify({
+        type: 'registered',
+        data: { runnerId: data.runnerId, cliTypes: data.cliTypes }
+    }));
+}
+
+/**
+ * Handle runner heartbeat
+ */
+async function handleHeartbeat(ws: any, data: any): Promise<void> {
+    storage.updateRunnerStatus(data.runnerId, 'online');
+
+    if (!botState.runnerConnections.has(data.runnerId)) {
+        botState.runnerConnections.set(data.runnerId, ws);
+        console.log(`Runner ${data.runnerId} heartbeat received`);
+    }
+}
+
+/**
+ * Handle approval request from runner
+ */
+async function handleApprovalRequest(ws: any, data: any): Promise<void> {
+    console.log('[Approval] Received request:', JSON.stringify(data, null, 2));
+
+    const runner = storage.getRunner(data.runnerId);
+    if (!runner) {
+        console.error('[Approval] Unknown runner:', data.runnerId);
+        ws.send(JSON.stringify({
+            type: 'approval_response',
+            data: { requestId: data.requestId, allow: false, message: `Unknown runner: ${data.runnerId}` }
+        }));
+        return;
+    }
+
+    const session = storage.getSession(data.sessionId);
+    if (!session) {
+        console.error('[Approval] Unknown session:', data.sessionId);
+        ws.send(JSON.stringify({
+            type: 'approval_response',
+            data: { requestId: data.requestId, allow: false, message: `Unknown session: ${data.sessionId}. Please start a new session in Discord.` }
+        }));
+        return;
+    }
+
+    // Check if this tool is auto-approved for this session
+    const sessionAllowedTools = botState.allowedTools.get(data.sessionId);
+    if (sessionAllowedTools && sessionAllowedTools.has(data.toolName)) {
+        console.log(`Tool ${data.toolName} is auto-approved for session ${data.sessionId}`);
+        ws.send(JSON.stringify({
+            type: 'approval_response',
+            data: { requestId: data.requestId, allow: true, message: `Auto-approved (tool ${data.toolName} was previously allowed for all)` }
+        }));
+        return;
+    }
+
+    // Send to the thread
+    const thread = await botState.client.channels.fetch(session.threadId);
+    if (!thread || !('send' in thread)) {
+        console.error('Invalid thread');
+        return;
+    }
+
+    // Create approval buttons
+    let row: ActionRowBuilder<ButtonBuilder>;
+
+    if (data.options && data.options.length > 0) {
+        const buttons = data.options.map((option: string, index: number) => {
+            const optionNumber = index + 1;
+            let style = ButtonStyle.Secondary;
+            if (index === 0) style = ButtonStyle.Success;
+            else if (index === data.options.length - 1) style = ButtonStyle.Danger;
+            else style = ButtonStyle.Primary;
+
+            return new ButtonBuilder()
+                .setCustomId(`option_${data.requestId}_${optionNumber}`)
+                .setLabel(option)
+                .setStyle(style);
+        });
+
+        row = new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons);
+    } else {
+        const allowButton = new ButtonBuilder()
+            .setCustomId(`allow_${data.requestId}`)
+            .setLabel('✅ Allow Once')
+            .setStyle(ButtonStyle.Success);
+
+        const allowAllButton = new ButtonBuilder()
+            .setCustomId(`allow_all_${data.requestId}`)
+            .setLabel('✅ Allow All (This Tool)')
+            .setStyle(ButtonStyle.Primary);
+
+        const modifyButton = new ButtonBuilder()
+            .setCustomId(`modify_${data.requestId}`)
+            .setLabel('✏️ Modify')
+            .setStyle(ButtonStyle.Secondary);
+
+        const denyButton = new ButtonBuilder()
+            .setCustomId(`deny_${data.requestId}`)
+            .setLabel('❌ Deny')
+            .setStyle(ButtonStyle.Danger);
+
+        row = new ActionRowBuilder<ButtonBuilder>()
+            .addComponents(allowButton, allowAllButton, modifyButton, denyButton);
+    }
+
+    const embed = createToolUseEmbed(runner, data.toolName, data.toolInput);
+
+    // Build ping content based on config
+    const userMention = session.creatorId ? `<@${session.creatorId}>` : '';
+    const atHere = config.notifications.useAtHere && config.notifications.pingOnApproval ? '@here ' : '';
+    const pingContent = config.notifications.pingOnApproval
+        ? `${atHere}${userMention} Approval needed!`
+        : 'Approval needed!';
+
+    const message = await thread.send({
+        content: pingContent,
+        embeds: [embed],
+        components: [row]
+    });
+
+    botState.pendingApprovals.set(data.requestId, {
+        userId: runner.ownerId,
+        channelId: session.threadId,
+        messageId: message.id,
+        runnerId: data.runnerId,
+        sessionId: data.sessionId,
+        toolName: data.toolName,
+        toolInput: data.toolInput
+    });
+
+    console.log(`Approval request ${data.requestId} sent to Discord`);
+}
+
+/**
+ * Handle output from runner
+ */
+async function handleOutput(data: any): Promise<void> {
+    const session = storage.getSession(data.sessionId);
+    if (!session) return;
+
+    const thread = await botState.client.channels.fetch(session.threadId);
+    if (!thread || !('send' in thread)) return;
+
+    const outputType = data.outputType || 'stdout';
+    const now = Date.now();
+    const STREAMING_TIMEOUT = 10000;
+
+    const streaming = botState.streamingMessages.get(data.sessionId);
+    const shouldStream = streaming &&
+        (now - streaming.lastUpdateTime) < STREAMING_TIMEOUT &&
+        streaming.outputType === outputType;
+
+    const embed = createOutputEmbed(outputType, data.content);
+
+    if (shouldStream) {
+        try {
+            const message = await thread.messages.fetch(streaming.messageId);
+            await message.edit({ embeds: [embed] });
+
+            botState.streamingMessages.set(data.sessionId, {
+                messageId: streaming.messageId,
+                lastUpdateTime: now,
+                content: data.content,
+                outputType: outputType
+            });
+        } catch (error) {
+            console.error('Error editing message:', error);
+            const newMessage = await thread.send({ embeds: [embed] });
+            botState.streamingMessages.set(data.sessionId, {
+                messageId: newMessage.id,
+                lastUpdateTime: now,
+                content: data.content,
+                outputType: outputType
+            });
+        }
+    } else {
+        if (outputType === 'error' && data.content.includes('Folder') && data.content.includes('does not exist')) {
+            const createFolderButton = new ActionRowBuilder<ButtonBuilder>()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`create_folder_${data.sessionId}`)
+                        .setLabel('Create Folder & Retry')
+                        .setStyle(ButtonStyle.Success)
+                        .setEmoji('📁')
+                );
+
+            await thread.send({
+                embeds: [embed],
+                components: [createFolderButton]
+            });
+        } else {
+            const sentMessage = await thread.send({ embeds: [embed] });
+            botState.streamingMessages.set(data.sessionId, {
+                messageId: sentMessage.id,
+                lastUpdateTime: now,
+                content: data.content,
+                outputType: outputType
+            });
+        }
+    }
+}
+
+/**
+ * Handle action item from runner
+ */
+async function handleActionItem(data: any): Promise<void> {
+    const session = storage.getSession(data.sessionId);
+    if (!session) return;
+
+    const channel = await botState.client.channels.fetch(session.channelId);
+    if (!channel || !('send' in channel)) return;
+
+    const items = botState.actionItems.get(session.sessionId) || [];
+    items.push(data.actionItem);
+    botState.actionItems.set(session.sessionId, items);
+
+    const embed = createActionItemEmbed(data.actionItem);
+    await channel.send({ embeds: [embed] });
+}
+
+/**
+ * Handle metadata from runner
+ */
+async function handleMetadata(data: any): Promise<void> {
+    const streaming = botState.streamingMessages.get(data.sessionId);
+    if (!streaming || !data.activity) return;
+
+    const session = storage.getSession(data.sessionId);
+    if (!session) return;
+
+    try {
+        const thread = await botState.client.channels.fetch(session.threadId);
+        if (!thread || !('messages' in thread)) return;
+
+        const message = await thread.messages.fetch(streaming.messageId);
+        if (!message || message.embeds.length === 0) return;
+
+        const embed = EmbedBuilder.from(message.embeds[0]);
+        embed.setFooter({ text: `Status: ${data.activity}` });
+
+        await message.edit({ embeds: [embed] });
+    } catch (error) {
+        // Ignore errors
+    }
+}
+
+/**
+ * Handle session ready notification
+ */
+async function handleSessionReady(data: any): Promise<void> {
+    const { runnerId, sessionId } = data;
+    console.log(`[handleSessionReady] Session ${sessionId} is ready for runner ${runnerId}`);
+
+    const session = storage.getSession(sessionId);
+    if (!session) {
+        console.error(`[handleSessionReady] Session not found: ${sessionId}`);
+        return;
+    }
+
+    // Mark session as active
+    session.status = 'active';
+    storage.updateSession(session.sessionId, session);
+
+    const runner = storage.getRunner(runnerId);
+
+    try {
+        const thread = await botState.client.channels.fetch(session.threadId);
+        if (thread && thread.isThread()) {
+            const readyEmbed = new EmbedBuilder()
+                .setColor(0x00FF00)
+                .setTitle('Session Ready!')
+                .setDescription(`Connected to \`${runner?.name}\`. You can now start typing commands.`)
+                .addFields({
+                    name: 'Working Directory',
+                    value: `\`${session.folderPath}\``,
+                    inline: true
+                })
+                .setTimestamp();
+
+            // Determine ping content
+            const userMention = session.creatorId ? `<@${session.creatorId}>` : '';
+            const atHere = config.notifications.useAtHere ? '@here ' : '';
+            const content = `${atHere}${userMention} Session is ready!`;
+
+            // Create "Go to Thread" button for ephemeral message
+            const goToThreadButton = new ButtonBuilder()
+                .setLabel('Go to Thread')
+                .setStyle(ButtonStyle.Link)
+                .setURL(`https://discord.com/channels/${thread.guildId}/${thread.id}`)
+                .setEmoji('💬');
+
+            const buttonRow = new ActionRowBuilder<ButtonBuilder>()
+                .addComponents(goToThreadButton);
+
+            await thread.send({
+                content,
+                embeds: [readyEmbed]
+            });
+
+            // Update ephemeral message if we have the token
+            if (session.interactionToken && botState.client.application) {
+                try {
+                    const webhook = new WebhookClient({ id: botState.client.application.id, token: session.interactionToken });
+                    await webhook.editMessage('@original', {
+                        embeds: [readyEmbed],
+                        components: [buttonRow]
+                    });
+                    console.log(`Updated ephemeral message for session ${session.sessionId}`);
+                } catch (error) {
+                    console.error('Failed to update ephemeral message:', error);
+                }
+            }
+        }
+    } catch (error) {
+        console.error(`[handleSessionReady] Failed to notify thread:`, error);
+    }
+}
+
+
+/**
+ * Handle runner status update
+ */
+async function handleRunnerStatusUpdate(data: any): Promise<void> {
+    const { runnerId, sessionId, status, currentTool, isCommandRunning } = data;
+
+    const previousStatus = botState.sessionStatuses.get(sessionId);
+    botState.sessionStatuses.set(sessionId, status);
+
+    const session = storage.getSession(sessionId);
+    if (!session) return;
+
+    // Detect command completion (working -> idle)
+    if (previousStatus === 'working' && status === 'idle' && config.notifications.pingOnCompletion) {
+        try {
+            const thread = await botState.client.channels.fetch(session.threadId);
+            if (thread && 'send' in thread) {
+                const userMention = session.creatorId ? `<@${session.creatorId}>` : '';
+                const atHere = config.notifications.useAtHere ? '@here ' : '';
+
+                // Only ping if the command wasn't just "status" or something trivial if we could detect that
+                // For now, ping on any return to idle usually means command done
+
+                await thread.send({
+                    content: `${atHere}${userMention} Command finished.`
+                });
+            }
+        } catch (error) {
+            console.error('[Status] Failed to send completion ping:', error);
+        }
+    }
+
+    // TODO: Add visual status updates to thread if needed
+    console.log(`[Status] Session ${sessionId}: ${status}${currentTool ? ` (${currentTool})` : ''}${isCommandRunning !== undefined ? ` running=${isCommandRunning}` : ''}`);
+}
+
+/**
+ * Handle session discovered (for watched terminals)
+ */
+async function handleSessionDiscovered(data: any): Promise<void> {
+    const { runnerId, sessionId, exists, cwd } = data;
+
+    const runner = storage.getRunner(runnerId);
+    if (!runner) {
+        console.error(`[handleSessionDiscovered] Unknown runner: ${runnerId}`);
+        return;
+    }
+
+    if (!exists) {
+        console.log(`[handleSessionDiscovered] Session ${sessionId} does not exist on runner ${runnerId}`);
+        return;
+    }
+
+    // Check if we already have this session
+    const existingSession = storage.getSession(sessionId);
+    if (existingSession) {
+        // Check if this session was already active - if so, no need for restoration message
+        const wasAlreadyActive = existingSession.status === 'active';
+
+        console.log(`[handleSessionDiscovered] Session ${sessionId} already exists (status: ${existingSession.status}), updating CWD to: ${cwd}`);
+        if (cwd) {
+            existingSession.folderPath = cwd;
+        }
+        // Ensure status is active
+        existingSession.status = 'active';
+        storage.updateSession(existingSession.sessionId, existingSession);
+
+        // Only notify if session was previously NOT active (i.e., was ended/offline and is now restored)
+        // Skip notification for sessions that are already active (just created through Discord)
+        if (!wasAlreadyActive && existingSession.threadId && existingSession.channelId) {
+            try {
+                const channel = await botState.client.channels.fetch(existingSession.channelId);
+                if (channel && 'threads' in channel) {
+                    const thread = await (channel as any).threads.fetch(existingSession.threadId);
+                    if (thread) {
+                        // Unarchive thread if needed
+                        if (thread.archived) {
+                            await thread.setArchived(false);
+                        }
+
+                        // Re-add the creator to the thread (they may have been removed when archived)
+                        if (existingSession.creatorId) {
+                            try {
+                                await thread.members.add(existingSession.creatorId);
+                            } catch (addErr) {
+                                console.warn(`[handleSessionDiscovered] Could not add creator to thread:`, addErr);
+                            }
+                        }
+
+                        const shouldPing = config.notifications.useAtHere;
+                        await thread.send({
+                            content: shouldPing ? '@here Session Connection Restored!' : undefined,
+                            embeds: [{
+                                title: 'Session Connection Restored',
+                                description: `The runner agent has reconnected to this session.\nYou can continue using it.`,
+                                color: 0x57F287 // Green
+                            }]
+                        });
+                        console.log(`[handleSessionDiscovered] Notified existing thread ${existingSession.threadId} of restoration`);
+                    }
+                }
+            } catch (err) {
+                console.error(`[handleSessionDiscovered] Failed to notify existing thread:`, err);
+            }
+        } else if (wasAlreadyActive) {
+            console.log(`[handleSessionDiscovered] Session ${sessionId} was already active, skipping restoration notification`);
+        }
+        return;
+    }
+
+    // Check if this is a 'discode-' session that we might already know by its short ID
+    // The tmux session name format is: discode-{first8charsOfUUID}
+    if (sessionId.startsWith('discode-')) {
+        const shortId = sessionId.replace('discode-', '');
+        const existingByShortId = storage.getSessionByShortId(shortId);
+
+        if (existingByShortId) {
+            // Check if the session was already active - skip restoration message if so
+            const wasAlreadyActive = existingByShortId.status === 'active';
+
+            console.log(`[handleSessionDiscovered] Found existing session ${existingByShortId.sessionId} for restored ${sessionId} (status: ${existingByShortId.status}). Session already tracked.`);
+
+            // Session already exists in storage - just update status if needed
+            existingByShortId.status = 'active';
+            storage.updateSession(existingByShortId.sessionId, existingByShortId);
+
+            // Only post restoration message if session was previously NOT active
+            if (!wasAlreadyActive && existingByShortId.threadId && existingByShortId.channelId) {
+                try {
+                    const channel = await botState.client.channels.fetch(existingByShortId.channelId);
+                    if (channel && 'threads' in channel) {
+                        const thread = await (channel as any).threads.fetch(existingByShortId.threadId);
+                        if (thread) {
+                            // Unarchive thread if needed
+                            if (thread.archived) {
+                                await thread.setArchived(false);
+                            }
+
+                            // Re-add the creator to the thread (they may have been removed when archived)
+                            if (existingByShortId.creatorId) {
+                                try {
+                                    await thread.members.add(existingByShortId.creatorId);
+                                } catch (addErr) {
+                                    console.warn(`[handleSessionDiscovered] Could not add creator to thread:`, addErr);
+                                }
+                            }
+
+                            const shouldPing = config.notifications.useAtHere;
+                            await thread.send({
+                                content: shouldPing ? '@here Session Connection Restored!' : undefined,
+                                embeds: [{
+                                    title: 'Session Connection Restored',
+                                    description: `The runner agent has reconnected to this session.\nYou can continue using it.`,
+                                    color: 0x57F287 // Green
+                                }]
+                            });
+                            console.log(`[handleSessionDiscovered] Notified existing thread ${existingByShortId.threadId} of restoration`);
+                        }
+                    }
+                } catch (err) {
+                    console.error(`[handleSessionDiscovered] Failed to notify existing thread:`, err);
+                }
+            } else if (wasAlreadyActive) {
+                console.log(`[handleSessionDiscovered] Session ${existingByShortId.sessionId} was already active, skipping restoration notification`);
+            }
+
+            return;
+        }
+    }
+
+    console.log(`[handleSessionDiscovered] New session discovered: ${sessionId} (CWD: ${cwd || 'unknown'})`);
+    // Session discovered but not tracked - create new session tracking
+    console.log(`[handleSessionDiscovered] Discovered orphaned session ${sessionId} on runner ${runnerId}`);
+
+    // We don't know the creator ID or original CLI type since it's an orphan
+    // Default to the runner owner and 'generic' CLI
+    const ownerId = runner.ownerId;
+    if (!ownerId) return;
+
+    // Use a default folder if CWD is unknown
+    const folderPath = cwd || runner.defaultWorkspace || '.';
+
+    // Create session structure
+    const session: Session = {
+        sessionId: sessionId,
+        runnerId: runner.runnerId,
+        channelId: runner.privateChannelId || '',
+        threadId: '', // Will create below
+        createdAt: new Date().toISOString(),
+        status: 'active',
+        cliType: 'generic', // Best guess
+        folderPath: folderPath,
+    };
+
+    try {
+        // Need to find the channel
+        let channelId = runner.privateChannelId;
+        if (!channelId) {
+            // Try to recover channel
+            // This requires an interaction or knowing the guild... 
+            // If we don't have the channel ID, we can't really restore it easily without more info
+            console.error(`[handleSessionDiscovered] Cannot restore session ${sessionId}: runner has no private channel`);
+            return;
+        }
+
+        const channel = await botState.client.channels.fetch(channelId);
+        if (!channel || !('threads' in channel)) {
+            console.error(`[handleSessionDiscovered] Cannot restore session ${sessionId}: invalid channel`);
+            return;
+        }
+
+        const textChannel = channel as any; // Cast to TextChannel
+
+        // Create a new thread for this restored session
+        const thread = await textChannel.threads.create({
+            name: `${session.cliType.toUpperCase()}-${Date.now()}`, // Use CLI type for consistent naming
+            type: 12, // PrivateThread
+            invitable: false,
+            reason: `Restored session ${sessionId}`
+        });
+
+        session.threadId = thread.id;
+        session.channelId = channel.id;
+
+        // Save session
+        storage.createSession(session);
+        botState.actionItems.set(session.sessionId, []);
+
+        // Add owner
+        await thread.members.add(ownerId);
+
+        console.log(`[handleSessionDiscovered] Restored session ${sessionId} to thread ${thread.id}`);
+
+        // Notify
+        const embed = new EmbedBuilder()
+            .setColor(0x00FF00)
+            .setTitle('Session Restored')
+            .setDescription(`Found existing session \`${sessionId}\` on runner. Reconnected!`)
+            .addFields(
+                { name: 'Working Directory', value: `\`${folderPath}\``, inline: true },
+                { name: 'Note', value: 'This session was recovered from the runner.', inline: false }
+            )
+            .setTimestamp();
+
+        await thread.send({ content: `<@${ownerId}>`, embeds: [embed] });
+
+    } catch (error) {
+        console.error(`[handleSessionDiscovered] Failed to restore session:`, error);
+    }
+}
+
+/**
+ * Handle terminal list response
+ */
+async function handleTerminalList(data: any): Promise<void> {
+    const { runnerId, terminals } = data;
+    console.log(`[handleTerminalList] Runner ${runnerId} has terminals:`, terminals);
+    // This is handled by the /terminals command response
+}
+
+// Export action items for external access
+export { botState };

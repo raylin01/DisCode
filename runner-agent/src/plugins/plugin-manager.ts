@@ -19,9 +19,10 @@ import {
     ErrorEvent,
     MetadataEvent,
     HookEvent,
-} from './base.ts';
-import { TmuxPlugin } from './tmux-plugin.ts';
-import { PrintPlugin } from './print-plugin.ts';
+} from './base.js';
+import { TmuxPlugin } from './tmux-plugin.js';
+import { PrintPlugin } from './print-plugin.js';
+import { StreamPlugin } from './stream-plugin.js';
 
 // ============================================================================
 // Types
@@ -52,7 +53,7 @@ export class PluginManager extends EventEmitter {
         this.defaultPlugin = config?.defaultPlugin || envPlugin || 'tmux';
 
         // Determine which plugins to enable
-        const enabledPlugins = config?.enabledPlugins || ['tmux', 'print'];
+        const enabledPlugins = config?.enabledPlugins || ['tmux', 'print', 'stream'];
 
         // Create plugin instances
         if (enabledPlugins.includes('tmux')) {
@@ -60,6 +61,9 @@ export class PluginManager extends EventEmitter {
         }
         if (enabledPlugins.includes('print')) {
             this.plugins.set('print', new PrintPlugin());
+        }
+        if (enabledPlugins.includes('stream')) {
+            this.plugins.set('stream', new StreamPlugin());
         }
         // Future: if (enabledPlugins.includes('pty')) { ... }
 

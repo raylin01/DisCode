@@ -11,7 +11,7 @@ import { EventEmitter } from 'events';
 // Types
 // ============================================================================
 
-export type PluginType = 'tmux' | 'print' | 'pty';
+export type PluginType = 'tmux' | 'print' | 'pty' | 'stream';
 export type SessionStatus = 'idle' | 'working' | 'waiting' | 'offline' | 'error';
 
 export interface SessionConfig {
@@ -21,8 +21,8 @@ export interface SessionConfig {
     cwd: string;
     /** Unique session identifier */
     sessionId: string;
-    /** CLI type (claude, gemini) */
-    cliType: 'claude' | 'gemini';
+    /** CLI type (claude, gemini, terminal/generic for plain shell) */
+    cliType: 'claude' | 'gemini' | 'terminal' | 'generic';
     /** Plugin-specific options */
     options?: PluginOptions;
 }

@@ -5,7 +5,7 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
-import type { TokenInfo, RunnerInfo, Session } from '../shared/types.js';
+import type { TokenInfo, RunnerInfo, Session } from '../../shared/types.ts';
 
 interface StorageData {
   users: Record<string, UserData>;
@@ -254,6 +254,21 @@ class Storage {
 
   getSession(sessionId: string): Session | null {
     return this._data.sessions[sessionId] || null;
+  }
+
+  /**
+   * Find a session by short ID prefix (first 8 chars of UUID without dashes)
+   * Used for matching tmux session names like discode-{shortId}
+   */
+  getSessionByShortId(shortId: string): Session | null {
+    for (const sessionId in this._data.sessions) {
+      // Compare first 8 chars of session ID (without dashes) to the short ID
+      const sessionIdNoDashes = sessionId.replace(/-/g, '').slice(0, 8);
+      if (sessionIdNoDashes === shortId) {
+        return this._data.sessions[sessionId];
+      }
+    }
+    return null;
   }
 
   getRunnerSessions(runnerId: string): Session[] {

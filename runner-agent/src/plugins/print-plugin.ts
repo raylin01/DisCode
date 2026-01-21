@@ -15,7 +15,7 @@ import {
     SessionConfig,
     SessionStatus,
     OutputEvent,
-} from './base.ts';
+} from './base.js';
 
 // ============================================================================
 // Constants
@@ -57,12 +57,29 @@ class PrintSession implements PluginSession {
     /** Reference to parent plugin for emitting events */
     private plugin: PrintPlugin;
 
+    readonly isOwned = true;
+    readonly isReady = true;
+
     constructor(config: SessionConfig, plugin: PrintPlugin) {
         this.sessionId = config.sessionId;
         this.config = config;
         this.createdAt = new Date();
         this.lastActivity = new Date();
         this.plugin = plugin;
+    }
+
+    on(event: 'ready', listener: () => void): this {
+        if (event === 'ready') {
+            listener();
+        }
+        return this;
+    }
+
+    once(event: 'ready', listener: () => void): this {
+        if (event === 'ready') {
+            listener();
+        }
+        return this;
     }
 
     async sendMessage(message: string): Promise<void> {
@@ -201,6 +218,19 @@ class PrintSession implements PluginSession {
         // PrintPlugin doesn't support interactive approvals
         // Approvals are handled via HTTP hooks
         this.plugin.log(`[${this.sessionId.slice(0, 8)}] Approval not supported in print mode (use hooks)`);
+    }
+
+    /**
+     * Interrupt the current CLI execution by sending SIGINT
+     */
+    async interrupt(): Promise<void> {
+        if (this.currentProcess) {
+            this.plugin.log(`[${this.sessionId.slice(0, 8)}] Sending interrupt (SIGINT)`);
+            this.currentProcess.kill('SIGINT');
+            this.status = 'idle';
+        } else {
+            this.plugin.log(`[${this.sessionId.slice(0, 8)}] No process to interrupt`);
+        }
     }
 
     async close(): Promise<void> {
