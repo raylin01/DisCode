@@ -243,17 +243,40 @@ async function capturePane(tmuxSession: string, lines = 100, tmuxPath: string): 
 /**
  * Detect permission prompt in tmux output
  * Based on vibecraft's detection logic
+ * Also detects startup prompts like Settings Error that block session
  */
 function detectPermissionPrompt(output: string): { tool: string; context: string; options: ApprovalOption[] } | null {
     const lines = output.split('\n');
 
-    // Look for "Do you want to proceed?" or "Would you like to proceed?"
+    // Look for various prompt patterns
     let proceedLineIdx = -1;
-    // Scan last 50 lines (increased from 30)
+    let promptType: 'permission' | 'settings' | 'selector' = 'permission';
+
+    // Scan last 50 lines
     for (let i = lines.length - 1; i >= Math.max(0, lines.length - 50); i--) {
-        if (/(Do you want|Would you like) to proceed/i.test(lines[i])) { // Removed ? to be safer
+        // Standard permission prompts
+        if (/(Do you want|Would you like) to (proceed|make this edit)/i.test(lines[i])) {
             proceedLineIdx = i;
+            promptType = 'permission';
             break;
+        }
+        // Settings Error prompts
+        if (/Settings Error/i.test(lines[i])) {
+            proceedLineIdx = i;
+            promptType = 'settings';
+            break;
+        }
+    }
+
+    // If no explicit prompt found, look for selector pattern (❯ followed by numbered options)
+    if (proceedLineIdx === -1) {
+        for (let i = lines.length - 1; i >= Math.max(0, lines.length - 20); i--) {
+            if (/^\s*❯\s*\d+\./.test(lines[i])) {
+                // Found a selector, look back for context
+                proceedLineIdx = Math.max(0, i - 10);
+                promptType = 'selector';
+                break;
+            }
         }
     }
 
@@ -272,11 +295,13 @@ function detectPermissionPrompt(output: string): { tool: string; context: string
         }
     }
 
-    if (!hasFooter && !hasSelector) return null;
+    // For settings/selector prompts, we don't require footer verification
+    if (!hasFooter && !hasSelector && promptType === 'permission') return null;
 
     // Parse numbered options
     const options: ApprovalOption[] = [];
-    for (let i = proceedLineIdx + 1; i < Math.min(lines.length, proceedLineIdx + 10); i++) {
+    const searchStart = promptType === 'selector' ? Math.max(0, proceedLineIdx) : proceedLineIdx + 1;
+    for (let i = searchStart; i < Math.min(lines.length, searchStart + 15); i++) {
         const line = lines[i];
         if (/Esc to cancel/i.test(line)) break;
 
@@ -289,26 +314,43 @@ function detectPermissionPrompt(output: string): { tool: string; context: string
         }
     }
 
-    if (options.length < 2) return null;
+    // For selector prompts (like Settings Error), we may only have 1 option
+    if (options.length < 1) return null;
+    if (options.length < 2 && promptType === 'permission') return null;
 
-    // Find tool name
+    // Find tool name based on prompt type
     let tool = 'Unknown';
-    for (let i = proceedLineIdx; i >= Math.max(0, proceedLineIdx - 20); i--) {
-        const toolMatch = lines[i].match(/[●◐·]\s*(\w+)\s*\(/);
-        if (toolMatch) {
-            tool = toolMatch[1];
-            break;
-        }
-        const cmdMatch = lines[i].match(/^\s*(Bash|Read|Write|Edit|Grep|Glob|Task|WebFetch|WebSearch)\s+\w+/i);
-        if (cmdMatch) {
-            tool = cmdMatch[1];
-            break;
+
+    if (promptType === 'settings') {
+        tool = 'Settings';
+    } else if (promptType === 'selector') {
+        tool = 'Prompt';
+    } else {
+        // Standard permission prompt - look for tool indicators
+        for (let i = proceedLineIdx; i >= Math.max(0, proceedLineIdx - 20); i--) {
+            // Pattern for tool indicators: ● ◐ · ⏺
+            const toolMatch = lines[i].match(/[●◐·⏺]\s*(\w+)\s*\(/);
+            if (toolMatch) {
+                tool = toolMatch[1];
+                break;
+            }
+            // Pattern for "Edit file .env" style
+            const editMatch = lines[i].match(/^Edit file\s+(.+)$/i);
+            if (editMatch) {
+                tool = 'Edit';
+                break;
+            }
+            const cmdMatch = lines[i].match(/^\s*(Bash|Read|Write|Edit|Update|Grep|Glob|Task|WebFetch|WebSearch)\s+\w+/i);
+            if (cmdMatch) {
+                tool = cmdMatch[1];
+                break;
+            }
         }
     }
 
     // Build context
     const contextStart = Math.max(0, proceedLineIdx - 10);
-    const contextEnd = proceedLineIdx + 1 + options.length;
+    const contextEnd = Math.min(lines.length, proceedLineIdx + 1 + options.length + 5);
     const context = lines.slice(contextStart, contextEnd).join('\n').trim();
 
     return { tool, context, options };

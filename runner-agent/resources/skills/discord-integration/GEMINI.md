@@ -52,7 +52,7 @@ send-to-discord.sh "Hey @ray, I need your input on this."
 **REQUIRED for embeds:** You must provide `--title` AND `--description`. Color is optional.
 
 ```bash
-send-to-discord.sh --title "✅ Task Completed" --description "Fixed the login bug and added tests." --color "green"
+send-to-discord.sh --title "Task Completed" --description "Fixed the login bug and added tests." --color "green"
 ```
 
 **⚠️ COMMON MISTAKES TO AVOID:**
@@ -87,9 +87,9 @@ Use these exact names (case-insensitive):
 | Situation                          | Command                                                    |
 |------------------------------------|-------------------------------------------------------------|
 | Starting a new task                | `update-channel.sh "task-name" "description"`               |
-| Task completed                     | `send-to-discord.sh --title "✅ Done" --description "..."` |
+| Task completed                     | `send-to-discord.sh --title "Done" --description "..." --color "green"` |
 | Need user input                    | `send-to-discord.sh "Hey @username, I need..."`            |
-| Error/problem occurred             | `send-to-discord.sh --title "⚠️ Error" --description "..." --color "red"` |
+| Error/problem occurred             | `send-to-discord.sh --title "Error" --description "..." --color "red"` |
 | Switching to different work        | `update-channel.sh "new-task" "new description"`           |
 
 ---
