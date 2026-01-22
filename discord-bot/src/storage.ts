@@ -292,6 +292,16 @@ class Storage {
     }
   }
 
+  /**
+   * Find sessions by thread ID, returns most recent first
+   * Used for respawn-session to find previous session settings
+   */
+  getSessionsByThreadId(threadId: string): Session[] {
+    return Object.values(this._data.sessions)
+      .filter(s => s.threadId === threadId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
   async cleanupOldSessions(): Promise<number> {
     const beforeCount = Object.keys(this._data.sessions).length;
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);

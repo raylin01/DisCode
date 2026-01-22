@@ -352,3 +352,122 @@ export async function endSession(sessionId: string, userId: string): Promise<voi
 export async function handleUnwatch(interaction: any, userId: string): Promise<void> {
     await handleEndSession(interaction, userId);
 }
+
+/**
+ * Handle /respawn-session command
+ * Respawns a session in a dead thread using the same settings
+ */
+export async function handleRespawnSession(interaction: any, userId: string): Promise<void> {
+    const channel = interaction.channel;
+
+    // Must be in a thread
+    if (!channel || !channel.isThread()) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Not in Thread', 'This command must be run inside a session thread.')],
+            flags: 64
+        });
+        return;
+    }
+
+    // Find previous sessions for this thread
+    const previousSessions = storage.getSessionsByThreadId(channel.id);
+
+    if (previousSessions.length === 0) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('No Previous Session', 'No previous session found for this thread. This thread was not created by DisCode.')],
+            flags: 64
+        });
+        return;
+    }
+
+    // Get the most recent session
+    const lastSession = previousSessions[0];
+
+    // Check if there's already an active session
+    if (lastSession.status === 'active') {
+        await interaction.reply({
+            embeds: [createInfoEmbed('Session Already Active', `This thread already has an active session. Use \`/end-session\` first if you want to restart.`)],
+            flags: 64
+        });
+        return;
+    }
+
+    // Get the runner
+    const runner = storage.getRunner(lastSession.runnerId);
+
+    if (!runner) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Runner Not Found', `The runner used for this session (${lastSession.runnerId}) no longer exists.`)],
+            flags: 64
+        });
+        return;
+    }
+
+    // Check runner is online
+    if (runner.status !== 'online') {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Runner Offline', `Runner \`${runner.name}\` is currently offline. Please wait for it to reconnect.`)],
+            flags: 64
+        });
+        return;
+    }
+
+    // Check user has access
+    if (!storage.canUserAccessRunner(userId, runner.runnerId)) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Access Denied', 'You do not have access to this runner.')],
+            flags: 64
+        });
+        return;
+    }
+
+    // Get websocket connection
+    const ws = botState.runnerConnections.get(runner.runnerId);
+    if (!ws) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Connection Error', 'Could not connect to runner. Please try again.')],
+            flags: 64
+        });
+        return;
+    }
+
+    // Create new session with same settings
+    const { v4: uuidv4 } = await import('uuid');
+    const newSessionId = uuidv4();
+
+    const newSession: Session = {
+        sessionId: newSessionId,
+        runnerId: runner.runnerId,
+        channelId: lastSession.channelId,
+        threadId: channel.id,  // Reuse existing thread
+        createdAt: new Date().toISOString(),
+        status: 'active',
+        cliType: lastSession.cliType,
+        folderPath: lastSession.folderPath,
+        interactionToken: interaction.token,
+        creatorId: userId
+    };
+
+    storage.createSession(newSession);
+
+    // Send initializing message
+    await interaction.reply({
+        embeds: [createInfoEmbed(
+            '🔄 Respawning Session...',
+            `**Runner:** \`${runner.name}\`\n**CLI:** ${lastSession.cliType.toUpperCase()}\n**Folder:** \`${lastSession.folderPath || runner.defaultWorkspace || '~'}\`\n\nInitializing...`
+        )]
+    });
+
+    // Notify runner to start session
+    ws.send(JSON.stringify({
+        type: 'session_start',
+        data: {
+            sessionId: newSessionId,
+            runnerId: runner.runnerId,
+            cliType: lastSession.cliType,
+            folderPath: lastSession.folderPath
+        }
+    }));
+
+    console.log(`Respawned session ${newSessionId} in thread ${channel.id} (previous: ${lastSession.sessionId})`);
+}

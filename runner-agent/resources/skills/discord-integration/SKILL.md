@@ -1,35 +1,48 @@
 ---
 name: Discord Integration
-description: Interact with the Discord channel tied to this session. You can send messages (with embeds) and update the channel name/description.
-allowed-tools: [DiscordMessage, DiscordUpdateChannel]
+description: Send messages and manage the Discord channel for this session
 ---
 
 # Discord Integration Skills
 
-This skill allows you to communicate directly with the users in the Discord channel.
+Communicate directly with users in the Discord channel tied to this session.
 
-## Actions
+## Commands
 
-### Send Message
-Send a message to the Discord channel. Supporting markdown and pings.
-
-**Usage**:
-Execute the `send-to-discord.sh` script.
+### `update-channel.sh` — Rename Channel
 
 ```bash
-/path/to/bin/send-to-discord.sh "Your message content here"
-
-# With Embed options
-/path/to/bin/send-to-discord.sh --title "Tasks Completed" --color "green" --description "I have finished the user authentication module."
+update-channel.sh "channel-name" "Description of current task"
 ```
 
-### Update Channel
-Rename the channel and update its description to reflect the current task status.
-Use this proactively when the session's topic changes significantly.
+- **channel-name**: kebab-case, max 5 words (e.g., `fix-auth-bug`)
+- **description**: Brief summary of what you're working on
 
-**Usage**:
-Execute the `update-channel.sh` script.
+---
 
+### `send-to-discord.sh` — Send Message
+
+#### Plain Message
 ```bash
-/path/to/bin/update-channel.sh "new-channel-name" "New channel description"
+send-to-discord.sh "Your message here"
 ```
+
+#### Rich Embed (for status updates)
+```bash
+send-to-discord.sh --title "Title" --description "Details" --color "green"
+```
+
+**Required:** Either plain message content, OR both `--title` AND `--description` for embeds.
+
+**Valid colors:** `green`, `red`, `yellow`, `blue`, `orange`, `purple`
+
+---
+
+## Quick Reference
+
+| Situation         | Command |
+|-------------------|---------|
+| Start/switch task | `update-channel.sh "task-name" "description"` |
+| Task done         | `send-to-discord.sh --title "✅ Done" --description "..." --color "green"` |
+| Need user input   | `send-to-discord.sh "Hey @username, I need..."` |
+| Error occurred    | `send-to-discord.sh --title "⚠️ Error" --description "..." --color "red"` |

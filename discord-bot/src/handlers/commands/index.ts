@@ -24,6 +24,7 @@ export {
     handleStatus,
     handleEndSession,
     handleUnwatch,
+    handleRespawnSession,
     endSession,
 } from './session.js';
 

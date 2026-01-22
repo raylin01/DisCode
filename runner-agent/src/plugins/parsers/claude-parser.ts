@@ -30,11 +30,11 @@ function detectReady(output: string): boolean {
 function detectPermissionPrompt(output: string): ParsedApproval | null {
     const lines = output.split('\n');
 
-    // Look for "Do you want to proceed?" or "Would you like to proceed?"
+    // Look for "Do you want to proceed?" or "Would you like to proceed?" or "Do you want to make this edit?"
     let proceedLineIdx = -1;
     // Scan last 50 lines
     for (let i = lines.length - 1; i >= Math.max(0, lines.length - 50); i--) {
-        if (/(Do you want|Would you like) to proceed/i.test(lines[i])) {
+        if (/(Do you want|Would you like) to (proceed|make this edit)/i.test(lines[i])) {
             proceedLineIdx = i;
             break;
         }
@@ -77,12 +77,19 @@ function detectPermissionPrompt(output: string): ParsedApproval | null {
     // Find tool name
     let tool = 'Unknown';
     for (let i = proceedLineIdx; i >= Math.max(0, proceedLineIdx - 20); i--) {
-        const toolMatch = lines[i].match(/[●◐·]\s*(\w+)\s*\(/);
+        // Pattern for tool indicators: ● ◐ · ⏺
+        const toolMatch = lines[i].match(/[●◐·⏺]\s*(\w+)\s*\(/);
         if (toolMatch) {
             tool = toolMatch[1];
             break;
         }
-        const cmdMatch = lines[i].match(/^\s*(Bash|Read|Write|Edit|Grep|Glob|Task|WebFetch|WebSearch)\s+\w+/i);
+        // Pattern for "Edit file .env" style
+        const editMatch = lines[i].match(/^Edit file\s+(.+)$/i);
+        if (editMatch) {
+            tool = 'Edit';
+            break;
+        }
+        const cmdMatch = lines[i].match(/^\s*(Bash|Read|Write|Edit|Update|Grep|Glob|Task|WebFetch|WebSearch)\s+\w+/i);
         if (cmdMatch) {
             tool = cmdMatch[1];
             break;
@@ -224,6 +231,10 @@ function cleanOutput(str: string): string {
         .replace(/connected to .*? server/gi, '')
         // Remove activity status lines (managed via metadata)
         .replace(/[*✱✻]\s*[A-Za-z]+(?:…|\.\.\.)\s*(?:\(esc to interrupt\))?/gi, '')
+        // Remove CLI input suggestions (e.g. "❯ what should we work on ↵ send")
+        .replace(/^.*?[❯>]\s*.+?\s*↵\s*send\s*$/gim, '')
+        // Remove keyboard hints with arrow symbols
+        .replace(/↵\s*send.*$/gim, '')
         .replace(/\r\n/g, '\n')
         .replace(/\n{3,}/g, '\n\n') // Collapse excessive newlines
         .trim();

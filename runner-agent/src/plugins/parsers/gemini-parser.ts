@@ -188,6 +188,10 @@ function cleanOutput(str: string): string {
         .replace(/^\(base\).*?\$.*$/gm, '')
         // Empty prompt lines
         .replace(/^\s*[>❯]\s*$/gm, '')
+        // Remove CLI input suggestions (e.g. "❯ what should we work on ↵ send")
+        .replace(/^.*?[❯>]\s*.+?\s*↵\s*send\s*$/gim, '')
+        // Remove keyboard hints with arrow symbols
+        .replace(/↵\s*send.*$/gim, '')
         // Normalize newlines
         .replace(/\r\n/g, '\n')
         .replace(/\n{3,}/g, '\n\n')

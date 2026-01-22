@@ -24,6 +24,7 @@ import {
   handleActionItems,
   handleStatus,
   handleEndSession,
+  handleRespawnSession,
   handleTerminals,
   handleWatch,
   handleUnwatch,
@@ -127,6 +128,10 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
 
       case 'interrupt':
         await handleInterrupt(interaction, userId);
+        break;
+
+      case 'respawn-session':
+        await handleRespawnSession(interaction, userId);
         break;
 
       case 'assistant':
@@ -416,7 +421,11 @@ async function registerCommands(): Promise<void> {
         option.setName('runner')
           .setDescription('Runner ID (optional - uses current channel runner)')
           .setRequired(false)
-      )
+      ),
+
+    new SlashCommandBuilder()
+      .setName('respawn-session')
+      .setDescription('Respawn a dead session in this thread with the same settings')
   ];
 
   const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
