@@ -60,6 +60,9 @@ send-to-discord.sh --title "✅ Task Completed" --description "Fixed the login b
 - ❌ `send-to-discord.sh --color "0x000FFF"` — Missing title AND description!
 - ✅ `send-to-discord.sh --title "Done" --description "Task finished successfully"`
 
+**⚠️ IMPORTANT: Avoid special characters in descriptions!**
+Do NOT use parentheses `()`, asterisks `*`, backslashes `\`, or other special shell characters in your `--description` or `--title` text. These can cause permission errors. Keep descriptions simple and plain-text.
+
 ---
 
 ## 🎨 Valid Color Names
