@@ -432,8 +432,8 @@ export async function handleRespawnSession(interaction: any, userId: string): Pr
     }
 
     // Create new session with same settings
-    const { v4: uuidv4 } = await import('uuid');
-    const newSessionId = uuidv4();
+    const crypto = await import('crypto');
+    const newSessionId = crypto.randomUUID();
 
     const newSession: Session = {
         sessionId: newSessionId,
