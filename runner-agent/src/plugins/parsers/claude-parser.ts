@@ -65,6 +65,25 @@ function detectPermissionPrompt(output: string): ParsedApproval | null {
         }
     }
 
+    // NEW: If still no prompt found, but we see "Yes" / "No" patterns near the end
+    if (proceedLineIdx === -1) {
+        for (let i = lines.length - 1; i >= Math.max(0, lines.length - 15); i--) {
+            // If we see a line that looks like an option "Yes" or "Yes, allow all"
+            // and it's surrounded by prompt-like empty lines or context
+            if (/^\s*(Yes|No|Always|Yes, allow all)\s*$/i.test(lines[i])) {
+                // Look up for the actual prompt text
+                for (let j = i - 1; j >= Math.max(0, i - 10); j--) {
+                    if (lines[j].trim().length > 0 && !/^\s*(Yes|No|Always)\s*$/i.test(lines[j])) {
+                        proceedLineIdx = j;
+                        promptType = 'permission'; // Assume permission for these standard words
+                        break;
+                    }
+                }
+                if (proceedLineIdx !== -1) break;
+            }
+        }
+    }
+
     if (proceedLineIdx === -1) return null;
 
     // Verify this is a real prompt by checking for footer or selector
@@ -82,17 +101,29 @@ function detectPermissionPrompt(output: string): ParsedApproval | null {
 
     if (!hasFooter && !hasSelector) return null;
 
-    // Parse numbered options
+    // Parse options (numbered or unnumbered)
     const options: ApprovalOption[] = [];
+    let implicitNumber = 1;
+
     for (let i = proceedLineIdx + 1; i < Math.min(lines.length, proceedLineIdx + 10); i++) {
         const line = lines[i];
         if (/Esc to cancel/i.test(line)) break;
 
-        const optionMatch = line.match(/^\s*[❯>]?\s*(\d+)\.\s+(.+)$/);
+        // Match "1. Label" or just "Label"
+        // Also handle "❯ 1. Label" or "❯ Label"
+        const optionMatch = line.match(/^\s*[❯>]?\s*(?:(\d+)\.\s+)?(.+)$/);
+
         if (optionMatch) {
+            const label = optionMatch[2].trim();
+            // Ignore empty lines or just prompt chars
+            if (!label || label === '' || label.match(/^[❯>]$/)) continue;
+
+            // Use explicit number if present, otherwise auto-increment
+            const number = optionMatch[1] ? optionMatch[1] : (implicitNumber++).toString();
+
             options.push({
-                number: optionMatch[1],
-                label: optionMatch[2].trim()
+                number,
+                label
             });
         }
     }
@@ -100,7 +131,8 @@ function detectPermissionPrompt(output: string): ParsedApproval | null {
     // For selector prompts (like Settings Error), we may only have 1 option
     // Allow these through since they're blocking prompts that need user action
     if (options.length < 1) return null;
-    if (options.length < 2 && promptType === 'permission') return null;
+    // RELAXED: Allow single option for permission prompts too (e.g. "1. Yes")
+    // if (options.length < 2 && promptType === 'permission') return null;
 
     // Find tool name based on prompt type
     let tool = 'Unknown';
