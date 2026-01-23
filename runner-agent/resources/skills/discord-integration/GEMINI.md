@@ -47,6 +47,12 @@ send-to-discord.sh "Your message here"
 send-to-discord.sh "Hey @ray, I need your input on this."
 ```
 
+#### Sending Files
+
+```bash
+send-to-discord.sh --file "path/to/file.png" "Here is the file you requested."
+```
+
 #### Rich Embed (Status Updates)
 
 **REQUIRED for embeds:** You must provide `--title` AND `--description`. Color is optional.

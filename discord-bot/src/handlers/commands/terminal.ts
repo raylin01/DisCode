@@ -129,21 +129,30 @@ export async function handleWatch(interaction: any, userId: string): Promise<voi
             return;
         }
     } else {
-        const runners = storage.getUserRunners(userId).filter(r => r.status === 'online');
-        if (runners.length === 1) {
-            targetRunner = runners[0];
-        } else if (runners.length === 0) {
-            await interaction.reply({
-                embeds: [createErrorEmbed('No Runners online', 'You need an online runner to watch sessions.')],
-                flags: 64
-            });
-            return;
+        // 1. Try to detect runner from current channel
+        const allRunners = storage.getUserRunners(userId);
+        const channelRunner = allRunners.find(r => r.privateChannelId === interaction.channelId);
+
+        if (channelRunner && channelRunner.status === 'online') {
+            targetRunner = channelRunner;
         } else {
-            await interaction.reply({
-                embeds: [createInfoEmbed('Multiple Runners', 'Please specify which runner to use with the `runner` option.')],
-                flags: 64
-            });
-            return;
+            // 2. Fallback to default logic
+            const onlineRunners = allRunners.filter(r => r.status === 'online');
+            if (onlineRunners.length === 1) {
+                targetRunner = onlineRunners[0];
+            } else if (onlineRunners.length === 0) {
+                await interaction.reply({
+                    embeds: [createErrorEmbed('No Runners online', 'You need an online runner to watch sessions.')],
+                    flags: 64
+                });
+                return;
+            } else {
+                await interaction.reply({
+                    embeds: [createInfoEmbed('Multiple Runners', 'Please specify which runner to use with the `runner` option, or run this command in a runner\'s channel.')],
+                    flags: 64
+                });
+                return;
+            }
         }
     }
 

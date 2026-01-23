@@ -7,6 +7,9 @@
 import type { PluginManager, PluginSession } from '../plugins/index.js';
 import type { SessionMetadata } from '../types.js';
 import type { WebSocketManager } from '../websocket.js';
+import * as fs from 'fs';
+import * as path from 'path';
+
 
 export interface MessageHandlerDeps {
     wsManager: WebSocketManager;
@@ -21,6 +24,7 @@ export async function handleUserMessage(
         userId: string;
         username: string;
         content: string;
+        attachments?: { name: string; url: string; }[];
         timestamp: string;
     },
     deps: MessageHandlerDeps
@@ -69,6 +73,44 @@ export async function handleUserMessage(
             }
         });
         return;
+    }
+
+    // Handle attachments
+    if (data.attachments && data.attachments.length > 0) {
+        const metadata = sessionMetadata.get(data.sessionId);
+        if (metadata && metadata.folderPath && metadata.folderPath !== 'recovered') {
+            for (const att of data.attachments) {
+                try {
+                    const filePath = path.join(metadata.folderPath, att.name);
+                    console.log(`[UserMessage] Downloading attachment ${att.name} to ${filePath}`);
+
+                    const res = await fetch(att.url);
+                    if (!res.ok) throw new Error(`Failed to fetch ${att.url}: ${res.statusText}`);
+
+                    const buffer = await res.arrayBuffer();
+                    await fs.promises.writeFile(filePath, Buffer.from(buffer));
+
+                    // Notify CLI about the upload
+                    if (session.isReady) {
+                        await session.sendMessage(`(System: User uploaded file '${att.name}' to current directory)`);
+                    }
+                } catch (err) {
+                    console.error(`Failed to save attachment ${att.name}:`, err);
+                    wsManager.send({
+                        type: 'output',
+                        data: {
+                            runnerId: wsManager.runnerId,
+                            sessionId: data.sessionId,
+                            content: `❌ Error downloading file '${att.name}': ${err}`,
+                            timestamp: new Date().toISOString(),
+                            outputType: 'error'
+                        }
+                    });
+                }
+            }
+        } else {
+            console.warn(`[UserMessage] Cannot save attachments: Unknown or recovered folderPath for session ${data.sessionId}`);
+        }
     }
 
     const sendMessage = async () => {

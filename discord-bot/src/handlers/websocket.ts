@@ -1042,6 +1042,24 @@ async function handleSessionDiscovered(data: any): Promise<void> {
     } catch (error) {
         console.error(`[handleSessionDiscovered] Failed to restore session:`, error);
     }
+
+    // Auto-watch the session
+    // This ensures we start receiving output immediately
+    try {
+        const ws = botState.runnerConnections.get(runnerId);
+        if (ws) {
+            console.log(`[handleSessionDiscovered] Sending watch_terminal request for ${sessionId}`);
+            ws.send(JSON.stringify({
+                type: 'watch_terminal',
+                data: {
+                    sessionId: sessionId,
+                    runnerId: runnerId
+                }
+            }));
+        }
+    } catch (error) {
+        console.error(`[handleSessionDiscovered] Failed to auto-watch session:`, error);
+    }
 }
 
 /**
@@ -1105,8 +1123,22 @@ async function handleDiscordAction(data: any): Promise<void> {
 
     try {
         if (action === 'send_message') {
-            const { embeds } = data;
-            await thread.send({ content, embeds });
+            const { embeds, files } = data;
+
+            // Process files if present
+            const messageFiles = [];
+            if (files && Array.isArray(files)) {
+                for (const f of files) {
+                    if (f.name && f.content) {
+                        messageFiles.push({
+                            attachment: Buffer.from(f.content, 'base64'),
+                            name: f.name
+                        });
+                    }
+                }
+            }
+
+            await thread.send({ content, embeds, files: messageFiles.length > 0 ? messageFiles : undefined });
         } else if (action === 'update_channel') {
             // Update thread name
             if (name) {

@@ -11,6 +11,7 @@ CONTENT=""
 TITLE=""
 COLOR=""
 DESCRIPTION=""
+FILE_PATH=""
 
 # Parse arguments
 while [[ "$#" -gt 0 ]]; do
@@ -18,12 +19,13 @@ while [[ "$#" -gt 0 ]]; do
         --title) TITLE="$2"; shift ;;
         --color) COLOR="$2"; shift ;;
         --description) DESCRIPTION="$2"; shift ;;
+        --file|-f) FILE_PATH="$2"; shift ;;
         *) CONTENT="$1" ;;
     esac
     shift
 done
 
-if [ -z "$CONTENT" ] && [ -z "$TITLE" ] && [ -z "$DESCRIPTION" ]; then
+if [ -z "$CONTENT" ] && [ -z "$TITLE" ] && [ -z "$DESCRIPTION" ] && [ -z "$FILE_PATH" ]; then
     echo "Usage: $0 [--title \"Title\"] [--color \"Red\"] \"Message content\""
     exit 1
 fi
@@ -54,19 +56,24 @@ esac
 
 PAYLOAD_SCRIPT="
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 
 const content = process.argv[2] ? process.argv[2].trim() : undefined;
 const title = process.argv[3] ? process.argv[3].trim() : undefined;
 const colorStr = process.argv[4] ? process.argv[4].trim() : undefined;
 const description = process.argv[5] ? process.argv[5].trim() : undefined;
+const filePath = process.argv[6] ? process.argv[6].trim() : undefined;
 
 const data = {
     type: 'discord_action',
     action: 'send_message',
     sessionId: '$DISCODE_SESSION_ID',
     content: content,
-    embeds: []
+    embeds: [],
+    files: []
 };
+
 
 // Build embed if any embed fields are present
 if (title || description || colorStr) {
@@ -86,8 +93,28 @@ if (title || description || colorStr) {
     }
 }
 
+// Process file if provided
+if (filePath) {
+    try {
+        if (fs.existsSync(filePath)) {
+            const fileBuffer = fs.readFileSync(filePath);
+            const fileName = path.basename(filePath);
+            data.files.push({
+                name: fileName,
+                content: fileBuffer.toString('base64')
+            });
+        } else {
+            console.error('File not found:', filePath);
+            process.exit(1);
+        }
+    } catch (err) {
+        console.error('Error reading file:', err);
+        process.exit(1);
+    }
+}
+
 // Validation: Discord requires either content, embeds, or files
-if (!data.content && data.embeds.length === 0) {
+if (!data.content && data.embeds.length === 0 && data.files.length === 0) {
     console.error('Error: Cannot send an empty message. Provide content or embed details (--title, --description).');
     process.exit(1);
 }
@@ -129,7 +156,7 @@ req.end();
 
 # Try to run with node (most likely available in this env)
 if command -v node &> /dev/null; then
-    node -e "$PAYLOAD_SCRIPT" "$CONTENT" "$TITLE" "$COLOR_HEX" "$DESCRIPTION"
+    node -e "$PAYLOAD_SCRIPT" "$CONTENT" "$TITLE" "$COLOR_HEX" "$DESCRIPTION" "$FILE_PATH"
 else
     # Fallback to curl with simplistic escaping if node is not present
     # This is risky for complex strings but a necessary fallback

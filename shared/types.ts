@@ -48,6 +48,13 @@ export interface Session {
   creatorId?: string; // ID of the user who created the session
 }
 
+export interface Attachment {
+  name: string;
+  url: string;
+  contentType?: string;
+  size?: number;
+}
+
 // Approval requests
 export interface ApprovalRequest {
   toolName: string;
@@ -155,6 +162,7 @@ export interface UserMessage extends WebSocketMessage {
     userId: string;
     username: string;
     content: string;
+    attachments?: Attachment[];
     timestamp: string;
   };
 }

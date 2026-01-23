@@ -36,6 +36,11 @@ send-to-discord.sh --title "Title" --description "Details" --color "green"
 
 **Valid colors:** `green`, `red`, `yellow`, `blue`, `orange`, `purple`
 
+#### Sending Files
+```bash
+send-to-discord.sh --file "path/to/image.png" "Here is the image."
+```
+
 ---
 
 ## Quick Reference

@@ -180,6 +180,13 @@ botState.client.on(Events.MessageCreate, async (message) => {
     }
 
     // Forward the message to the runner
+    const attachments = message.attachments.map(att => ({
+      name: att.name,
+      url: att.url,
+      contentType: att.contentType || 'application/octet-stream',
+      size: att.size
+    }));
+
     ws.send(JSON.stringify({
       type: 'user_message',
       data: {
@@ -187,6 +194,7 @@ botState.client.on(Events.MessageCreate, async (message) => {
         userId: message.author.id,
         username: message.author.username,
         content: message.content,
+        attachments: attachments.length > 0 ? attachments : undefined,
         timestamp: new Date().toISOString()
       }
     }));
