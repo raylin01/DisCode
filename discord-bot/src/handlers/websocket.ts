@@ -674,6 +674,11 @@ async function handleOutput(data: any): Promise<void> {
             });
         }
     }
+
+    // Clear streaming state when message is complete, so next message starts fresh
+    if (data.isComplete) {
+        botState.streamingMessages.delete(data.sessionId);
+    }
 }
 
 /**

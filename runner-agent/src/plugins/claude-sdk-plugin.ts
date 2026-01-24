@@ -226,6 +226,11 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     private currentContent = '';
     private seenToolUses = new Set<string>(); // Track tool uses to avoid duplication
 
+    // Text batching for streaming
+    private textBuffer = '';
+    private batchTimer: NodeJS.Timeout | null = null;
+    private readonly BATCH_DELAY = 100; // ms to wait before flushing
+
     // Activity tracking
     private currentActivity: string | null = null;
     private isThinking = false;
@@ -275,6 +280,9 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         this.currentTool = null;
         this.isThinking = false;
 
+        // Clear any pending batch
+        this.flushTextBuffer();
+
         // Emit activity - user sent a message
         this.setActivity('Processing');
 
@@ -296,8 +304,24 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
     /**
      * Send an approval response
+     * Handles both regular tool approvals and AskUserQuestion responses
      */
     async sendApproval(optionNumber: string): Promise<void> {
+        // Check if this is an AskUserQuestion response
+        const pendingQuestion = (this as any).pendingQuestion;
+        if (pendingQuestion && pendingQuestion.options && pendingQuestion.options.length > 0) {
+            // This is an AskUserQuestion - convert 1-indexed button to 0-indexed option
+            const optionIndex = parseInt(optionNumber, 10) - 1;
+            if (optionIndex >= 0 && optionIndex < pendingQuestion.options.length) {
+                // Single select - send the selected option index as a string
+                await this.sendQuestionResponse([optionIndex.toString()]);
+                // Clear pending question
+                delete (this as any).pendingQuestion;
+                return;
+            }
+        }
+
+        // Regular tool permission approval
         // Convert option number to behavior
         // 1 = approve (yes), 2 = deny (no), 3 = delegate, etc.
         const behaviorMap: Record<string, 'approve' | 'deny' | 'delegate'> = {
@@ -394,6 +418,49 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     }
 
     /**
+     * Flush text buffer immediately
+     */
+    private flushTextBuffer(): void {
+        if (this.batchTimer) {
+            clearTimeout(this.batchTimer);
+            this.batchTimer = null;
+        }
+        if (this.textBuffer) {
+            this.plugin.emit('output', {
+                sessionId: this.sessionId,
+                content: this.textBuffer,
+                isComplete: false,
+                outputType: 'stdout',
+                timestamp: new Date()
+            });
+            this.textBuffer = '';
+        }
+    }
+
+    /**
+     * Schedule batch flush with sentence detection
+     */
+    private scheduleBatchFlush(): void {
+        // Clear existing timer
+        if (this.batchTimer) {
+            clearTimeout(this.batchTimer);
+        }
+
+        // Check if buffer ends with sentence boundary
+        const endsWithSentence = /[.!?]\s*$|[\n\r]/.test(this.textBuffer);
+
+        if (endsWithSentence) {
+            // Flush immediately if we have a complete sentence
+            this.flushTextBuffer();
+        } else {
+            // Otherwise schedule a delayed flush
+            this.batchTimer = setTimeout(() => {
+                this.flushTextBuffer();
+            }, this.BATCH_DELAY);
+        }
+    }
+
+    /**
      * Start the CLI process
      */
     async start(): Promise<void> {
@@ -406,15 +473,12 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                 '--input-format', 'stream-json',
                 '--include-partial-messages',
                 '--permission-prompt-tool', 'stdio',
-                '--resume', this.sessionId,
             ];
 
             const env = {
                 ...process.env,
                 ...this.config.options?.env,
                 CLAUDE_CODE_ENTRYPOINT: 'sdk-ts',
-                // Allow the extension to handle file checkpointing
-                CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING: 'false',
             };
 
             this.process = spawn(this.config.cliPath, args, {
@@ -607,14 +671,13 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
                     this.currentContent += delta.text;
 
-                    this.plugin.emit('output', {
-                        sessionId: this.sessionId,
-                        content: delta.text,
-                        isComplete: false,
-                        outputType: 'stdout',
-                        timestamp: new Date()
-                    });
+                    // Batch text by sentence
+                    this.textBuffer += delta.text;
+                    this.scheduleBatchFlush();
                 } else if (delta.type === 'input_json_delta' && delta.partial_json) {
+                    // Flush any text before tool output
+                    this.flushTextBuffer();
+
                     // Tool parameters streaming
                     if (this.currentTool) {
                         // Try to format the partial JSON for display
@@ -674,7 +737,9 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                 break;
 
             case 'message_stop':
-                // Message complete
+                // Message complete - flush any remaining text
+                this.flushTextBuffer();
+
                 this.status = 'idle';
                 this.currentTool = null;
                 this.isThinking = false;
@@ -893,25 +958,38 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     private async handleAskUserQuestion(requestId: string, request: ControlRequest): Promise<void> {
         const input = request.input!;
 
-        // Extract question and options from input
-        const question = input.question || 'Please provide input:';
-        const options = input.options || [];
-        const multiSelect = input.multiSelect || false;
+        // Handle both single question and questions array format
+        const questionsArray = input.questions || (input.question ? [{ question: input.question, options: input.options || [], multiSelect: input.multiSelect || false }] : []);
+
+        if (questionsArray.length === 0) {
+            this.plugin.log(`[${this.sessionId.slice(0, 8)}] Invalid AskUserQuestion format - no questions found`);
+            return;
+        }
+
+        // For now, handle the first question (can extend for multiple questions later)
+        const firstQuestion = questionsArray[0];
+        const question = firstQuestion.question || 'Please provide input:';
+        const options = firstQuestion.options || [];
+        const multiSelect = firstQuestion.multiSelect || false;
+        const header = firstQuestion.header || null;
 
         this.plugin.log(`[${this.sessionId.slice(0, 8)}] Question: "${question}" (${options.length} options, multi=${multiSelect})`);
 
-        // Build approval options for the question
-        const approvalOptions: ApprovalOption[] = options.map((opt: any, idx: number) => ({
-            number: idx.toString(),
-            label: opt.label || opt.value || `Option ${idx + 1}`
-        }));
+        // Discord bot expects options as an array of strings (labels only)
+        const optionLabels: string[] = options.map((opt: any) => opt.label || opt.value || `Option`);
+
+        // Build context with header if available
+        let contextText = header ? `**${header}**\n\n${question}` : question;
+        if (options.length > 0) {
+            contextText += `\n\nOptions: ${options.map((o: any) => o.label || o.value).join(', ')}`;
+        }
 
         // Emit as a special approval event with question context
         this.plugin.emit('approval', {
             sessionId: this.sessionId,
             tool: 'AskUserQuestion',
-            context: `${question}\n\nOptions: ${options.map((o: any) => o.label || o.value).join(', ')}`,
-            options: approvalOptions,
+            context: contextText,
+            options: optionLabels,
             detectedAt: new Date()
         });
 
