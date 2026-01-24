@@ -130,6 +130,8 @@ export interface StructuredData {
   tool?: {
     name: string;
     input: Record<string, any>;
+    result?: string;
+    isError?: boolean;
   };
 }
 

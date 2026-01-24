@@ -15,7 +15,7 @@ describe('Claude SDK Control Response JSON', () => {
                     subtype: 'success' as const,
                     request_id: 'test-request-id',
                     response: {
-                        behavior: 'approve' as const,
+                        behavior: 'allow' as const,
                         toolUseID: 'tool-use-123'
                     }
                 }
@@ -25,7 +25,7 @@ describe('Claude SDK Control Response JSON', () => {
             expect(actualResponse.type).toBe('control_response');
             expect(actualResponse.response.subtype).toBe('success');
             expect(actualResponse.response.request_id).toBeDefined();
-            expect(actualResponse.response.response?.behavior).toBe('approve');
+            expect(actualResponse.response.response?.behavior).toBe('allow');
         });
 
         it('should match expected structure for tool denial', () => {
@@ -68,14 +68,16 @@ describe('Claude SDK Control Response JSON', () => {
                     subtype: 'success' as const,
                     request_id: 'test-request-id',
                     response: {
-                        behavior: 'approve' as const,
-                        selectedOptions: ['0']
+                        behavior: 'allow' as const,
+                        updatedInput: {
+                            answer: ['option1']
+                        }
                     }
                 }
             };
 
-            expect(actualResponse.response.response?.behavior).toBe('approve');
-            expect(actualResponse.response.response?.selectedOptions).toEqual(['0']);
+            expect(actualResponse.response.response?.behavior).toBe('allow');
+            expect(actualResponse.response.response?.updatedInput?.answer).toEqual(['option1']);
         });
 
         it('should match expected structure for multi-select AskUserQuestion', () => {
@@ -85,14 +87,16 @@ describe('Claude SDK Control Response JSON', () => {
                     subtype: 'success' as const,
                     request_id: 'test-request-id',
                     response: {
-                        behavior: 'approve' as const,
-                        selectedOptions: ['0', '1', '2']
+                        behavior: 'allow' as const,
+                        updatedInput: {
+                            answer: ['option1', 'option2', 'option3']
+                        }
                     }
                 }
             };
 
-            expect(actualResponse.response.response?.behavior).toBe('approve');
-            expect(actualResponse.response.response?.selectedOptions).toHaveLength(3);
+            expect(actualResponse.response.response?.behavior).toBe('allow');
+            expect(actualResponse.response.response?.updatedInput?.answer).toHaveLength(3);
         });
     });
 
@@ -104,7 +108,7 @@ describe('Claude SDK Control Response JSON', () => {
                     subtype: 'success',
                     request_id: 'req-123',
                     response: {
-                        behavior: 'approve',
+                        behavior: 'allow',
                         toolUseID: 'tool-456'
                     }
                 }
@@ -114,7 +118,7 @@ describe('Claude SDK Control Response JSON', () => {
             const parsed = JSON.parse(json);
 
             expect(parsed.type).toBe('control_response');
-            expect(parsed.response.response.behavior).toBe('approve');
+            expect(parsed.response.response.behavior).toBe('allow');
         });
 
         it('should serialize to valid JSON for question response', () => {
@@ -124,8 +128,10 @@ describe('Claude SDK Control Response JSON', () => {
                     subtype: 'success',
                     request_id: 'req-789',
                     response: {
-                        behavior: 'approve',
-                        selectedOptions: ['1', '2']
+                        behavior: 'allow',
+                        updatedInput: {
+                            answer: ['option1', 'option2']
+                        }
                     }
                 }
             };
@@ -133,33 +139,8 @@ describe('Claude SDK Control Response JSON', () => {
             const json = JSON.stringify(response);
             const parsed = JSON.parse(json);
 
-            expect(parsed.response.response.behavior).toBe('approve');
-            expect(parsed.response.response.selectedOptions).toEqual(['1', '2']);
-        });
-
-        it('should NOT serialize "allow" as behavior', () => {
-            // This test documents what NOT to do
-            const invalidResponse = {
-                type: 'control_response',
-                response: {
-                    subtype: 'success',
-                    request_id: 'req-invalid',
-                    response: {
-                        behavior: 'allow',  // WRONG - this is invalid
-                        toolUseID: 'tool-invalid'
-                    }
-                }
-            };
-
-            const json = JSON.stringify(invalidResponse);
-            const parsed = JSON.parse(json);
-
-            // This would cause the CLI to reject the response
             expect(parsed.response.response.behavior).toBe('allow');
-
-            // Validate against correct type
-            const validBehaviors = ['approve', 'deny', 'delegate'];
-            expect(validBehaviors).not.toContain(parsed.response.response.behavior);
+            expect(parsed.response.response.updatedInput?.answer).toEqual(['option1', 'option2']);
         });
     });
 
@@ -183,24 +164,24 @@ describe('Claude SDK Control Response JSON', () => {
         ];
 
         it('should have valid behavior mapping for all built-in tools', () => {
-            const behaviorMap: Record<string, 'approve' | 'deny' | 'delegate'> = {
-                '1': 'approve',
+            const behaviorMap: Record<string, 'allow' | 'deny' | 'delegate'> = {
+                '1': 'allow',
                 '2': 'deny',
                 '3': 'delegate'
             };
 
             builtInTools.forEach(tool => {
-                // Each tool should be able to be approved, denied, or delegated
+                // Each tool should be able to be allowd, denied, or delegated
                 ['1', '2', '3'].forEach(option => {
                     const behavior = behaviorMap[option];
-                    expect(['approve', 'deny', 'delegate']).toContain(behavior);
+                    expect(['allow', 'deny', 'delegate']).toContain(behavior);
                 });
             });
         });
 
         it('should generate correct control response for each tool type', () => {
-            const behaviorMap: Record<string, 'approve' | 'deny' | 'delegate'> = {
-                '1': 'approve',
+            const behaviorMap: Record<string, 'allow' | 'deny' | 'delegate'> = {
+                '1': 'allow',
                 '2': 'deny',
                 '3': 'delegate'
             };
@@ -215,13 +196,13 @@ describe('Claude SDK Control Response JSON', () => {
                         subtype: 'success' as const,
                         request_id: `req-${tool.toLowerCase()}`,
                         response: {
-                            behavior: behavior as 'approve' | 'deny' | 'delegate',
+                            behavior: behavior as 'allow' | 'deny' | 'delegate',
                             toolUseID: `tool-${tool.toLowerCase()}`
                         }
                     }
                 };
 
-                expect(response.response.response?.behavior).toBe('approve');
+                expect(response.response.response?.behavior).toBe('allow');
 
                 // Verify it's valid JSON
                 const json = JSON.stringify(response);
@@ -253,12 +234,12 @@ describe('Claude SDK Control Response JSON', () => {
     });
 
     describe('Discord Button to CLI Behavior Mapping', () => {
-        it('should map Discord button 1 to CLI approve', () => {
+        it('should map Discord button 1 to CLI allow', () => {
             const discordButtonNumber = '1';  // Yes button
-            const expectedBehavior = 'approve';
+            const expectedBehavior = 'allow';
 
-            const behaviorMap: Record<string, 'approve' | 'deny' | 'delegate'> = {
-                '1': 'approve',
+            const behaviorMap: Record<string, 'allow' | 'deny' | 'delegate'> = {
+                '1': 'allow',
                 '2': 'deny',
                 '3': 'delegate'
             };
@@ -270,8 +251,8 @@ describe('Claude SDK Control Response JSON', () => {
             const discordButtonNumber = '2';  // No button
             const expectedBehavior = 'deny';
 
-            const behaviorMap: Record<string, 'approve' | 'deny' | 'delegate'> = {
-                '1': 'approve',
+            const behaviorMap: Record<string, 'allow' | 'deny' | 'delegate'> = {
+                '1': 'allow',
                 '2': 'deny',
                 '3': 'delegate'
             };
@@ -283,8 +264,8 @@ describe('Claude SDK Control Response JSON', () => {
             const discordButtonNumber = '3';  // Allow All button
             const expectedBehavior = 'delegate';
 
-            const behaviorMap: Record<string, 'approve' | 'deny' | 'delegate'> = {
-                '1': 'approve',
+            const behaviorMap: Record<string, 'allow' | 'deny' | 'delegate'> = {
+                '1': 'allow',
                 '2': 'deny',
                 '3': 'delegate'
             };

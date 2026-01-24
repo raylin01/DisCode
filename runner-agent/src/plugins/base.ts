@@ -36,6 +36,10 @@ export interface PluginOptions {
     env?: Record<string, string>;
     /** Skills to exclude from installation */
     excludedSkills?: string[];
+    /** Max thinking tokens for extended thinking (Claude models) */
+    maxThinkingTokens?: number;
+    /** Thinking level: 'off' | 'low' | 'medium' | 'high' | 'auto' | 'default_on' */
+    thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'auto' | 'default_on';
 }
 
 // ============================================================================
@@ -77,6 +81,10 @@ export interface ApprovalEvent {
     options: ApprovalOption[];
     /** When the approval was detected */
     detectedAt: Date;
+    /** Whether this is a multi-select question (for AskUserQuestion) */
+    isMultiSelect?: boolean;
+    /** Whether this has an "Other" option (for AskUserQuestion) */
+    hasOther?: boolean;
 }
 
 export interface ApprovalOption {

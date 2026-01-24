@@ -41,7 +41,10 @@ export function wirePluginEvents(
                     toolName: data.tool,
                     toolInput: data.context,
                     options: data.options?.map((o: any) => o.label || o),
-                    timestamp: data.detectedAt.toISOString()
+                    timestamp: data.detectedAt.toISOString(),
+                    // Multi-select and Other option support for AskUserQuestion
+                    isMultiSelect: data.isMultiSelect,
+                    hasOther: data.hasOther
                 }
             });
         }

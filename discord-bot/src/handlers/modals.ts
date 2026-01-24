@@ -4,7 +4,7 @@
  * Handles all modal submissions from Discord UI.
  */
 
-import { EmbedBuilder, ChannelType } from 'discord.js';
+import { EmbedBuilder, ChannelType, ButtonBuilder, ButtonStyle, ActionRowBuilder } from 'discord.js';
 import { randomUUID } from 'crypto';
 import * as botState from '../state.js';
 import { storage } from '../storage.js';
@@ -29,6 +29,12 @@ export async function handleModalSubmit(interaction: any): Promise<void> {
     // Handle modify approval modal
     if (customId.startsWith('modify_modal_')) {
         await handleModifyModal(interaction, userId, customId);
+        return;
+    }
+
+    // Handle "Other" modal for custom input
+    if (customId.startsWith('other_modal_')) {
+        await handleOtherModal(interaction, userId, customId);
         return;
     }
 
@@ -201,4 +207,106 @@ async function handleFolderModal(interaction: any, userId: string): Promise<void
 
     // Proceed to Review Step
     await handleSessionReview(interaction, userId);
+}
+
+/**
+ * Handle "Other" modal submission for custom input
+ */
+async function handleOtherModal(interaction: any, userId: string, customId: string): Promise<void> {
+    const requestId = customId.replace('other_modal_', '');
+    const otherValue = interaction.fields.getTextInputValue('other_input');
+
+    const multiSelect = botState.multiSelectState.get(requestId);
+    const pending = botState.pendingApprovals.get(requestId);
+
+    if (!multiSelect && !pending) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Expired', 'This question has expired.')],
+            flags: 64
+        });
+        return;
+    }
+
+    if (pending && !storage.canUserAccessRunner(userId, pending.runnerId)) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Unauthorized', 'You are not authorized to respond to this request.')],
+            flags: 64
+        });
+        return;
+    }
+
+    const runner = pending ? storage.getRunner(pending.runnerId) : null;
+
+    // If this is a multi-select question, mark "Other" as selected and update UI
+    if (multiSelect) {
+        // Store the "Other" value
+        (multiSelect as any).otherValue = otherValue;
+        multiSelect.selectedOptions.add('other');
+        botState.multiSelectState.set(requestId, multiSelect);
+
+        // Update the button UI to show "Other" as selected
+        const optionButtons = multiSelect.options.map((option: string, index: number) => {
+            const optNum = String(index + 1);
+            const isSelected = multiSelect.selectedOptions.has(optNum);
+            return new ButtonBuilder()
+                .setCustomId(`multiselect_${requestId}_${optNum}`)
+                .setLabel(option)
+                .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary);
+        });
+
+        // Add "Other" button as selected
+        optionButtons.push(
+            new ButtonBuilder()
+                .setCustomId(`other_${requestId}`)
+                .setLabel(`Other: ${otherValue.substring(0, 20)}...`)
+                .setStyle(ButtonStyle.Success)
+        );
+
+        // Add Submit button
+        const submitButton = new ButtonBuilder()
+            .setCustomId(`multiselect_submit_${requestId}`)
+            .setLabel(`✅ Submit (${multiSelect.selectedOptions.size} selected)`)
+            .setStyle(ButtonStyle.Success);
+
+        const rows: any[] = [
+            new ActionRowBuilder<ButtonBuilder>().addComponents(...optionButtons),
+            new ActionRowBuilder<ButtonBuilder>().addComponents(submitButton)
+        ];
+
+        await interaction.update({ components: rows });
+        return;
+    }
+
+    // For single-select questions, immediately submit the custom answer
+    if (runner && pending) {
+        const ws = botState.runnerConnections.get(pending.runnerId);
+        if (ws) {
+            ws.send(JSON.stringify({
+                type: 'approval_response',
+                data: {
+                    sessionId: pending.sessionId,
+                    approved: true,
+                    optionNumber: '0',  // Use '0' to indicate custom "Other" input
+                    message: otherValue
+                }
+            }));
+        }
+
+        const resultButton = new ButtonBuilder()
+            .setCustomId(`result_${requestId}`)
+            .setLabel(`✅ Other: "${otherValue.substring(0, 30)}${otherValue.length > 30 ? '...' : ''}"`)
+            .setStyle(ButtonStyle.Success)
+            .setDisabled(true);
+
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(resultButton);
+
+        await interaction.update({
+            content: `✅ Custom answer submitted: "${otherValue}"`,
+            components: [row]
+        });
+
+        // Clean up
+        botState.pendingApprovals.delete(requestId);
+        botState.streamingMessages.delete(pending.sessionId);
+    }
 }

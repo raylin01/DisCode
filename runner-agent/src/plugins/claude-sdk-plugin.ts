@@ -20,6 +20,8 @@ import { spawn, ChildProcess } from 'child_process';
 import { createInterface } from 'readline';
 import { EventEmitter } from 'events';
 import { randomUUID } from 'crypto';
+import { appendFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
 import {
     BasePlugin,
     PluginSession,
@@ -85,9 +87,10 @@ type StreamEvent =
     | { type: 'message_stop' };
 
 interface ContentDelta {
-    type: 'text_delta' | 'input_json_delta';
+    type: 'text_delta' | 'input_json_delta' | 'thinking_delta';
     text?: string;
     partial_json?: string;
+    thinking?: string;
 }
 
 interface Usage {
@@ -109,11 +112,22 @@ interface AssistantMessage {
     };
     session_id: string;
     uuid: string;
+    thinkingMetadata?: {
+        level: string;
+        disabled: boolean;
+        triggers: string[];
+    };
+    todos?: Array<{
+        id: string;
+        content: string;
+        status: 'pending' | 'in_progress' | 'completed';
+    }>;
 }
 
 type ContentBlock =
     | { type: 'text'; text: string }
-    | { type: 'tool_use'; id: string; name: string; input: Record<string, any> };
+    | { type: 'tool_use'; id: string; name: string; input: Record<string, any> }
+    | { type: 'thinking'; thinking: string; signature?: string };
 
 /**
  * User message (including tool results)
@@ -165,10 +179,10 @@ interface ControlResponseMessage {
 }
 
 interface ControlResponseData {
-    behavior: 'approve' | 'deny' | 'delegate';
+    behavior: 'allow' | 'deny' | 'delegate';
     message?: string;
     toolUseID?: string;
-    selectedOptions?: string[];
+    updatedInput?: Record<string, any>;
 }
 
 /**
@@ -224,13 +238,21 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     // Content accumulation
     private currentTool: string | null = null;
     private currentToolInput: Record<string, any> = {}; // Track tool input as it streams
+    private currentToolUseId: string | null = null; // Track current tool use ID
     private currentContent = '';
+    private currentThinking = ''; // Accumulate thinking content
     private seenToolUses = new Set<string>(); // Track tool uses to avoid duplication
+
+    // Debug logging
+    private debugLogPath: string | null = null;
 
     // Text batching for streaming
     private textBuffer = '';
     private batchTimer: NodeJS.Timeout | null = null;
     private readonly BATCH_DELAY = 500; // 500ms - balance between real-time and Discord rate limits
+
+    // Track current output type for batching
+    private currentOutputType: 'stdout' | 'thinking' = 'stdout';
 
     // Activity tracking
     private currentActivity: string | null = null;
@@ -246,6 +268,18 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         this.createdAt = new Date();
         this.lastActivity = new Date();
         this.plugin = plugin;
+
+        // Initialize debug log
+        const debugDir = '/tmp/claude-sdk-debug';
+        try {
+            mkdirSync(debugDir, { recursive: true });
+        } catch (e) {
+            // Ignore if directory exists
+        }
+        this.debugLogPath = join(debugDir, `${this.sessionId}.jsonl`);
+
+        // Write session start marker
+        this.debugLog('=== SESSION START ===', { sessionId: this.sessionId, timestamp: new Date().toISOString() });
     }
 
     get isReady(): boolean {
@@ -280,6 +314,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         this.currentContent = '';
         this.currentTool = null;
         this.isThinking = false;
+        this.currentOutputType = 'stdout'; // Reset output type for new message
 
         // Clear any pending batch
         this.flushTextBuffer();
@@ -310,28 +345,68 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     async sendApproval(optionNumber: string): Promise<void> {
         // Check if this is an AskUserQuestion response
         const pendingQuestion = (this as any).pendingQuestion;
-        if (pendingQuestion && pendingQuestion.options && pendingQuestion.options.length > 0) {
+        this.plugin.log(`[${this.sessionId.slice(0, 8)}] sendApproval called: optionNumber=${optionNumber}, pendingQuestion exists=${!!pendingQuestion}`);
+
+        if (pendingQuestion) {
+            this.plugin.log(`[${this.sessionId.slice(0, 8)}] pendingQuestion structure:`, JSON.stringify({
+                hasQuestions: !!pendingQuestion.questions,
+                questionsCount: pendingQuestion.questions?.length,
+                currentQuestionIndex: pendingQuestion.currentQuestionIndex,
+                hasCurrentOptions: !!pendingQuestion.currentOptions,
+                answersCollected: pendingQuestion.allAnswers?.length || 0
+            }));
+        }
+
+        if (pendingQuestion && pendingQuestion.currentOptions && pendingQuestion.currentOptions.length > 0) {
             // This is an AskUserQuestion - convert 1-indexed button to 0-indexed option
             const optionIndex = parseInt(optionNumber, 10) - 1;
-            if (optionIndex >= 0 && optionIndex < pendingQuestion.options.length) {
-                // Single select - send the selected option index as a string
-                await this.sendQuestionResponse([optionIndex.toString()]);
-                // Clear pending question
-                delete (this as any).pendingQuestion;
+            this.plugin.log(`[${this.sessionId.slice(0, 8)}] Option index: ${optionIndex} (from button ${optionNumber})`);
+
+            if (optionIndex >= 0 && optionIndex < pendingQuestion.currentOptions.length) {
+                // Get the option value (not just the index)
+                const option = pendingQuestion.currentOptions[optionIndex];
+
+                // Handle both object format { label, value } and string format
+                let optionValue: string;
+                if (typeof option === 'string') {
+                    optionValue = option;
+                    this.plugin.log(`[${this.sessionId.slice(0, 8)}] Option ${optionIndex} is string: "${optionValue}"`);
+                } else if (option && typeof option === 'object') {
+                    const keys = Object.keys(option);
+                    this.plugin.log(`[${this.sessionId.slice(0, 8)}] Option ${optionIndex} is object with keys: ${keys.join(', ')}`);
+                    this.plugin.log(`[${this.sessionId.slice(0, 8)}] Option ${optionIndex}: label="${option.label || 'N/A'}", value="${option.value || 'N/A'}"`);
+                    optionValue = option.value || option.label || `Option ${optionIndex + 1}`;
+                    this.plugin.log(`[${this.sessionId.slice(0, 8)}] Extracted value: "${optionValue}"`);
+                } else {
+                    optionValue = `Option ${optionIndex + 1}`;
+                    this.plugin.log(`[${this.sessionId.slice(0, 8)}] Option ${optionIndex} is ${typeof option}, using fallback: "${optionValue}"`);
+                }
+
+                // Add answer to collection
+                pendingQuestion.allAnswers.push(optionValue);
+                this.plugin.log(`[${this.sessionId.slice(0,  8)}] Collected answer ${pendingQuestion.allAnswers.length}: "${optionValue}"`);
+
+                // Move to next question
+                pendingQuestion.currentQuestionIndex++;
+
+                // Ask the next question or send all answers if complete
+                await this.askNextQuestion();
                 return;
+            } else {
+                this.plugin.log(`[${this.sessionId.slice(0, 8)}] Option index ${optionIndex} out of range (0-${pendingQuestion.currentOptions.length - 1})`);
             }
         }
 
         // Regular tool permission approval
         // Convert option number to behavior
-        // 1 = approve (yes), 2 = deny (no), 3 = delegate (allow all for this tool)
-        const behaviorMap: Record<string, 'approve' | 'deny' | 'delegate'> = {
-            '1': 'approve',
+        // 1 = allow (yes), 2 = deny (no), 3 = delegate (allow all for this tool)
+        const behaviorMap: Record<string, 'allow' | 'deny' | 'delegate'> = {
+            '1': 'allow',
             '2': 'deny',
             '3': 'delegate'
         };
 
-        const behavior = behaviorMap[optionNumber] || 'approve';
+        const behavior = behaviorMap[optionNumber] || 'allow';
 
         const response: ControlResponseData = {
             behavior,
@@ -339,20 +414,6 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         };
 
         this.plugin.log(`[${this.sessionId.slice(0, 8)}] Sending approval: ${behavior}`);
-
-        await this.sendControlResponse(response);
-    }
-
-    /**
-     * Send response to an AskUserQuestion control request
-     */
-    async sendQuestionResponse(selectedOptions: string[]): Promise<void> {
-        const response: ControlResponseData = {
-            behavior: 'approve',
-            selectedOptions,
-        };
-
-        this.plugin.log(`[${this.sessionId.slice(0, 8)}] Sending question response: ${selectedOptions.join(', ')}`);
 
         await this.sendControlResponse(response);
     }
@@ -421,17 +482,18 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     /**
      * Flush text buffer immediately
      */
-    private flushTextBuffer(isComplete: boolean = false): void {
+    private flushTextBuffer(isComplete: boolean = false, outputType: 'stdout' | 'thinking' = 'stdout'): void {
         if (this.batchTimer) {
             clearTimeout(this.batchTimer);
             this.batchTimer = null;
         }
         if (this.textBuffer) {
+            this.plugin.log(`[${this.sessionId.slice(0, 8)}] Flushing buffer: outputType=${outputType}, length=${this.textBuffer.length}, isComplete=${isComplete}`);
             this.plugin.emit('output', {
                 sessionId: this.sessionId,
                 content: this.textBuffer,
                 isComplete,
-                outputType: 'stdout',
+                outputType,
                 timestamp: new Date()
             });
             this.textBuffer = '';
@@ -442,7 +504,14 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
      * Schedule batch flush with time-based batching
      * Flushes every BATCH_INTERVAL_MS to provide real-time updates without overwhelming Discord
      */
-    private scheduleBatchFlush(): void {
+    private scheduleBatchFlush(outputType: 'stdout' | 'thinking' = 'stdout'): void {
+        // If output type is changing, flush immediately with the old type
+        if (outputType !== this.currentOutputType && this.textBuffer) {
+            this.plugin.log(`[${this.sessionId.slice(0, 8)}] Output type changing: ${this.currentOutputType} -> ${outputType}, flushing existing buffer`);
+            this.flushTextBuffer(false, this.currentOutputType);
+            this.currentOutputType = outputType;
+        }
+
         // Clear existing timer
         if (this.batchTimer) {
             clearTimeout(this.batchTimer);
@@ -451,7 +520,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         // Always schedule a flush after the batch interval
         // This provides predictable, time-based batching rather than sentence-based
         this.batchTimer = setTimeout(() => {
-            this.flushTextBuffer();
+            this.flushTextBuffer(false, this.currentOutputType);
         }, this.BATCH_DELAY);
     }
 
@@ -469,6 +538,13 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                 '--include-partial-messages',
                 '--permission-prompt-tool', 'stdio',
             ];
+
+            // Add max-thinking-tokens if enabled (critical for extended thinking)
+            const maxTokens = this.getMaxThinkingTokens();
+            if (maxTokens > 0) {
+                args.push('--max-thinking-tokens', maxTokens.toString());
+                this.plugin.log(`[${this.sessionId.slice(0, 8)}] Extended thinking enabled: ${maxTokens} tokens`);
+            }
 
             const env = {
                 ...process.env,
@@ -564,12 +640,35 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     }
 
     /**
+     * Debug logging helper
+     */
+    private debugLog(direction: string, data: any): void {
+        if (!this.debugLogPath) return;
+
+        const logEntry = {
+            timestamp: new Date().toISOString(),
+            sessionId: this.sessionId,
+            direction,
+            ...data
+        };
+
+        try {
+            appendFileSync(this.debugLogPath, JSON.stringify(logEntry) + '\n');
+        } catch (e) {
+            // Ignore logging errors
+        }
+    }
+
+    /**
      * Process a line of JSON output from the CLI
      */
     private processLine(line: string): void {
         try {
             const message: CliMessage = JSON.parse(line);
             this.plugin.debug(`[${this.sessionId.slice(0, 8)}] ← ${message.type}`);
+
+            // Log all incoming messages
+            this.debugLog('RECEIVED', { type: message.type, raw: line });
 
             switch (message.type) {
                 case 'system':
@@ -604,6 +703,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         } catch (e) {
             this.plugin.log(`[${this.sessionId.slice(0, 8)}] Failed to parse: ${line.slice(0, 100)}`);
             this.plugin.debug(`[${this.sessionId.slice(0, 8)}] Error: ${e}`);
+            this.debugLog('ERROR', { error: String(e), line: line.slice(0, 500) });
         }
     }
 
@@ -631,8 +731,13 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
         switch (event.type) {
             case 'message_start':
-                // New message starting
+                // New message starting - clear any pending tool state from previous message
                 this.seenToolUses.clear();
+                this.currentTool = null;
+                this.currentToolInput = {};
+                this.currentToolUseId = null;
+                this.currentThinking = ''; // Clear thinking buffer
+                this.currentOutputType = 'stdout'; // Reset output type
                 this.setActivity('Thinking');
                 this.isThinking = true;
                 break;
@@ -640,11 +745,13 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             case 'content_block_start':
                 const block = event.content_block;
                 if (block.type === 'tool_use') {
-                    // Flush any pending text as complete before starting tool use
-                    // This ensures text and tool use are separate messages
+                    // Flush any pending text/thinking as complete before starting tool use
+                    // This ensures text/thinking and tool use are separate messages
                     this.flushTextBuffer(true);
+                    this.currentOutputType = 'stdout'; // Reset to stdout after tool
 
                     this.currentTool = block.name;
+                    this.currentToolUseId = block.id;
                     this.currentToolInput = {}; // Reset tool input tracking
                     this.isThinking = false;
 
@@ -657,6 +764,22 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                         status: 'working',
                         currentTool: block.name
                     });
+                } else if (block.type === 'thinking') {
+                    // Thinking block started - flush any pending text buffer first
+                    this.flushTextBuffer(true);
+                    this.currentOutputType = 'thinking'; // Set output type before first thinking delta
+                    this.isThinking = true;
+                    this.setActivity('Thinking');
+                    this.plugin.log(`[${this.sessionId.slice(0, 8)}] Thinking block started, outputType set to 'thinking'`);
+
+                    this.plugin.emit('status', {
+                        sessionId: this.sessionId,
+                        status: 'thinking'
+                    });
+                } else if (block.type === 'text') {
+                    // Text block started - flush any pending thinking buffer first
+                    this.flushTextBuffer(true);
+                    this.currentOutputType = 'stdout'; // Reset to stdout for text
                 }
                 break;
 
@@ -671,62 +794,34 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
                     this.currentContent += delta.text;
 
-                    // Batch text by sentence
+                    // Batch text using the batching mechanism with stdout output type
                     this.textBuffer += delta.text;
-                    this.scheduleBatchFlush();
+                    this.scheduleBatchFlush('stdout');
+                } else if (delta.type === 'thinking_delta' && delta.thinking) {
+                    // Thinking content streaming - accumulate and emit with batching
+                    this.currentThinking += delta.thinking;
+
+                    // Add thinking to buffer with outputType='thinking'
+                    this.textBuffer += delta.thinking;
+                    this.scheduleBatchFlush('thinking');
+
+                    // Log thinking delta for debugging
+                    this.plugin.log(`[${this.sessionId.slice(0, 8)}] Thinking delta received: ${delta.thinking.slice(0, 50)}... (total: ${this.currentThinking.length} chars)`);
+
+                    this.debugLog('THINKING_DELTA', {
+                        content: delta.thinking,
+                        accumulatedLength: this.currentThinking.length
+                    });
                 } else if (delta.type === 'input_json_delta' && delta.partial_json) {
-                    // Accumulate tool input as it streams
+                    // Accumulate tool input as it streams, but don't emit yet
+                    // We'll emit the complete tool output in content_block_stop
                     if (this.currentTool) {
                         try {
                             // Parse and merge the partial JSON
                             const parsed = JSON.parse(delta.partial_json);
                             Object.assign(this.currentToolInput, parsed);
-
-                            // Emit update with structured data
-                            if (this.currentTool === 'Edit' || this.currentTool === 'MultiEdit') {
-                                // For Edit tools, format as a diff
-                                const toolPreview = this.formatToolInput(this.currentTool, this.currentToolInput);
-                                this.plugin.emit('output', {
-                                    sessionId: this.sessionId,
-                                    content: `**Editing:** ${this.currentToolInput.path || 'file'}\n\`\`\`diff\n${toolPreview}\n\`\`\``,
-                                    isComplete: false,
-                                    outputType: 'edit',
-                                    structuredData: {
-                                        edit: {
-                                            filePath: this.currentToolInput.path || 'unknown',
-                                            oldContent: this.currentToolInput.oldText,
-                                            newContent: this.currentToolInput.newText,
-                                            diff: toolPreview
-                                        }
-                                    },
-                                    timestamp: new Date()
-                                });
-                            } else {
-                                // For other tools, show structured data
-                                const toolPreview = this.formatToolInput(this.currentTool, this.currentToolInput);
-                                this.plugin.emit('output', {
-                                    sessionId: this.sessionId,
-                                    content: `[${this.currentTool}]\n\`\`\`\n${toolPreview}\n\`\`\``,
-                                    isComplete: false,
-                                    outputType: 'tool_use',
-                                    structuredData: {
-                                        tool: {
-                                            name: this.currentTool,
-                                            input: this.currentToolInput
-                                        }
-                                    },
-                                    timestamp: new Date()
-                                });
-                            }
                         } catch {
-                            // Not valid JSON yet, show progress
-                            this.plugin.emit('output', {
-                                sessionId: this.sessionId,
-                                content: `[${this.currentTool}] ${delta.partial_json.slice(0, 200)}...`,
-                                isComplete: false,
-                                outputType: 'tool_use',
-                                timestamp: new Date()
-                            });
+                            // Not valid JSON yet, continue accumulating
                         }
                     }
                 }
@@ -738,18 +833,19 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                     const toolId = event.content_block.id;
                     this.seenToolUses.add(toolId);
 
-                    // Emit final structured data for the tool
+                    // Emit tool use with isComplete: false to indicate waiting for results
+                    // The tool result will be combined with this in a follow-up message
                     if (this.currentTool === 'Edit' || this.currentTool === 'MultiEdit') {
-                        // Mark edit as complete with final structured data
                         const toolPreview = this.formatToolInput(this.currentTool, this.currentToolInput);
+                        const editPath = this.currentToolInput.path || this.currentToolInput.filePath || 'file';
                         this.plugin.emit('output', {
                             sessionId: this.sessionId,
-                            content: `**Editing:** ${this.currentToolInput.path || 'file'}\n\`\`\`diff\n${toolPreview}\n\`\`\``,
-                            isComplete: true,
+                            content: `**Editing:** ${editPath}\n\`\`\`diff\n${toolPreview}\n\`\`\``,
+                            isComplete: false, // Waiting for results
                             outputType: 'edit',
                             structuredData: {
                                 edit: {
-                                    filePath: this.currentToolInput.path || 'unknown',
+                                    filePath: editPath,
                                     oldContent: this.currentToolInput.oldText,
                                     newContent: this.currentToolInput.newText,
                                     diff: toolPreview
@@ -757,13 +853,19 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                             },
                             timestamp: new Date()
                         });
+
+                        this.debugLog('EMITTED', {
+                            type: 'edit',
+                            isComplete: false,
+                            tool: this.currentTool,
+                            contentPreview: `**Editing:** ${this.currentToolInput.path || 'file'}`
+                        });
                     } else {
-                        // Mark other tools as complete
                         const toolPreview = this.formatToolInput(this.currentTool, this.currentToolInput);
                         this.plugin.emit('output', {
                             sessionId: this.sessionId,
                             content: `[${this.currentTool}]\n\`\`\`\n${toolPreview}\n\`\`\``,
-                            isComplete: true,
+                            isComplete: false, // Waiting for results
                             outputType: 'tool_use',
                             structuredData: {
                                 tool: {
@@ -773,11 +875,23 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                             },
                             timestamp: new Date()
                         });
+
+                        this.debugLog('EMITTED', {
+                            type: 'tool_use',
+                            isComplete: false,
+                            tool: this.currentTool,
+                            input: this.currentToolInput,
+                            contentPreview: `[${this.currentTool}]`
+                        });
                     }
 
-                    // Clear tool state
-                    this.currentTool = null;
-                    this.currentToolInput = {};
+                    // Don't clear tool state yet - we need it when results come back
+                    // this.currentTool = null;
+                    // this.currentToolInput = {};
+                } else if (event.content_block?.type === 'thinking') {
+                    // Thinking block complete - flush the thinking buffer
+                    this.flushTextBuffer(true, 'thinking');
+                    this.currentOutputType = 'stdout'; // Reset to stdout after thinking
                 }
                 break;
 
@@ -803,11 +917,14 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
             case 'message_stop':
                 // Message complete - flush any remaining text as complete
-                this.flushTextBuffer(true);
+                this.flushTextBuffer(true, this.currentOutputType);
 
                 this.status = 'idle';
-                this.currentTool = null;
+                // Don't clear tool state - tool results arrive in the next user message
+                // Tool state is cleared in handleUserMessage after emitting combined result
+                this.currentThinking = ''; // Clear thinking buffer
                 this.isThinking = false;
+                this.currentOutputType = 'stdout'; // Reset to stdout for next message
                 this.setActivity(null);
 
                 this.plugin.emit('status', {
@@ -839,14 +956,66 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
     /**
      * Handle complete assistant message
-     * NOTE: We've already streamed all content during handleStreamEvent, so we skip
-     * re-emitting text/tool_use here. The CLI sends this after message_stop for
-     * completeness, but we don't need it for display.
+     * NOTE: Text and tool_use content are already streamed via handleStreamEvent
+     * However, thinking blocks are only available in the complete message
      */
     private handleAssistantMessage(message: AssistantMessage): void {
-        // Skip re-emitting content since it was already streamed
-        // Just log for debugging
-        this.plugin.debug(`[${this.sessionId.slice(0, 8)}] Assistant message (skipped, already streamed): ${message.message.id}`);
+        // Log what we received
+        this.debugLog('ASSISTANT_MESSAGE', {
+            messageId: message.message.id,
+            contentTypes: message.message.content.map(c => c.type),
+            hasThinkingMetadata: !!message.thinkingMetadata,
+            todosCount: message.todos?.length || 0,
+            fullMessage: message
+        });
+
+        // Process thinking blocks from content
+        for (const content of message.message.content) {
+            if (content.type === 'thinking') {
+                // Emit thinking content as a separate output type
+                this.plugin.emit('output', {
+                    sessionId: this.sessionId,
+                    content: content.thinking,
+                    isComplete: true,
+                    outputType: 'thinking',
+                    timestamp: new Date()
+                });
+
+                // Log what we emitted
+                this.debugLog('EMITTED', {
+                    type: 'thinking',
+                    contentPreview: content.thinking.slice(0, 200),
+                    isComplete: true
+                });
+            }
+        }
+
+        // Process todos if present
+        if (message.todos && message.todos.length > 0) {
+            const todoContent = message.todos.map(todo => {
+                const status = todo.status === 'completed' ? '✅' :
+                              todo.status === 'in_progress' ? '🔄' : '⏳';
+                return `${status} ${todo.content}`;
+            }).join('\n');
+
+            this.plugin.emit('output', {
+                sessionId: this.sessionId,
+                content: todoContent,
+                isComplete: true,
+                outputType: 'info',
+                timestamp: new Date()
+            });
+
+            // Log what we emitted
+            this.debugLog('EMITTED', {
+                type: 'info',
+                contentType: 'todos',
+                todosCount: message.todos.length,
+                content: todoContent
+            });
+        }
+
+        this.plugin.debug(`[${this.sessionId.slice(0, 8)}] Assistant message processed: ${message.message.id}`);
     }
 
     /**
@@ -858,18 +1027,21 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                 return `$ ${input.command}`;
             case 'Edit':
                 // Format as a proper diff
+                const editPath = input.path || input.filePath || 'file';
                 if (input.oldText && input.newText) {
-                    const diff = this.createUnifiedDiff(input.path || 'file', input.oldText, input.newText);
+                    const diff = this.createUnifiedDiff(editPath, input.oldText, input.newText);
                     return diff;
                 } else if (input.diff) {
                     return input.diff;
                 } else {
-                    return `Edit ${input.path}`;
+                    return `Edit ${editPath}`;
                 }
             case 'Write':
-                return `Write ${input.path}\n\`\`\`\n${input.content?.slice(0, 500)}${input.content && input.content.length > 500 ? '...' : ''}\n\`\`\``;
+                const writePath = input.path || input.filePath || 'unknown';
+                return `Write ${writePath}\n\`\`\`\n${input.content?.slice(0, 500)}${input.content && input.content.length > 500 ? '...' : ''}\n\`\`\``;
             case 'Read':
-                return `Read ${input.path}`;
+                const readPath = input.path || input.file_path || input.filePath || 'unknown';
+                return `Read ${readPath}`;
             case 'Glob':
                 return `Glob: ${input.pattern}`;
             case 'Grep':
@@ -927,52 +1099,127 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     }
 
     /**
+     * Strip line numbers from file content (format: "     1→text")
+     * This cleans up the ugly line number format from Read tool results
+     */
+    private stripLineNumbers(content: string): string {
+        return content
+            .split('\n')
+            .map(line => {
+                // Match format: "     1→text" or "    23→text"
+                const match = line.match(/^\s*\d+→(.*)$/);
+                return match ? match[1] : line;
+            })
+            .join('\n');
+    }
+
+    /**
      * Handle user message (tool results)
      */
     private handleUserMessage(message: UserMessage): void {
+        // Log user message
+        this.debugLog('USER_MESSAGE', {
+            contentTypes: message.message.content.map(c => c.type),
+            toolResultsCount: message.message.content.filter(c => c.type === 'tool_result').length
+        });
+
         // Tool results coming back
         for (const content of message.message.content) {
             if (content.type === 'tool_result') {
                 const toolResult = content; // Type guard
 
-                // Extract tool name from the tool_use_id if possible
-                // The tool_use_id format is "call_..." which we can map back to the tool name
-                let toolName = 'Unknown';
-                if (toolResult.tool_use_id) {
-                    // Try to extract tool info from the ID
-                    // tool_use_id format: "call_<random>"
-                    // But we don't have a direct mapping, so use "Tool Result" as generic
-                    toolName = 'Tool Result';
-                }
+                // Check if we have a current tool that this result belongs to
+                if (this.currentTool && toolResult.tool_use_id === this.currentToolUseId) {
+                    // Combine tool use info with result
+                    const toolPreview = this.formatToolInput(this.currentTool, this.currentToolInput);
+                    let resultContent = String(toolResult.content || '');
 
-                if (toolResult.is_error) {
-                    // Error result - emit as error
-                    this.plugin.emit('error', {
-                        sessionId: this.sessionId,
-                        error: toolResult.content,
-                        fatal: false
-                    });
+                    // Clean up Read tool results by stripping line numbers
+                    if (this.currentTool === 'Read') {
+                        resultContent = this.stripLineNumbers(resultContent);
+                    }
 
-                    // Also emit as tool_result with error context
-                    this.plugin.emit('output', {
-                        sessionId: this.sessionId,
-                        content: `[${toolName}] Error: ${toolResult.content}`,
-                        isComplete: true,
-                        outputType: 'tool_result',
-                        timestamp: new Date()
-                    });
+                    // Truncate to reasonable length
+                    resultContent = resultContent.slice(0, 2000);
+
+                    if (toolResult.is_error) {
+                        // Error result
+                        this.plugin.emit('output', {
+                            sessionId: this.sessionId,
+                            content: `**[${this.currentTool}]**\n\`\`\`\n${toolPreview}\n\`\`\`\n\n**Error:**\n\`\`\`\n${resultContent}\n\`\`\``,
+                            isComplete: true,
+                            outputType: 'tool_result',
+                            structuredData: {
+                                tool: {
+                                    name: this.currentTool,
+                                    input: this.currentToolInput,
+                                    result: resultContent,
+                                    isError: true
+                                }
+                            },
+                            timestamp: new Date()
+                        });
+
+                        this.debugLog('EMITTED', {
+                            type: 'tool_result',
+                            isComplete: true,
+                            isError: true,
+                            tool: this.currentTool,
+                            resultPreview: resultContent.slice(0, 200)
+                        });
+                    } else {
+                        // Successful result
+                        this.plugin.emit('output', {
+                            sessionId: this.sessionId,
+                            content: `**[${this.currentTool}]**\n\`\`\`\n${toolPreview}\n\`\`\`\n\n**Result:**\n\`\`\`\n${resultContent}\n\`\`\``,
+                            isComplete: true,
+                            outputType: 'tool_result',
+                            structuredData: {
+                                tool: {
+                                    name: this.currentTool,
+                                    input: this.currentToolInput,
+                                    result: resultContent
+                                }
+                            },
+                            timestamp: new Date()
+                        });
+
+                        this.debugLog('EMITTED', {
+                            type: 'tool_result',
+                            isComplete: true,
+                            isError: false,
+                            tool: this.currentTool,
+                            resultPreview: resultContent.slice(0, 200)
+                        });
+                    }
+
+                    // Clear tool state after emitting combined result
+                    this.currentTool = null;
+                    this.currentToolInput = {};
+                    this.currentToolUseId = null;
                 } else {
-                    // Successful tool result
+                    // No matching tool use, emit result separately
+                    const resultContent = String(toolResult.content || '').slice(0, 2000);
                     this.plugin.emit('output', {
                         sessionId: this.sessionId,
-                        content: `[${toolName}] ${toolResult.content}`.slice(0, 1000),
+                        content: `[Tool Result] ${resultContent}`,
                         isComplete: true,
                         outputType: 'tool_result',
                         timestamp: new Date()
+                    });
+
+                    this.debugLog('EMITTED', {
+                        type: 'tool_result',
+                        isComplete: true,
+                        unmatched: true,
+                        toolUseId: toolResult.tool_use_id,
+                        currentToolUseId: this.currentToolUseId,
+                        resultPreview: resultContent.slice(0, 200)
                     });
                 }
             }
         }
+
 
         this.plugin.debug(`[${this.sessionId.slice(0, 8)}] User message: ${message.uuid}`);
     }
@@ -1035,6 +1282,13 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     private async handleAskUserQuestion(requestId: string, request: ControlRequest): Promise<void> {
         const input = request.input!;
 
+        this.plugin.log(`[${this.sessionId.slice(0, 8)}] AskUserQuestion received:`, JSON.stringify({
+            hasQuestions: !!input.questions,
+            hasQuestion: !!input.question,
+            questionsCount: input.questions?.length,
+            optionsCount: input.options?.length
+        }));
+
         // Handle both single question and questions array format
         const questionsArray = input.questions || (input.question ? [{ question: input.question, options: input.options || [], multiSelect: input.multiSelect || false }] : []);
 
@@ -1043,41 +1297,141 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             return;
         }
 
-        // For now, handle the first question (can extend for multiple questions later)
-        const firstQuestion = questionsArray[0];
-        const question = firstQuestion.question || 'Please provide input:';
-        const options = firstQuestion.options || [];
-        const multiSelect = firstQuestion.multiSelect || false;
-        const header = firstQuestion.header || null;
+        // Store all questions and track current question index for multi-question flows
+        (this as any).pendingQuestion = {
+            input,
+            questions: questionsArray,
+            allAnswers: [],  // Collect answers as we go
+            currentQuestionIndex: 0,  // Start with first question
+            multiSelect: questionsArray[0]?.multiSelect || false
+        };
 
-        this.plugin.log(`[${this.sessionId.slice(0, 8)}] Question: "${question}" (${options.length} options, multi=${multiSelect})`);
+        // Ask the first question
+        await this.askNextQuestion();
+    }
+
+    /**
+     * Ask the next question in a multi-question flow
+     */
+    private async askNextQuestion(): Promise<void> {
+        const pendingQuestion = (this as any).pendingQuestion;
+        const questionIndex = pendingQuestion.currentQuestionIndex;
+        const questionsArray = pendingQuestion.questions;
+
+        if (questionIndex >= questionsArray.length) {
+            // All questions have been asked, send final response
+            await this.sendAllAnswers();
+            return;
+        }
+
+        const currentQuestion = questionsArray[questionIndex];
+        const question = currentQuestion.question || 'Please provide input:';
+        const options = currentQuestion.options || [];
+        const multiSelect = currentQuestion.multiSelect || false;
+        const header = currentQuestion.header || null;
+
+        this.plugin.log(`[${this.sessionId.slice(0, 8)}] Asking question ${questionIndex + 1}/${questionsArray.length}: "${question}"`);
+
+        // CRITICAL: Ensure options have a 'value' field for CLI matching
+        const processedOptions = options.map((opt: any, idx: number) => {
+            if (typeof opt === 'string') {
+                return { label: opt, value: opt };
+            }
+            return {
+                ...opt,
+                value: opt.value || opt.label || `option${idx}`
+            };
+        });
 
         // Discord bot expects options as an array of strings (labels only)
-        const optionLabels: string[] = options.map((opt: any) => opt.label || opt.value || `Option`);
+        const optionLabels: string[] = options.map((opt: any, idx: number) => {
+            if (typeof opt === 'string') return opt;
+            return opt.label || opt.value || `Option ${idx + 1}`;
+        });
 
         // Build context with header if available
         let contextText = header ? `**${header}**\n\n${question}` : question;
+        if (questionsArray.length > 1) {
+            contextText += `\n\n*(Question ${questionIndex + 1} of ${questionsArray.length})*`;
+        }
         if (options.length > 0) {
-            contextText += `\n\nOptions: ${options.map((o: any) => o.label || o.value).join(', ')}`;
+            const optionDescriptions = options.map((o: any, idx: number) => {
+                if (typeof o === 'string') return `${idx + 1}. ${o}`;
+                return `${idx + 1}. ${o.label || o.value || 'Option'}`;
+            }).join('\n');
+            contextText += `\n\n${optionDescriptions}`;
         }
 
-        // Emit as a special approval event with question context
+        // Emit approval event for this question
         this.plugin.emit('approval', {
             sessionId: this.sessionId,
             tool: 'AskUserQuestion',
             context: contextText,
             options: optionLabels,
-            detectedAt: new Date()
+            detectedAt: new Date(),
+            // Pass multi-select and Other option info to Discord bot
+            isMultiSelect: multiSelect,
+            hasOther: true  // Always include "Other" button for custom input
         });
 
         // Store the request ID for sending the response later
-        this.currentRequestId = requestId;
+        // NOTE: We use the same requestId for all questions in a multi-question flow
+        if (questionIndex === 0) {
+            this.currentRequestId = (this as any).currentRequestId || null;
+        }
 
-        // Store additional context for sending the response
-        (this as any).pendingQuestion = {
-            options,
-            multiSelect
+        // Store processed options for this question
+        pendingQuestion.currentOptions = processedOptions;
+        pendingQuestion.currentMultiSelect = multiSelect;
+
+        this.plugin.log(`[${this.sessionId.slice(0, 8)}] Waiting for answer to question ${questionIndex + 1}/${questionsArray.length}`);
+    }
+
+    /**
+     * Send all collected answers for a multi-question AskUserQuestion
+     */
+    private async sendAllAnswers(): Promise<void> {
+        const pendingQuestion = (this as any).pendingQuestion;
+        const answers = pendingQuestion.allAnswers;
+        const questionsCount = pendingQuestion.questions.length;
+
+        this.plugin.log(`[${this.sessionId.slice(0, 8)}] All ${questionsCount} questions answered, sending:`, JSON.stringify(answers));
+
+        const updatedInput: Record<string, any> = {
+            answers: answers
         };
+
+        const response: ControlResponseData = {
+            behavior: 'allow',
+            updatedInput
+        };
+
+        const controlMessage: ControlResponseMessage = {
+            type: 'control_response',
+            response: {
+                subtype: 'success',
+                request_id: this.currentRequestId,
+                response
+            }
+        };
+
+        this.plugin.log(`[${this.sessionId.slice(0, 8)}] Sending control_response with updatedInput.answers=${JSON.stringify(answers)}`);
+
+        const jsonString = JSON.stringify(controlMessage);
+        console.log(`[${this.sessionId.slice(0, 8)}] WRITING TO STDIN:`, JSON.stringify(controlMessage, null, 2));
+
+        const fs = require('fs');
+        const debugPath = `/tmp/claude-sdk-debug/${this.sessionId.slice(0, 8)}-control-response.json`;
+        try {
+            fs.writeFileSync(debugPath, JSON.stringify(controlMessage, null, 2) + '\n');
+        } catch (e) {
+            console.error('Failed to write debug file:', e);
+        }
+
+        await this.writeToStdin(jsonString);
+
+        // Clear pending question
+        delete (this as any).pendingQuestion;
     }
 
     /**
@@ -1099,6 +1453,29 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             default:
                 return JSON.stringify(input).slice(0, 200);
         }
+    }
+
+    /**
+     * Get max thinking tokens based on thinking level setting
+     * Matches the VS Code extension logic
+     */
+    private getMaxThinkingTokens(): number {
+        // If explicitly set in options, use that
+        if (this.config.options?.maxThinkingTokens !== undefined) {
+            return this.config.options.maxThinkingTokens;
+        }
+
+        // Otherwise, determine from thinking level
+        const level = this.config.options?.thinkingLevel || 'default_on';
+
+        // Match extension logic (extension-beautified.js:47199)
+        // off = 0, everything else = 31999
+        if (level === 'off') {
+            return 0;
+        }
+
+        // Extension returns 31999 for all non-off levels
+        return 31999;
     }
 
     /**

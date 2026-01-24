@@ -35,6 +35,10 @@ export interface PendingApproval {
     toolInput: unknown;
     requestId?: string;
     timestamp?: Date;
+    // Multi-select and Other option support for AskUserQuestion
+    options?: string[]; // Available options
+    isMultiSelect?: boolean; // Whether this is a multi-select question
+    hasOther?: boolean; // Whether this has an "Other" option
 }
 export const pendingApprovals = new Map<string, PendingApproval>();
 
@@ -83,4 +87,18 @@ export const pendingTerminalListRequests = new Map<string, PendingTerminalListRe
 
 // Assistant streaming messages tracker (runnerId -> message state)
 export const assistantStreamingMessages = new Map<string, StreamingMessage>();
+
+// Multi-select question state (requestId -> multi-select state)
+export interface MultiSelectState {
+    requestId: string;
+    sessionId: string;
+    runnerId: string;
+    selectedOptions: Set<string>; // Set of selected option numbers
+    options: string[]; // All available options
+    isMultiSelect: boolean;
+    hasOther: boolean;
+    toolName: string;
+    timestamp: Date;
+}
+export const multiSelectState = new Map<string, MultiSelectState>();
 

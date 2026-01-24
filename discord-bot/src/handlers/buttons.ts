@@ -28,6 +28,24 @@ export async function handleButtonInteraction(interaction: any): Promise<void> {
         return;
     }
 
+    // Handle multi-select toggle buttons
+    if (customId.startsWith('multiselect_') && !customId.startsWith('multiselect_submit_')) {
+        await handleMultiSelectToggle(interaction, userId, customId);
+        return;
+    }
+
+    // Handle multi-select submit button
+    if (customId.startsWith('multiselect_submit_')) {
+        await handleMultiSelectSubmit(interaction, userId, customId);
+        return;
+    }
+
+    // Handle Other button (open modal for custom input)
+    if (customId.startsWith('other_')) {
+        await handleOtherButton(interaction, userId, customId);
+        return;
+    }
+
     // Handle TmuxPlugin option buttons
     if (customId.startsWith('option_')) {
         await handleOptionButton(interaction, userId, customId);
@@ -1185,4 +1203,233 @@ async function handleStartSession(interaction: any, userId: string): Promise<voi
         });
         return;
     }
+}
+
+// ===================================
+// Multi-select and Other Option Handlers
+// ===================================
+
+/**
+ * Handle multi-select toggle button
+ */
+async function handleMultiSelectToggle(interaction: any, userId: string, customId: string): Promise<void> {
+    // Format: multiselect_<requestId>_<optionNumber>
+    const parts = customId.split('_');
+    const requestId = parts[1];
+    const optionNumber = parts[2];
+
+    const multiSelect = botState.multiSelectState.get(requestId);
+    if (!multiSelect) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Expired', 'This question has expired.')],
+            flags: 64
+        });
+        return;
+    }
+
+    const pending = botState.pendingApprovals.get(requestId);
+    if (!pending) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Expired', 'This approval request has expired.')],
+            flags: 64
+        });
+        return;
+    }
+
+    const runner = storage.getRunner(pending.runnerId);
+    if (!runner || !storage.canUserAccessRunner(userId, pending.runnerId)) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Unauthorized', 'You are not authorized to respond to this request.')],
+            flags: 64
+        });
+        return;
+    }
+
+    // Toggle the option
+    if (multiSelect.selectedOptions.has(optionNumber)) {
+        multiSelect.selectedOptions.delete(optionNumber);
+    } else {
+        multiSelect.selectedOptions.add(optionNumber);
+    }
+    botState.multiSelectState.set(requestId, multiSelect);
+
+    // Update button styles to reflect selection state
+    const optionButtons = multiSelect.options.map((option: string, index: number) => {
+        const optNum = String(index + 1);
+        const isSelected = multiSelect.selectedOptions.has(optNum);
+        return new ButtonBuilder()
+            .setCustomId(`multiselect_${requestId}_${optNum}`)
+            .setLabel(option)
+            .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary);
+    });
+
+    // Add "Other" button if hasOther is true
+    if (multiSelect.hasOther) {
+        const isOtherSelected = multiSelect.selectedOptions.has('other');
+        optionButtons.push(
+            new ButtonBuilder()
+                .setCustomId(`other_${requestId}`)
+                .setLabel('Other...')
+                .setStyle(isOtherSelected ? ButtonStyle.Success : ButtonStyle.Secondary)
+        );
+    }
+
+    // Add Submit button
+    const submitButton = new ButtonBuilder()
+        .setCustomId(`multiselect_submit_${requestId}`)
+        .setLabel(`✅ Submit (${multiSelect.selectedOptions.size} selected)`)
+        .setStyle(multiSelect.selectedOptions.size > 0 ? ButtonStyle.Success : ButtonStyle.Secondary)
+        .setDisabled(multiSelect.selectedOptions.size === 0);
+
+    const rows: ActionRowBuilder<ButtonBuilder>[] = [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(...optionButtons),
+        new ActionRowBuilder<ButtonBuilder>().addComponents(submitButton)
+    ];
+
+    await interaction.update({ components: rows });
+}
+
+/**
+ * Handle multi-select submit button
+ */
+async function handleMultiSelectSubmit(interaction: any, userId: string, customId: string): Promise<void> {
+    // Format: multiselect_submit_<requestId>
+    const requestId = customId.replace('multiselect_submit_', '');
+
+    const multiSelect = botState.multiSelectState.get(requestId);
+    if (!multiSelect) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Expired', 'This question has expired.')],
+            flags: 64
+        });
+        return;
+    }
+
+    const pending = botState.pendingApprovals.get(requestId);
+    if (!pending) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Expired', 'This approval request has expired.')],
+            flags: 64
+        });
+        return;
+    }
+
+    const runner = storage.getRunner(pending.runnerId);
+    if (!runner || !storage.canUserAccessRunner(userId, pending.runnerId)) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Unauthorized', 'You are not authorized to respond to this request.')],
+            flags: 64
+        });
+        return;
+    }
+
+    // Send the selected options to the runner
+    const ws = botState.runnerConnections.get(pending.runnerId);
+    if (ws) {
+        // Convert selected option numbers to option numbers (1-indexed)
+        const selectedNumbers = Array.from(multiSelect.selectedOptions)
+            .filter(opt => opt !== 'other')
+            .sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+
+        // For multi-select, we need to send each selected option
+        // The SDK plugin expects to receive the option numbers
+        for (const optionNumber of selectedNumbers) {
+            ws.send(JSON.stringify({
+                type: 'approval_response',
+                data: {
+                    sessionId: pending.sessionId,
+                    approved: true,
+                    optionNumber
+                }
+            }));
+        }
+
+        // If "Other" was selected, include that in the response
+        if (multiSelect.selectedOptions.has('other')) {
+            const otherValue = (multiSelect as any).otherValue || '';
+            ws.send(JSON.stringify({
+                type: 'approval_response',
+                data: {
+                    sessionId: pending.sessionId,
+                    approved: true,
+                    optionNumber: '0',
+                    message: otherValue
+                }
+            }));
+        }
+    }
+
+    // Show success message
+    const selectedLabels = Array.from(multiSelect.selectedOptions)
+        .map(optNum => {
+            if (optNum === 'other') return 'Other';
+            const idx = parseInt(optNum, 10) - 1;
+            return multiSelect.options[idx] || optNum;
+        })
+        .join(', ');
+
+    const resultButton = new ButtonBuilder()
+        .setCustomId(`result_${requestId}`)
+        .setLabel(`✅ Submitted: ${selectedLabels}`)
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(true);
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(resultButton);
+    const embed = createApprovalDecisionEmbed(true, pending.toolName, interaction.user.username, `Selected: ${selectedLabels}`);
+
+    await interaction.update({
+        embeds: [embed],
+        components: [row]
+    });
+
+    // Clean up
+    botState.multiSelectState.delete(requestId);
+    botState.pendingApprovals.delete(requestId);
+    botState.streamingMessages.delete(pending.sessionId);
+}
+
+/**
+ * Handle "Other" button - opens modal for custom input
+ */
+async function handleOtherButton(interaction: any, userId: string, customId: string): Promise<void> {
+    // Format: other_<requestId>
+    const requestId = customId.replace('other_', '');
+
+    const multiSelect = botState.multiSelectState.get(requestId);
+    const pending = botState.pendingApprovals.get(requestId);
+
+    if (!multiSelect && !pending) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Expired', 'This question has expired.')],
+            flags: 64
+        });
+        return;
+    }
+
+    if (pending && !storage.canUserAccessRunner(userId, pending.runnerId)) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Unauthorized', 'You are not authorized to respond to this request.')],
+            flags: 64
+        });
+        return;
+    }
+
+    // Create modal for custom input
+    const modal = new ModalBuilder()
+        .setCustomId(`other_modal_${requestId}`)
+        .setTitle('Custom Answer')
+        .addComponents(
+            new ActionRowBuilder<TextInputBuilder>().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('other_input')
+                    .setLabel('Your answer')
+                    .setStyle(TextInputStyle.Short)
+                    .setPlaceholder('Enter your custom answer...')
+                    .setRequired(true)
+                    .setMinLength(1)
+                    .setMaxLength(1000)
+            )
+        );
+
+    await interaction.showModal(modal);
 }
