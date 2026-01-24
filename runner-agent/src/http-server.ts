@@ -220,10 +220,15 @@ export function createHttpServer(
                 console.log(`Session event: ${event.type} - ${event.action}`);
 
                 if (event.type === 'discord_action') {
-                    wsManager.send({
+                    const sent = wsManager.send({
                         type: 'discord_action',
                         data: event
                     });
+
+                    if (!sent) {
+                        sendJsonResponse(res, { error: 'Failed to send to Discord bot (not connected)' }, 503);
+                        return;
+                    }
                 } else {
                     // TODO: Other session events
                 }

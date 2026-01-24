@@ -16,7 +16,7 @@ if [ -z "$DISCODE_HTTP_PORT" ] || [ -z "$DISCODE_SESSION_ID" ]; then
     exit 1
 fi
 
-curl -s -X POST "http://127.0.0.1:$DISCODE_HTTP_PORT/session-event" \
+if ! curl -f -s -X POST "http://127.0.0.1:$DISCODE_HTTP_PORT/session-event" \
      -H "Content-Type: application/json" \
      -d "{
            \"type\": \"discord_action\",
@@ -24,6 +24,9 @@ curl -s -X POST "http://127.0.0.1:$DISCODE_HTTP_PORT/session-event" \
            \"sessionId\": \"$DISCODE_SESSION_ID\",
            \"name\": $(jq -n --arg name "$NAME" '$name'),
            \"description\": $(jq -n --arg desc "$DESC" '$desc')
-         }"
+         }"; then
+    echo "Error: Failed to update channel. Runner agent may be unreachable or disconnected."
+    exit 1
+fi
 
 echo "Channel updated."

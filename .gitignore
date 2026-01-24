@@ -12,3 +12,6 @@ internal/
 # Ignored test documentation
 TEST_PLAN.md
 TESTING_PROGRESS.md
+VS_CODE_EXTENSION_ANALYSIS.md
+CLAUDE_CLI_FINDINGS.md
+CLAUDE_SDK_PLUGIN.md

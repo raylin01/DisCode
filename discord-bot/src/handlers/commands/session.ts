@@ -66,7 +66,11 @@ export async function handleCreateSession(interaction: any, userId: string): Pro
                     new ButtonBuilder()
                         .setCustomId('session_plugin_print')
                         .setLabel('Basic (Print)')
-                        .setStyle(ButtonStyle.Secondary)
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('session_plugin_claude-sdk')
+                        .setLabel('Claude SDK')
+                        .setStyle(ButtonStyle.Primary)
                 );
 
             // Row 2: Navigation buttons
@@ -90,7 +94,8 @@ export async function handleCreateSession(interaction: any, userId: string): Pro
                 .setDescription(`**Runner:** \`${runner.name}\`\n**CLI:** ${cliType.toUpperCase()}\n\nSelect how you want to interact with the CLI:`)
                 .addFields(
                     { name: 'Interactive (Tmux)', value: 'Full terminal interaction with approval workflows', inline: false },
-                    { name: 'Basic (Print)', value: 'Simple output logging, less interactive', inline: false }
+                    { name: 'Basic (Print)', value: 'Simple output logging, less interactive', inline: false },
+                    { name: 'Claude SDK', value: 'Native SDK integration with bidirectional JSON protocol', inline: false }
                 );
 
             await interaction.reply({

@@ -58,7 +58,7 @@ export interface SessionCreationState {
     step: 'select_runner' | 'select_cli' | 'select_plugin' | 'select_folder' | 'complete';
     runnerId?: string;
     cliType?: 'claude' | 'gemini' | 'terminal';
-    plugin?: 'tmux' | 'print' | 'stream';
+    plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk';
     folderPath?: string;
     options?: {
         approvalMode?: 'manual' | 'auto';

@@ -583,7 +583,11 @@ async function handleCliSelection(interaction: any, userId: string, customId: st
         new ButtonBuilder()
             .setCustomId('session_plugin_print')
             .setLabel('Basic (Print)')
-            .setStyle(ButtonStyle.Secondary)
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('session_plugin_claude-sdk')
+            .setLabel('Claude SDK')
+            .setStyle(ButtonStyle.Primary)
     ];
 
     // Add Streaming option for Gemini
@@ -627,7 +631,7 @@ async function handleCliSelection(interaction: any, userId: string, customId: st
 }
 
 async function handlePluginSelection(interaction: any, userId: string, customId: string): Promise<void> {
-    const plugin = customId.replace('session_plugin_', '') as 'tmux' | 'print' | 'stream';
+    const plugin = customId.replace('session_plugin_', '') as 'tmux' | 'print' | 'stream' | 'claude-sdk';
 
     const state = botState.sessionCreationState.get(userId);
     if (!state || !state.runnerId || !state.cliType) {
@@ -795,7 +799,12 @@ async function handleBackToPlugin(interaction: any, userId: string): Promise<voi
                 .setCustomId('session_plugin_print')
                 .setLabel('Basic (Print)')
                 .setStyle(ButtonStyle.Secondary)
-                .setEmoji('📄')
+                .setEmoji('📄'),
+            new ButtonBuilder()
+                .setCustomId('session_plugin_claude-sdk')
+                .setLabel('Claude SDK')
+                .setStyle(ButtonStyle.Primary)
+                .setEmoji('⚡')
         );
 
     // Row 2: Navigation buttons

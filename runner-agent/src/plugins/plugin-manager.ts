@@ -23,6 +23,7 @@ import {
 import { TmuxPlugin } from './tmux-plugin.js';
 import { PrintPlugin } from './print-plugin.js';
 import { StreamPlugin } from './stream-plugin.js';
+import { ClaudeSDKPlugin } from './claude-sdk-plugin.js';
 
 // ============================================================================
 // Types
@@ -53,7 +54,7 @@ export class PluginManager extends EventEmitter {
         this.defaultPlugin = config?.defaultPlugin || envPlugin || 'tmux';
 
         // Determine which plugins to enable
-        const enabledPlugins = config?.enabledPlugins || ['tmux', 'print', 'stream'];
+        const enabledPlugins = config?.enabledPlugins || ['tmux', 'print', 'stream', 'claude-sdk'];
 
         // Create plugin instances
         if (enabledPlugins.includes('tmux')) {
@@ -64,6 +65,9 @@ export class PluginManager extends EventEmitter {
         }
         if (enabledPlugins.includes('stream')) {
             this.plugins.set('stream', new StreamPlugin());
+        }
+        if (enabledPlugins.includes('claude-sdk')) {
+            this.plugins.set('claude-sdk', new ClaudeSDKPlugin());
         }
         // Future: if (enabledPlugins.includes('pty')) { ... }
 
@@ -206,6 +210,20 @@ export class PluginManager extends EventEmitter {
             throw new Error(`Session ${sessionId} not found`);
         }
         await session.sendApproval(optionNumber);
+    }
+
+    /**
+     * Send a question response to a session (for AskUserQuestion)
+     */
+    async sendQuestionResponse(sessionId: string, selectedOptions: string[]): Promise<void> {
+        const session = this.getSession(sessionId);
+        if (!session) {
+            throw new Error(`Session ${sessionId} not found`);
+        }
+        if (!session.sendQuestionResponse) {
+            throw new Error(`Session ${sessionId} does not support question responses`);
+        }
+        await session.sendQuestionResponse(selectedOptions);
     }
 
     /**

@@ -11,7 +11,7 @@ import { EventEmitter } from 'events';
 // Types
 // ============================================================================
 
-export type PluginType = 'tmux' | 'print' | 'pty' | 'stream';
+export type PluginType = 'tmux' | 'print' | 'pty' | 'stream' | 'claude-sdk';
 export type SessionStatus = 'idle' | 'working' | 'waiting' | 'offline' | 'error';
 
 export interface SessionConfig {
@@ -189,6 +189,10 @@ export interface PluginSession {
     // Approval handling
     /** Send an approval response (for plugins that support it) */
     sendApproval(optionNumber: string): Promise<void>;
+
+    // Question handling (for plugins that support AskUserQuestion)
+    /** Send a response to an AskUserQuestion request */
+    sendQuestionResponse?(selectedOptions: string[]): Promise<void>;
 
     // Lifecycle
     /** Close/destroy the session */

@@ -834,9 +834,20 @@ export class TmuxPlugin extends BasePlugin {
     private startPolling(): void {
         // Permission polling (every 1s)
         this.pollInterval = setInterval(() => {
+            if (this.sessions.size > 0) {
+                // Log only if we have sessions to avoid spamming empty state
+                // actually, log specifically about watched sessions
+                const watched = Array.from(this.sessions.values()).filter(s => !s.isOwned);
+                if (watched.length > 0) {
+                    this.log(`[DEBUG] Polling ${this.sessions.size} sessions (${watched.length} watched)...`);
+                }
+            }
+
             for (const session of this.sessions.values()) {
                 if (session.status !== 'offline') {
                     this.pollSession(session as TmuxSession);
+                } else {
+                    if (!session.isOwned) this.log(`[DEBUG] Watched session ${session.sessionId} is OFFLINE, skipping poll`);
                 }
             }
         }, PERMISSION_POLL_INTERVAL);
@@ -937,6 +948,17 @@ export class TmuxPlugin extends BasePlugin {
                 } else {
                     // Generic terminal: minimal cleaning (just ANSI)
                     cleaned = getParser('generic').cleanOutput(output);
+                }
+
+                // DEBUG LOGGING
+                if (!session.isOwned) {
+                    const diff = this.getNewContent(session.lastOutput, cleaned, false);
+                    if (diff) {
+                        this.log(`[DEBUG] Watched session ${session.sessionId}: Found new content (${diff.length} chars)`);
+                    } else if (cleaned !== session.lastOutput) {
+                        this.log(`[DEBUG] Watched session ${session.sessionId}: Content changed but getNewContent returned null`);
+                        this.log(`[DEBUG] Old len: ${session.lastOutput.length}, New len: ${cleaned.length}`);
+                    }
                 }
             }
 
@@ -1147,54 +1169,63 @@ export class TmuxPlugin extends BasePlugin {
     }
 
     private getNewContent(oldOutput: string, newOutput: string, isClaudeCode: boolean = true): string | null {
-        // Line-based diff approach that:
-        // 1. Only emits lines that are NEW (not in old output)
-        // 2. Filters out empty shell prompts
-        // 3. Filters out prompt-only lines for terminals
+        if (!oldOutput) return newOutput;
+        if (oldOutput === newOutput) return null;
 
-        const oldLines = new Set(oldOutput.split('\n').map(l => l.trim()).filter(l => l.length > 0));
+        const oldLines = oldOutput.split('\n');
         const newLines = newOutput.split('\n');
 
-        // Find lines that are new (not in old output)
-        const newContentLines: string[] = [];
+        // Look for the largest overlap where the SUFFIX of old matching the PREFIX of new
+        // This handles appending, scrolling, etc.
+        const maxPossOverlap = Math.min(oldLines.length, newLines.length);
+        let bestOverlap = 0;
 
-        for (const line of newLines) {
-            const trimmed = line.trim();
-
-            // Skip empty lines
-            if (trimmed.length === 0) continue;
-
-            // Skip if we've seen this exact line before
-            if (oldLines.has(trimmed)) continue;
-
-            // For non-Claude sessions, filter out shell prompt noise
-            if (!isClaudeCode) {
-                // Skip empty shell prompts: lines that are ONLY a prompt (end with $ and nothing after)
-                // e.g., "(base) MacBook-Pro-183:~ ray$" with nothing typed
-                if (/^.*\$\s*$/.test(trimmed)) {
-                    continue;
-                }
-
-                // Skip bash prompt patterns with no command
-                if (/^\([^)]+\)\s+\S+:\S*\s+\w+\$$/.test(trimmed)) {
-                    continue;
-                }
-
-                // Skip zsh-style prompts
-                if (/^[▸❯>\%]\s*$/.test(trimmed)) {
-                    continue;
+        for (let len = maxPossOverlap; len > 0; len--) {
+            // Check if suffix of old (length len) matches prefix of new (length len)
+            let match = true;
+            for (let i = 0; i < len; i++) {
+                // Determine start indices
+                // Old suffix starts at: oldLines.length - len
+                // New prefix starts at: 0
+                if (oldLines[oldLines.length - len + i] !== newLines[i]) {
+                    match = false;
+                    break;
                 }
             }
 
-            newContentLines.push(trimmed);
+            if (match) {
+                bestOverlap = len;
+                break;
+            }
         }
 
-        // Return only if we have meaningful new content
-        if (newContentLines.length === 0) {
-            return null;
+        // If no overlap, assume completely new content (clear screen or fast scroll)
+        if (bestOverlap === 0) {
+            return newOutput;
         }
 
-        return newContentLines.join('\n');
+        const addedLines = newLines.slice(bestOverlap);
+
+        // Filter out empty lines if they are just trailing newlines?
+        // But sometimes empty lines are meaningful.
+        // Let's filter only if the ONLY new content is empty lines (often artifacts of capture)
+        const allEmpty = addedLines.every(l => l.trim().length === 0);
+        if (allEmpty && addedLines.length > 0) {
+            // Check if we really want to emit these.
+            // If it's just one empty line, maybe not?
+            // User wants streaming, so maybe yes.
+            // But usually we trim() before emitting in the caller... wait.
+            // The caller does: if (contentToEmit) { emit... }
+            // Let's return joined.
+        }
+
+        if (addedLines.length === 0) return null;
+
+        // Strip shell prompts for non-Claude/generic sessions only if specifically requested?
+        // The user complained about missing output. The previous logic was too aggressive.
+        // Let's keep ALL added lines. This is the safest way to ensure "streaming".
+
+        return addedLines.join('\n');
     }
 
     private async checkHealth(): Promise<void> {

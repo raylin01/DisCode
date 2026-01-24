@@ -1046,6 +1046,7 @@ async function handleSessionDiscovered(data: any): Promise<void> {
     // Auto-watch the session
     // This ensures we start receiving output immediately
     try {
+        console.log(`[handleSessionDiscovered] Attempting to auto-watch session ${sessionId} on runner ${runnerId}`);
         const ws = botState.runnerConnections.get(runnerId);
         if (ws) {
             console.log(`[handleSessionDiscovered] Sending watch_terminal request for ${sessionId}`);
@@ -1056,11 +1057,15 @@ async function handleSessionDiscovered(data: any): Promise<void> {
                     runnerId: runnerId
                 }
             }));
+        } else {
+            console.warn(`[handleSessionDiscovered] No WebSocket connection for runner ${runnerId}, cannot auto-watch`);
         }
     } catch (error) {
         console.error(`[handleSessionDiscovered] Failed to auto-watch session:`, error);
     }
 }
+
+
 
 /**
  * Handle terminal list response
@@ -1140,12 +1145,27 @@ async function handleDiscordAction(data: any): Promise<void> {
 
             await thread.send({ content, embeds, files: messageFiles.length > 0 ? messageFiles : undefined });
         } else if (action === 'update_channel') {
+            console.log(`[DiscordAction] Updating channel ${session.threadId} with name: "${name}"`);
+
             // Update thread name
             if (name) {
                 // Thread names must be 1-100 chars
                 const safeName = name.substring(0, 100);
                 if ('setName' in thread) {
-                    await (thread as any).setName(safeName);
+                    try {
+                        await (thread as any).setName(safeName);
+                        console.log(`[DiscordAction] Channel renamed to: ${safeName}`);
+                    } catch (err: any) {
+                        console.error(`[DiscordAction] Failed to rename channel:`, err);
+                        // If it's a rate limit error, notify user
+                        if (err.code === 20016) { // Slowmode/Rate limit
+                            await thread.send({
+                                content: `⚠️ Could not rename channel: Rate limited. Please wait a few minutes.`
+                            });
+                        }
+                    }
+                } else {
+                    console.warn(`[DiscordAction] Channel ${session.threadId} does not support setName`);
                 }
             }
             // Update thread description (send as message)

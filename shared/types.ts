@@ -137,6 +137,7 @@ export interface SessionStartMessage extends WebSocketMessage {
     runnerId: string;
     cliType: 'claude' | 'gemini';
     folderPath?: string;
+    plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk';
   };
 }
 
