@@ -37,6 +37,9 @@ export function createOutputEmbed(outputType: string, content: string): EmbedBui
     const colors: Record<string, number> = {
         stdout: COLORS.DARK,
         stderr: COLORS.ORANGE,
+        info: COLORS.INFO,
+        thinking: COLORS.BLURPLE,
+        edit: COLORS.WARNING,
         tool_use: COLORS.WARNING,
         tool_result: COLORS.SUCCESS,
         error: COLORS.ERROR
@@ -45,6 +48,9 @@ export function createOutputEmbed(outputType: string, content: string): EmbedBui
     const titles: Record<string, string> = {
         stdout: 'CLI Output',
         stderr: 'Error Output',
+        info: 'Info',
+        thinking: 'Thinking',
+        edit: 'Editing File',
         tool_use: 'Tool Request',
         tool_result: 'Tool Result',
         error: 'System Error'

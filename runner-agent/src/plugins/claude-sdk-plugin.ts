@@ -324,14 +324,14 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
         // Regular tool permission approval
         // Convert option number to behavior
-        // 1 = allow (yes), 2 = deny (no), 3 = always (allow all for this tool)
-        const behaviorMap: Record<string, 'allow' | 'deny' | 'always'> = {
-            '1': 'allow',
+        // 1 = approve (yes), 2 = deny (no), 3 = delegate (allow all for this tool)
+        const behaviorMap: Record<string, 'approve' | 'deny' | 'delegate'> = {
+            '1': 'approve',
             '2': 'deny',
-            '3': 'always'
+            '3': 'delegate'
         };
 
-        const behavior = behaviorMap[optionNumber] || 'allow';
+        const behavior = behaviorMap[optionNumber] || 'approve';
 
         const response: ControlResponseData = {
             behavior,
@@ -348,7 +348,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
      */
     async sendQuestionResponse(selectedOptions: string[]): Promise<void> {
         const response: ControlResponseData = {
-            behavior: 'allow',
+            behavior: 'approve',
             selectedOptions,
         };
 

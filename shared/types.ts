@@ -119,6 +119,20 @@ export interface RegisterMessage extends WebSocketMessage {
   };
 }
 
+// Structured data for rich output formatting
+export interface StructuredData {
+  edit?: {
+    filePath: string;
+    oldContent?: string;
+    newContent?: string;
+    diff?: string;
+  };
+  tool?: {
+    name: string;
+    input: Record<string, any>;
+  };
+}
+
 export interface OutputMessage extends WebSocketMessage {
   type: 'output';
   data: {
@@ -126,7 +140,9 @@ export interface OutputMessage extends WebSocketMessage {
     sessionId: string;
     content: string;
     timestamp: string;
-    outputType?: 'stdout' | 'stderr' | 'tool_use' | 'tool_result' | 'error';
+    outputType?: 'stdout' | 'stderr' | 'info' | 'thinking' | 'edit' | 'tool_use' | 'tool_result' | 'error';
+    isComplete?: boolean;
+    structuredData?: StructuredData;
   };
 }
 
