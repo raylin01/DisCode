@@ -619,22 +619,22 @@ async function handleOutput(data: any): Promise<void> {
 
     const outputType = data.outputType || 'stdout';
     const now = Date.now();
-    const STREAMING_TIMEOUT = 10000;
 
     const streaming = botState.streamingMessages.get(data.sessionId);
-    const shouldStream = streaming &&
-        (now - streaming.lastUpdateTime) < STREAMING_TIMEOUT &&
-        streaming.outputType === outputType;
+
+    // Edit the most recent message if we have an active streaming state for this session
+    // The streaming state is cleared when isComplete=true, so the next message starts fresh
+    const shouldStream = !!streaming;
 
     const embed = createOutputEmbed(outputType, data.content);
 
     if (shouldStream) {
         try {
-            const message = await thread.messages.fetch(streaming.messageId);
+            const message = await thread.messages.fetch(streaming!.messageId);
             await message.edit({ embeds: [embed] });
 
             botState.streamingMessages.set(data.sessionId, {
-                messageId: streaming.messageId,
+                messageId: streaming!.messageId,
                 lastUpdateTime: now,
                 content: data.content,
                 outputType: outputType

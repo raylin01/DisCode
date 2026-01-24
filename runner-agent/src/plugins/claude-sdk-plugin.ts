@@ -420,7 +420,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     /**
      * Flush text buffer immediately
      */
-    private flushTextBuffer(): void {
+    private flushTextBuffer(isComplete: boolean = false): void {
         if (this.batchTimer) {
             clearTimeout(this.batchTimer);
             this.batchTimer = null;
@@ -429,7 +429,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             this.plugin.emit('output', {
                 sessionId: this.sessionId,
                 content: this.textBuffer,
-                isComplete: false,
+                isComplete,
                 outputType: 'stdout',
                 timestamp: new Date()
             });
@@ -737,8 +737,8 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                 break;
 
             case 'message_stop':
-                // Message complete - flush any remaining text
-                this.flushTextBuffer();
+                // Message complete - flush any remaining text as complete
+                this.flushTextBuffer(true);
 
                 this.status = 'idle';
                 this.currentTool = null;
@@ -749,17 +749,6 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                     sessionId: this.sessionId,
                     status: 'idle'
                 });
-
-                // Emit final output as complete
-                if (this.currentContent) {
-                    this.plugin.emit('output', {
-                        sessionId: this.sessionId,
-                        content: '',
-                        isComplete: true,
-                        outputType: 'stdout',
-                        timestamp: new Date()
-                    });
-                }
                 break;
         }
     }
@@ -785,42 +774,14 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
     /**
      * Handle complete assistant message
+     * NOTE: We've already streamed all content during handleStreamEvent, so we skip
+     * re-emitting text/tool_use here. The CLI sends this after message_stop for
+     * completeness, but we don't need it for display.
      */
     private handleAssistantMessage(message: AssistantMessage): void {
-        // Parse and emit each content block properly
-        // Skip tool_use blocks that were already shown during streaming
-        for (const block of message.message.content) {
-            if (block.type === 'text' && block.text) {
-                // Text content - emit as stdout
-                this.plugin.emit('output', {
-                    sessionId: this.sessionId,
-                    content: block.text,
-                    isComplete: true,
-                    outputType: 'stdout',
-                    timestamp: new Date()
-                });
-            } else if (block.type === 'tool_use') {
-                // Only emit tool_use if we didn't already show it during streaming
-                if (!this.seenToolUses.has(block.id)) {
-                    const toolInput = JSON.stringify(block.input, null, 2);
-                    this.plugin.emit('output', {
-                        sessionId: this.sessionId,
-                        content: `[Tool: ${block.name}]\n\`\`\`json\n${toolInput}\n\`\`\``,
-                        isComplete: true,
-                        outputType: 'tool_use',
-                        timestamp: new Date()
-                    });
-                }
-
-                this.plugin.emit('status', {
-                    sessionId: this.sessionId,
-                    status: 'waiting',
-                    currentTool: block.name
-                });
-            }
-        }
-
-        this.plugin.debug(`[${this.sessionId.slice(0, 8)}] Assistant message complete: ${message.message.id}`);
+        // Skip re-emitting content since it was already streamed
+        // Just log for debugging
+        this.plugin.debug(`[${this.sessionId.slice(0, 8)}] Assistant message (skipped, already streamed): ${message.message.id}`);
     }
 
     /**
