@@ -416,6 +416,94 @@ async function handleHeartbeat(ws: any, data: any): Promise<void> {
 }
 
 /**
+ * Create multi-select or single-select buttons for AskUserQuestion
+ * @returns Object with rows array and multiSelectState if applicable
+ */
+function createQuestionButtons(data: any, requestId: string): { rows: ActionRowBuilder<ButtonBuilder>[], multiSelectState: any } {
+    let rows: ActionRowBuilder<ButtonBuilder>[] = [];
+    let multiSelectState: any = null;
+
+    if (data.options && data.options.length > 0) {
+        const isMultiSelect = data.isMultiSelect === true;
+        const hasOther = data.hasOther === true;
+
+        // Debug logging to verify flags
+        console.log(`[Approval] Creating buttons - isMultiSelect=${isMultiSelect}, hasOther=${hasOther}`);
+
+        if (isMultiSelect) {
+            // Multi-select: create toggleable buttons + Submit button
+            const optionButtons = data.options.map((option: string, index: number) => {
+                const optionNumber = index + 1;
+                return new ButtonBuilder()
+                    .setCustomId(`multiselect_${requestId}_${optionNumber}`)
+                    .setLabel(option)
+                    .setStyle(ButtonStyle.Secondary); // Start unselected (gray)
+            });
+
+            // Add "Other" button if hasOther is true
+            if (hasOther) {
+                optionButtons.push(
+                    new ButtonBuilder()
+                        .setCustomId(`other_${requestId}`)
+                        .setLabel('Other...')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            }
+
+            // Add Submit button
+            const submitButton = new ButtonBuilder()
+                .setCustomId(`multiselect_submit_${requestId}`)
+                .setLabel('✅ Submit')
+                .setStyle(ButtonStyle.Success);
+
+            rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...optionButtons));
+            rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(submitButton));
+
+            // Create multi-select state for caller to store
+            multiSelectState = {
+                requestId,
+                sessionId: data.sessionId,
+                runnerId: data.runnerId,
+                selectedOptions: new Set(),
+                options: data.options,
+                isMultiSelect: true,
+                hasOther: hasOther,
+                toolName: data.toolName,
+                timestamp: new Date()
+            };
+        } else {
+            // Single-select: add "Other" button if hasOther is true
+            const buttons = data.options.map((option: string, index: number) => {
+                const optionNumber = index + 1;
+                let style = ButtonStyle.Secondary;
+                if (index === 0) style = ButtonStyle.Success;
+                else if (index === data.options.length - 1 && !hasOther) style = ButtonStyle.Danger;
+                else style = ButtonStyle.Primary;
+
+                return new ButtonBuilder()
+                    .setCustomId(`option_${requestId}_${optionNumber}`)
+                    .setLabel(option)
+                    .setStyle(style);
+            });
+
+            // Add "Other" button if hasOther is true (for single-select)
+            if (hasOther) {
+                buttons.push(
+                    new ButtonBuilder()
+                        .setCustomId(`other_${requestId}`)
+                        .setLabel('Other...')
+                        .setStyle(ButtonStyle.Danger)
+                );
+            }
+
+            rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons));
+        }
+    }
+
+    return { rows, multiSelectState };
+}
+
+/**
  * Handle approval request from runner
  */
 async function handleApprovalRequest(ws: any, data: any): Promise<void> {
@@ -441,87 +529,16 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
             return;
         }
 
-        // Create approval buttons
-        let rows: ActionRowBuilder<ButtonBuilder>[] = [];
+        // Create buttons using shared helper
+        const { rows, multiSelectState } = createQuestionButtons(data, data.requestId);
 
-        if (data.options && data.options.length > 0) {
-            const isMultiSelect = data.isMultiSelect === true;
-            const hasOther = data.hasOther === true;
+        // Store multi-select state if applicable
+        if (multiSelectState) {
+            botState.multiSelectState.set(data.requestId, multiSelectState);
+        }
 
-            // Debug logging to verify flags
-            console.log(`[Approval] isMultiSelect=${isMultiSelect} (type: ${typeof data.isMultiSelect}, value: ${data.isMultiSelect})`);
-            console.log(`[Approval] hasOther=${hasOther} (type: ${typeof data.hasOther}, value: ${data.hasOther})`);
-
-            if (isMultiSelect) {
-                // Multi-select: create toggleable buttons + Submit button
-                const optionButtons = data.options.map((option: string, index: number) => {
-                    const optionNumber = index + 1;
-                    return new ButtonBuilder()
-                        .setCustomId(`multiselect_${data.requestId}_${optionNumber}`)
-                        .setLabel(option)
-                        .setStyle(ButtonStyle.Secondary); // Start unselected (gray)
-                });
-
-                // Add "Other" button if hasOther is true
-                if (hasOther) {
-                    optionButtons.push(
-                        new ButtonBuilder()
-                            .setCustomId(`other_${data.requestId}`)
-                            .setLabel('Other...')
-                            .setStyle(ButtonStyle.Secondary)
-                    );
-                }
-
-                // Add Submit button
-                const submitButton = new ButtonBuilder()
-                    .setCustomId(`multiselect_submit_${data.requestId}`)
-                    .setLabel('✅ Submit')
-                    .setStyle(ButtonStyle.Success);
-
-                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...optionButtons));
-                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(submitButton));
-
-                // Store multi-select state
-                botState.multiSelectState.set(data.requestId, {
-                    requestId: data.requestId,
-                    sessionId: data.sessionId,
-                    runnerId: data.runnerId,
-                    selectedOptions: new Set(),
-                    options: data.options,
-                    isMultiSelect: true,
-                    hasOther: hasOther,
-                    toolName: data.toolName,
-                    timestamp: new Date()
-                });
-            } else {
-                // Single-select: add "Other" button if hasOther is true
-                const buttons = data.options.map((option: string, index: number) => {
-                    const optionNumber = index + 1;
-                    let style = ButtonStyle.Secondary;
-                    if (index === 0) style = ButtonStyle.Success;
-                    else if (index === data.options.length - 1 && !hasOther) style = ButtonStyle.Danger;
-                    else style = ButtonStyle.Primary;
-
-                    return new ButtonBuilder()
-                        .setCustomId(`option_${data.requestId}_${optionNumber}`)
-                        .setLabel(option)
-                        .setStyle(style);
-                });
-
-                // Add "Other" button if hasOther is true (for single-select)
-                if (hasOther) {
-                    buttons.push(
-                        new ButtonBuilder()
-                            .setCustomId(`other_${data.requestId}`)
-                            .setLabel('Other...')
-                            .setStyle(ButtonStyle.Danger)
-                    );
-                }
-
-                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons));
-            }
-        } else {
-            // Default buttons (for non-AskUserQuestion approvals)
+        // If no options/AskUserQuestion, add default approval buttons
+        if (rows.length === 0) {
             const allowButton = new ButtonBuilder()
                 .setCustomId(`allow_${data.requestId}`)
                 .setLabel('✅ Allow Once')
@@ -600,86 +617,16 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
         return;
     }
 
-    // Create approval buttons
-    let rows: ActionRowBuilder<ButtonBuilder>[] = [];
+    // Create buttons using shared helper
+    const { rows, multiSelectState } = createQuestionButtons(data, data.requestId);
 
-    if (data.options && data.options.length > 0) {
-        const isMultiSelect = data.isMultiSelect === true;
-        const hasOther = data.hasOther === true;
+    // Store multi-select state if applicable
+    if (multiSelectState) {
+        botState.multiSelectState.set(data.requestId, multiSelectState);
+    }
 
-        // Debug logging to verify flags
-        console.log(`[Approval] Regular session - isMultiSelect=${isMultiSelect} (type: ${typeof data.isMultiSelect}, value: ${data.isMultiSelect})`);
-        console.log(`[Approval] Regular session - hasOther=${hasOther} (type: ${typeof data.hasOther}, value: ${data.hasOther})`);
-
-        if (isMultiSelect) {
-            // Multi-select: create toggleable buttons + Submit button
-            const optionButtons = data.options.map((option: string, index: number) => {
-                const optionNumber = index + 1;
-                return new ButtonBuilder()
-                    .setCustomId(`multiselect_${data.requestId}_${optionNumber}`)
-                    .setLabel(option)
-                    .setStyle(ButtonStyle.Secondary); // Start unselected (gray)
-            });
-
-            // Add "Other" button if hasOther is true
-            if (hasOther) {
-                optionButtons.push(
-                    new ButtonBuilder()
-                        .setCustomId(`other_${data.requestId}`)
-                        .setLabel('Other...')
-                        .setStyle(ButtonStyle.Secondary)
-                );
-            }
-
-            // Add Submit button
-            const submitButton = new ButtonBuilder()
-                .setCustomId(`multiselect_submit_${data.requestId}`)
-                .setLabel('✅ Submit')
-                .setStyle(ButtonStyle.Success);
-
-            rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...optionButtons));
-            rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(submitButton));
-
-            // Store multi-select state
-            botState.multiSelectState.set(data.requestId, {
-                requestId: data.requestId,
-                sessionId: data.sessionId,
-                runnerId: data.runnerId,
-                selectedOptions: new Set(),
-                options: data.options,
-                isMultiSelect: true,
-                hasOther: hasOther,
-                toolName: data.toolName,
-                timestamp: new Date()
-            });
-        } else {
-            // Single-select: add "Other" button if hasOther is true
-            const buttons = data.options.map((option: string, index: number) => {
-                const optionNumber = index + 1;
-                let style = ButtonStyle.Secondary;
-                if (index === 0) style = ButtonStyle.Success;
-                else if (index === data.options.length - 1 && !hasOther) style = ButtonStyle.Danger;
-                else style = ButtonStyle.Primary;
-
-                return new ButtonBuilder()
-                    .setCustomId(`option_${data.requestId}_${optionNumber}`)
-                    .setLabel(option)
-                    .setStyle(style);
-            });
-
-            // Add "Other" button if hasOther is true (for single-select)
-            if (hasOther) {
-                buttons.push(
-                    new ButtonBuilder()
-                        .setCustomId(`other_${data.requestId}`)
-                        .setLabel('Other...')
-                        .setStyle(ButtonStyle.Danger)
-                );
-            }
-
-            rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons));
-        }
-    } else {
+    // If no options/AskUserQuestion, add default approval buttons for regular sessions
+    if (rows.length === 0) {
         const allowButton = new ButtonBuilder()
             .setCustomId(`allow_${data.requestId}`)
             .setLabel('✅ Allow Once')
