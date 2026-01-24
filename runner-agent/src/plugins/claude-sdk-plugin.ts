@@ -358,6 +358,41 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         }
 
         if (pendingQuestion && pendingQuestion.currentOptions && pendingQuestion.currentOptions.length > 0) {
+            // Check if this is a multi-select submission (comma-separated option numbers)
+            if (optionNumber.includes(',')) {
+                this.plugin.log(`[${this.sessionId.slice(0, 8)}] Multi-select submission detected: ${optionNumber}`);
+                const optionNumbers = optionNumber.split(',').map(s => s.trim());
+
+                // Process each selected option
+                for (const optNum of optionNumbers) {
+                    const optionIndex = parseInt(optNum, 10) - 1;
+                    this.plugin.log(`[${this.sessionId.slice(0, 8)}] Processing option ${optionIndex} (from ${optNum})`);
+
+                    if (optionIndex >= 0 && optionIndex < pendingQuestion.currentOptions.length) {
+                        const option = pendingQuestion.currentOptions[optionIndex];
+                        let optionValue: string;
+                        if (typeof option === 'string') {
+                            optionValue = option;
+                        } else if (option && typeof option === 'object') {
+                            optionValue = option.value || option.label || `Option ${optionIndex + 1}`;
+                        } else {
+                            optionValue = `Option ${optionIndex + 1}`;
+                        }
+
+                        pendingQuestion.allAnswers.push(optionValue);
+                        this.plugin.log(`[${this.sessionId.slice(0, 8)}] Collected multi-select answer: "${optionValue}"`);
+                    } else {
+                        this.plugin.log(`[${this.sessionId.slice(0, 8)}] Option index ${optionIndex} out of range`);
+                    }
+                }
+
+                // After processing all options, move to next question
+                pendingQuestion.currentQuestionIndex++;
+                await this.askNextQuestion();
+                return;
+            }
+
+            // Single option selection
             // This is an AskUserQuestion - convert 1-indexed button to 0-indexed option
             const optionIndex = parseInt(optionNumber, 10) - 1;
             this.plugin.log(`[${this.sessionId.slice(0, 8)}] Option index: ${optionIndex} (from button ${optionNumber})`);
@@ -1330,7 +1365,14 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         const multiSelect = currentQuestion.multiSelect || false;
         const header = currentQuestion.header || null;
 
-        this.plugin.log(`[${this.sessionId.slice(0, 8)}] Asking question ${questionIndex + 1}/${questionsArray.length}: "${question}"`);
+        this.plugin.log(`[${this.sessionId.slice(0, 8)}] Question details:`, JSON.stringify({
+            questionIndex: questionIndex + 1,
+            totalQuestions: questionsArray.length,
+            question,
+            optionsCount: options.length,
+            multiSelect,  // Log this specifically
+            rawMultiSelect: currentQuestion.multiSelect  // Log raw value too
+        }));
 
         // CRITICAL: Ensure options have a 'value' field for CLI matching
         const processedOptions = options.map((opt: any, idx: number) => {
@@ -1373,6 +1415,12 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             isMultiSelect: multiSelect,
             hasOther: true  // Always include "Other" button for custom input
         });
+
+        this.plugin.log(`[${this.sessionId.slice(0, 8)}] Emitting approval event with flags:`, JSON.stringify({
+            isMultiSelect: multiSelect,
+            hasOther: true,
+            optionsCount: optionLabels.length
+        }));
 
         // Store the request ID for sending the response later
         // NOTE: We use the same requestId for all questions in a multi-question flow

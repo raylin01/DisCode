@@ -1331,15 +1331,15 @@ async function handleMultiSelectSubmit(interaction: any, userId: string, customI
             .filter(opt => opt !== 'other')
             .sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
 
-        // For multi-select, we need to send each selected option
-        // The SDK plugin expects to receive the option numbers
-        for (const optionNumber of selectedNumbers) {
+        // For multi-select, send all selected options together as a comma-separated string
+        // The SDK plugin will parse this and handle it correctly
+        if (selectedNumbers.length > 0) {
             ws.send(JSON.stringify({
                 type: 'approval_response',
                 data: {
                     sessionId: pending.sessionId,
                     approved: true,
-                    optionNumber
+                    optionNumber: selectedNumbers.join(',')  // Send all options as comma-separated
                 }
             }));
         }

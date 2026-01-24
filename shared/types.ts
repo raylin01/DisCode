@@ -85,6 +85,9 @@ export interface ApprovalRequestMessage extends WebSocketMessage {
     sessionId: string;
     toolName: string;
     toolInput: unknown;
+    options?: string[];  // Available options for AskUserQuestion
+    isMultiSelect?: boolean;  // Whether multiple options can be selected
+    hasOther?: boolean;  // Whether to show "Other..." button for custom input
     timestamp: string;
   };
 }
@@ -92,9 +95,15 @@ export interface ApprovalRequestMessage extends WebSocketMessage {
 export interface ApprovalResponseMessage extends WebSocketMessage {
   type: 'approval_response';
   data: {
-    requestId: string;
-    allow: boolean;
+    // Tool approval format
+    requestId?: string;
+    allow?: boolean;
     message?: string;
+    modifiedToolInput?: unknown;
+    // AskUserQuestion format
+    sessionId?: string;
+    approved?: boolean;
+    optionNumber?: string;  // Comma-separated for multi-select (e.g., "1,2,3")
   };
 }
 

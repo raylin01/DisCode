@@ -30,10 +30,15 @@ export function wirePluginEvents(
     // Approval requests -> Discord
     pluginManager.on('approval', (data) => {
         console.log(`[PluginManager] Approval detected for session ${data.sessionId}: ${data.tool}`);
+        console.log(`[PluginManager] Multi-select flags:`, JSON.stringify({
+            isMultiSelect: data.isMultiSelect,
+            hasOther: data.hasOther,
+            optionsCount: data.options?.length
+        }));
         if (wsManager.isConnected) {
             const requestId = `${data.sessionId}-${Date.now()}`;
-            wsManager.send({
-                type: 'approval_request',
+            const message = {
+                type: 'approval_request' as const,
                 data: {
                     runnerId: wsManager.runnerId,
                     sessionId: data.sessionId,
@@ -46,7 +51,9 @@ export function wirePluginEvents(
                     isMultiSelect: data.isMultiSelect,
                     hasOther: data.hasOther
                 }
-            });
+            };
+            console.log(`[PluginManager] Sending WebSocket message:`, JSON.stringify(message, null, 2));
+            wsManager.send(message);
         }
     });
 

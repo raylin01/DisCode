@@ -448,6 +448,10 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
             const isMultiSelect = data.isMultiSelect === true;
             const hasOther = data.hasOther === true;
 
+            // Debug logging to verify flags
+            console.log(`[Approval] isMultiSelect=${isMultiSelect} (type: ${typeof data.isMultiSelect}, value: ${data.isMultiSelect})`);
+            console.log(`[Approval] hasOther=${hasOther} (type: ${typeof data.hasOther}, value: ${data.hasOther})`);
+
             if (isMultiSelect) {
                 // Multi-select: create toggleable buttons + Submit button
                 const optionButtons = data.options.map((option: string, index: number) => {
