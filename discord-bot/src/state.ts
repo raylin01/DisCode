@@ -50,6 +50,7 @@ export interface StreamingMessage {
     lastUpdateTime: number;
     content: string;
     outputType: string;
+    accumulatedContent?: string; // Tracks the full accumulated content for the message
 }
 export const streamingMessages = new Map<string, StreamingMessage>();
 

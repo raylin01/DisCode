@@ -223,13 +223,14 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
     // Content accumulation
     private currentTool: string | null = null;
+    private currentToolInput: Record<string, any> = {}; // Track tool input as it streams
     private currentContent = '';
     private seenToolUses = new Set<string>(); // Track tool uses to avoid duplication
 
     // Text batching for streaming
     private textBuffer = '';
     private batchTimer: NodeJS.Timeout | null = null;
-    private readonly BATCH_DELAY = 100; // ms to wait before flushing
+    private readonly BATCH_DELAY = 500; // 500ms - balance between real-time and Discord rate limits
 
     // Activity tracking
     private currentActivity: string | null = null;
@@ -323,14 +324,14 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
         // Regular tool permission approval
         // Convert option number to behavior
-        // 1 = approve (yes), 2 = deny (no), 3 = delegate, etc.
-        const behaviorMap: Record<string, 'approve' | 'deny' | 'delegate'> = {
-            '1': 'approve',
+        // 1 = allow (yes), 2 = deny (no), 3 = always (allow all for this tool)
+        const behaviorMap: Record<string, 'allow' | 'deny' | 'always'> = {
+            '1': 'allow',
             '2': 'deny',
-            '3': 'delegate'
+            '3': 'always'
         };
 
-        const behavior = behaviorMap[optionNumber] || 'approve';
+        const behavior = behaviorMap[optionNumber] || 'allow';
 
         const response: ControlResponseData = {
             behavior,
@@ -347,7 +348,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
      */
     async sendQuestionResponse(selectedOptions: string[]): Promise<void> {
         const response: ControlResponseData = {
-            behavior: 'approve',
+            behavior: 'allow',
             selectedOptions,
         };
 
@@ -438,7 +439,8 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     }
 
     /**
-     * Schedule batch flush with sentence detection
+     * Schedule batch flush with time-based batching
+     * Flushes every BATCH_INTERVAL_MS to provide real-time updates without overwhelming Discord
      */
     private scheduleBatchFlush(): void {
         // Clear existing timer
@@ -446,18 +448,11 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             clearTimeout(this.batchTimer);
         }
 
-        // Check if buffer ends with sentence boundary
-        const endsWithSentence = /[.!?]\s*$|[\n\r]/.test(this.textBuffer);
-
-        if (endsWithSentence) {
-            // Flush immediately if we have a complete sentence
+        // Always schedule a flush after the batch interval
+        // This provides predictable, time-based batching rather than sentence-based
+        this.batchTimer = setTimeout(() => {
             this.flushTextBuffer();
-        } else {
-            // Otherwise schedule a delayed flush
-            this.batchTimer = setTimeout(() => {
-                this.flushTextBuffer();
-            }, this.BATCH_DELAY);
-        }
+        }, this.BATCH_DELAY);
     }
 
     /**
@@ -645,7 +640,12 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             case 'content_block_start':
                 const block = event.content_block;
                 if (block.type === 'tool_use') {
+                    // Flush any pending text as complete before starting tool use
+                    // This ensures text and tool use are separate messages
+                    this.flushTextBuffer(true);
+
                     this.currentTool = block.name;
+                    this.currentToolInput = {}; // Reset tool input tracking
                     this.isThinking = false;
 
                     // Set activity based on tool type
@@ -675,26 +675,51 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                     this.textBuffer += delta.text;
                     this.scheduleBatchFlush();
                 } else if (delta.type === 'input_json_delta' && delta.partial_json) {
-                    // Flush any text before tool output
-                    this.flushTextBuffer();
-
-                    // Tool parameters streaming
+                    // Accumulate tool input as it streams
                     if (this.currentTool) {
-                        // Try to format the partial JSON for display
                         try {
-                            // Try to parse what we have so far
+                            // Parse and merge the partial JSON
                             const parsed = JSON.parse(delta.partial_json);
-                            const toolPreview = this.formatToolInput(this.currentTool, parsed);
+                            Object.assign(this.currentToolInput, parsed);
 
-                            this.plugin.emit('output', {
-                                sessionId: this.sessionId,
-                                content: `[${this.currentTool}] ${toolPreview}`,
-                                isComplete: false,
-                                outputType: 'tool_use',
-                                timestamp: new Date()
-                            });
+                            // Emit update with structured data
+                            if (this.currentTool === 'Edit' || this.currentTool === 'MultiEdit') {
+                                // For Edit tools, format as a diff
+                                const toolPreview = this.formatToolInput(this.currentTool, this.currentToolInput);
+                                this.plugin.emit('output', {
+                                    sessionId: this.sessionId,
+                                    content: `**Editing:** ${this.currentToolInput.path || 'file'}\n\`\`\`diff\n${toolPreview}\n\`\`\``,
+                                    isComplete: false,
+                                    outputType: 'edit',
+                                    structuredData: {
+                                        edit: {
+                                            filePath: this.currentToolInput.path || 'unknown',
+                                            oldContent: this.currentToolInput.oldText,
+                                            newContent: this.currentToolInput.newText,
+                                            diff: toolPreview
+                                        }
+                                    },
+                                    timestamp: new Date()
+                                });
+                            } else {
+                                // For other tools, show structured data
+                                const toolPreview = this.formatToolInput(this.currentTool, this.currentToolInput);
+                                this.plugin.emit('output', {
+                                    sessionId: this.sessionId,
+                                    content: `[${this.currentTool}]\n\`\`\`\n${toolPreview}\n\`\`\``,
+                                    isComplete: false,
+                                    outputType: 'tool_use',
+                                    structuredData: {
+                                        tool: {
+                                            name: this.currentTool,
+                                            input: this.currentToolInput
+                                        }
+                                    },
+                                    timestamp: new Date()
+                                });
+                            }
                         } catch {
-                            // Not valid JSON yet, just show the partial
+                            // Not valid JSON yet, show progress
                             this.plugin.emit('output', {
                                 sessionId: this.sessionId,
                                 content: `[${this.currentTool}] ${delta.partial_json.slice(0, 200)}...`,
@@ -712,7 +737,47 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                 if (event.content_block?.type === 'tool_use') {
                     const toolId = event.content_block.id;
                     this.seenToolUses.add(toolId);
-                    // Activity will be updated when next content block starts or message stops
+
+                    // Emit final structured data for the tool
+                    if (this.currentTool === 'Edit' || this.currentTool === 'MultiEdit') {
+                        // Mark edit as complete with final structured data
+                        const toolPreview = this.formatToolInput(this.currentTool, this.currentToolInput);
+                        this.plugin.emit('output', {
+                            sessionId: this.sessionId,
+                            content: `**Editing:** ${this.currentToolInput.path || 'file'}\n\`\`\`diff\n${toolPreview}\n\`\`\``,
+                            isComplete: true,
+                            outputType: 'edit',
+                            structuredData: {
+                                edit: {
+                                    filePath: this.currentToolInput.path || 'unknown',
+                                    oldContent: this.currentToolInput.oldText,
+                                    newContent: this.currentToolInput.newText,
+                                    diff: toolPreview
+                                }
+                            },
+                            timestamp: new Date()
+                        });
+                    } else {
+                        // Mark other tools as complete
+                        const toolPreview = this.formatToolInput(this.currentTool, this.currentToolInput);
+                        this.plugin.emit('output', {
+                            sessionId: this.sessionId,
+                            content: `[${this.currentTool}]\n\`\`\`\n${toolPreview}\n\`\`\``,
+                            isComplete: true,
+                            outputType: 'tool_use',
+                            structuredData: {
+                                tool: {
+                                    name: this.currentTool,
+                                    input: this.currentToolInput
+                                }
+                            },
+                            timestamp: new Date()
+                        });
+                    }
+
+                    // Clear tool state
+                    this.currentTool = null;
+                    this.currentToolInput = {};
                 }
                 break;
 
@@ -792,9 +857,17 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             case 'Bash':
                 return `$ ${input.command}`;
             case 'Edit':
-                return `Edit ${input.path} (${input.diff?.slice(0, 50)}...)`;
+                // Format as a proper diff
+                if (input.oldText && input.newText) {
+                    const diff = this.createUnifiedDiff(input.path || 'file', input.oldText, input.newText);
+                    return diff;
+                } else if (input.diff) {
+                    return input.diff;
+                } else {
+                    return `Edit ${input.path}`;
+                }
             case 'Write':
-                return `Write ${input.path} (${input.content?.slice(0, 50)}...)`;
+                return `Write ${input.path}\n\`\`\`\n${input.content?.slice(0, 500)}${input.content && input.content.length > 500 ? '...' : ''}\n\`\`\``;
             case 'Read':
                 return `Read ${input.path}`;
             case 'Glob':
@@ -808,6 +881,49 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                 const keys = Object.keys(input).slice(0, 3);
                 return keys.map(k => `${k}=${JSON.stringify(input[k]).slice(0, 30)}`).join(', ');
         }
+    }
+
+    /**
+     * Create a unified diff format for edits
+     */
+    private createUnifiedDiff(filePath: string, oldText: string, newText: string): string {
+        const lines = [];
+
+        // Split into lines
+        const oldLines = oldText.split('\n');
+        const newLines = newText.split('\n');
+
+        lines.push(`--- a/${filePath}`);
+        lines.push(`+++ b/${filePath}`);
+
+        // Simple line-by-line diff (for now, can be improved with actual diff algorithm)
+        const maxLines = Math.max(oldLines.length, newLines.length);
+        let oldLineNum = 1;
+        let newLineNum = 1;
+
+        for (let i = 0; i < maxLines; i++) {
+            const oldLine = oldLines[i] || '';
+            const newLine = newLines[i] || '';
+
+            if (oldLine === newLine) {
+                // Context line
+                lines.push(` ${oldLine}`);
+                oldLineNum++;
+                newLineNum++;
+            } else {
+                // Changed line
+                if (oldLine) {
+                    lines.push(`-${oldLine}`);
+                    oldLineNum++;
+                }
+                if (newLine) {
+                    lines.push(`+${newLine}`);
+                    newLineNum++;
+                }
+            }
+        }
+
+        return lines.join('\n');
     }
 
     /**

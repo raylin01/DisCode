@@ -622,22 +622,34 @@ async function handleOutput(data: any): Promise<void> {
 
     const streaming = botState.streamingMessages.get(data.sessionId);
 
+    // Clear streaming state if output type changes (e.g., stdout → tool_use)
+    // This ensures tool output creates a new message instead of appending to text
+    if (streaming && streaming.outputType !== outputType) {
+        console.log(`[Output] Output type changed from ${streaming.outputType} to ${outputType}, clearing streaming state`);
+        botState.streamingMessages.delete(data.sessionId);
+    }
+
     // Edit the most recent message if we have an active streaming state for this session
     // The streaming state is cleared when isComplete=true, so the next message starts fresh
-    const shouldStream = !!streaming;
+    const shouldStream = !!botState.streamingMessages.get(data.sessionId);
 
-    const embed = createOutputEmbed(outputType, data.content);
+    // Accumulate content for this session
+    const currentStreaming = botState.streamingMessages.get(data.sessionId);
+    const accumulatedContent = currentStreaming ? (currentStreaming.accumulatedContent || '') + data.content : data.content;
+
+    const embed = createOutputEmbed(outputType, accumulatedContent);
 
     if (shouldStream) {
         try {
-            const message = await thread.messages.fetch(streaming!.messageId);
+            const message = await thread.messages.fetch(currentStreaming!.messageId);
             await message.edit({ embeds: [embed] });
 
             botState.streamingMessages.set(data.sessionId, {
-                messageId: streaming!.messageId,
+                messageId: currentStreaming!.messageId,
                 lastUpdateTime: now,
                 content: data.content,
-                outputType: outputType
+                outputType: outputType,
+                accumulatedContent: accumulatedContent
             });
         } catch (error) {
             console.error('Error editing message:', error);
@@ -646,7 +658,8 @@ async function handleOutput(data: any): Promise<void> {
                 messageId: newMessage.id,
                 lastUpdateTime: now,
                 content: data.content,
-                outputType: outputType
+                outputType: outputType,
+                accumulatedContent: accumulatedContent
             });
         }
     } else {
@@ -670,7 +683,8 @@ async function handleOutput(data: any): Promise<void> {
                 messageId: sentMessage.id,
                 lastUpdateTime: now,
                 content: data.content,
-                outputType: outputType
+                outputType: outputType,
+                accumulatedContent: accumulatedContent
             });
         }
     }

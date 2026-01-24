@@ -47,8 +47,23 @@ export interface OutputEvent {
     content: string;
     /** True when the response is complete */
     isComplete: boolean;
-    /** Output type for styling */
-    outputType: 'stdout' | 'stderr' | 'info';
+    /** Output type for styling and formatting */
+    outputType: 'stdout' | 'stderr' | 'info' | 'thinking' | 'edit' | 'tool_use' | 'tool_result';
+    /** Structured data for rich formatting (optional) */
+    structuredData?: {
+        // For edits
+        edit?: {
+            filePath: string;
+            oldContent?: string;
+            newContent?: string;
+            diff?: string;
+        };
+        // For tool use
+        tool?: {
+            name: string;
+            input: Record<string, any>;
+        };
+    };
     timestamp: Date;
 }
 
