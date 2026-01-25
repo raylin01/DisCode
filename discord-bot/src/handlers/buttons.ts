@@ -294,11 +294,9 @@ async function handleApprovalButton(interaction: any, userId: string, customId: 
     const action = customId.split('_')[0];
     const requestId = customId.substring(action.length + 1);
 
-    console.log(`[Button] Action: ${action}, RequestId: ${requestId}`);
     const pending = botState.pendingApprovals.get(requestId);
 
     if (!pending) {
-        console.log(`[Button] Request not found! Keys in map: ${Array.from(botState.pendingApprovals.keys()).join(', ')}`);
         await interaction.reply({
             embeds: [createErrorEmbed('Expired', 'This approval request has expired.')],
             flags: 64
@@ -1220,6 +1218,7 @@ async function handleMultiSelectToggle(interaction: any, userId: string, customI
 
     const multiSelect = botState.multiSelectState.get(requestId);
     if (!multiSelect) {
+        console.error(`[MultiSelectToggle] No multiSelectState found for requestId=${requestId}`);
         await interaction.reply({
             embeds: [createErrorEmbed('Expired', 'This question has expired.')],
             flags: 64

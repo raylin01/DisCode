@@ -427,8 +427,10 @@ function createQuestionButtons(data: any, requestId: string): { rows: ActionRowB
         const isMultiSelect = data.isMultiSelect === true;
         const hasOther = data.hasOther === true;
 
-        // Debug logging to verify flags
-        console.log(`[Approval] Creating buttons - isMultiSelect=${isMultiSelect}, hasOther=${hasOther}`);
+        // Check if "Other" is already in the options array
+        const hasOtherOption = data.options.some((opt: string) =>
+            opt.toLowerCase() === 'other'
+        );
 
         if (isMultiSelect) {
             // Multi-select: create toggleable buttons + Submit button
@@ -440,8 +442,8 @@ function createQuestionButtons(data: any, requestId: string): { rows: ActionRowB
                     .setStyle(ButtonStyle.Secondary); // Start unselected (gray)
             });
 
-            // Add "Other" button if hasOther is true
-            if (hasOther) {
+            // Add "Other" button only if hasOther is true AND "Other" is not already in options
+            if (hasOther && !hasOtherOption) {
                 optionButtons.push(
                     new ButtonBuilder()
                         .setCustomId(`other_${requestId}`)
@@ -472,27 +474,22 @@ function createQuestionButtons(data: any, requestId: string): { rows: ActionRowB
                 timestamp: new Date()
             };
         } else {
-            // Single-select: add "Other" button if hasOther is true
+            // Single-select: all buttons use consistent gray styling
             const buttons = data.options.map((option: string, index: number) => {
                 const optionNumber = index + 1;
-                let style = ButtonStyle.Secondary;
-                if (index === 0) style = ButtonStyle.Success;
-                else if (index === data.options.length - 1 && !hasOther) style = ButtonStyle.Danger;
-                else style = ButtonStyle.Primary;
-
                 return new ButtonBuilder()
                     .setCustomId(`option_${requestId}_${optionNumber}`)
                     .setLabel(option)
-                    .setStyle(style);
+                    .setStyle(ButtonStyle.Secondary);
             });
 
-            // Add "Other" button if hasOther is true (for single-select)
-            if (hasOther) {
+            // Add "Other" button only if hasOther is true AND "Other" is not already in options
+            if (hasOther && !hasOtherOption) {
                 buttons.push(
                     new ButtonBuilder()
                         .setCustomId(`other_${requestId}`)
                         .setLabel('Other...')
-                        .setStyle(ButtonStyle.Danger)
+                        .setStyle(ButtonStyle.Secondary)
                 );
             }
 
@@ -521,8 +518,6 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
 
     // Check if this is an assistant session
     if (data.sessionId && data.sessionId.startsWith('assistant-')) {
-        console.log(`[Approval] Handling assistant usage approval for ${data.sessionId}`);
-
         const channel = await botState.client.channels.fetch(runner.privateChannelId);
         if (!channel || !('send' in channel)) {
             console.error('[Approval] Invalid private channel for assistant');

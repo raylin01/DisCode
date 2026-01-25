@@ -58,7 +58,8 @@ export async function handleApprovalResponse(
             // 1 = Yes (approve), 3 = No (deny)
             const option = data.optionNumber || (data.approved ? '1' : '3');
             try {
-                await approvalSession.sendApproval(option);
+                // Pass option number and optional custom message (for "Other" option)
+                await approvalSession.sendApproval(option, data.message);
                 console.log(`[Approval] Sent option ${option} to session ${data.sessionId}`);
 
                 // Send status update to Discord - mark as 'working' since approval was handled

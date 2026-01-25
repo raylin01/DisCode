@@ -182,7 +182,6 @@ async function handleModifyModal(interaction: any, userId: string, customId: str
         botState.streamingMessages.delete(pending.sessionId);
     }
     botState.pendingApprovals.delete(requestId);
-    console.log(`Approval request ${requestId} modified and approved by user ${userId}`);
 }
 
 /**

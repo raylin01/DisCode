@@ -341,32 +341,42 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     /**
      * Send an approval response
      * Handles both regular tool approvals and AskUserQuestion responses
+     * @param optionNumber The selected option number (or '0' for custom "Other" input)
+     * @param customMessage Optional custom text when optionNumber is '0'
      */
-    async sendApproval(optionNumber: string): Promise<void> {
+    async sendApproval(optionNumber: string, customMessage?: string): Promise<void> {
         // Check if this is an AskUserQuestion response
         const pendingQuestion = (this as any).pendingQuestion;
-        this.plugin.log(`[${this.sessionId.slice(0, 8)}] sendApproval called: optionNumber=${optionNumber}, pendingQuestion exists=${!!pendingQuestion}`);
-
-        if (pendingQuestion) {
-            this.plugin.log(`[${this.sessionId.slice(0, 8)}] pendingQuestion structure:`, JSON.stringify({
-                hasQuestions: !!pendingQuestion.questions,
-                questionsCount: pendingQuestion.questions?.length,
-                currentQuestionIndex: pendingQuestion.currentQuestionIndex,
-                hasCurrentOptions: !!pendingQuestion.currentOptions,
-                answersCollected: pendingQuestion.allAnswers?.length || 0
-            }));
-        }
+        console.log(`[${this.sessionId.slice(0, 8)}] sendApproval called: optionNumber=${optionNumber}, customMessage=${customMessage}, pendingQuestion exists=${!!pendingQuestion}`);
 
         if (pendingQuestion && pendingQuestion.currentOptions && pendingQuestion.currentOptions.length > 0) {
+            // Handle "Other" custom input (optionNumber === '0')
+            if (optionNumber === '0' && customMessage) {
+                console.log(`[${this.sessionId.slice(0, 8)}] "Other" option selected with custom message: "${customMessage}"`);
+
+                // Store just the answer value
+                const currentQuestionIndex = pendingQuestion.currentQuestionIndex;
+                pendingQuestion.allAnswers.push(customMessage);
+                console.log(`[${this.sessionId.slice(0, 8)}] Stored custom "Other" answer for question ${currentQuestionIndex + 1}: "${customMessage}"`);
+
+                // Move to next question
+                pendingQuestion.currentQuestionIndex++;
+
+                // Ask the next question or send all answers if complete
+                await this.askNextQuestion();
+                return;
+            }
+
             // Check if this is a multi-select submission (comma-separated option numbers)
             if (optionNumber.includes(',')) {
-                this.plugin.log(`[${this.sessionId.slice(0, 8)}] Multi-select submission detected: ${optionNumber}`);
+                console.log(`[${this.sessionId.slice(0, 8)}] Multi-select submission detected: ${optionNumber}`);
                 const optionNumbers = optionNumber.split(',').map(s => s.trim());
 
-                // Process each selected option
+                // Collect all selected values
+                const selectedValues: string[] = [];
                 for (const optNum of optionNumbers) {
                     const optionIndex = parseInt(optNum, 10) - 1;
-                    this.plugin.log(`[${this.sessionId.slice(0, 8)}] Processing option ${optionIndex} (from ${optNum})`);
+                    console.log(`[${this.sessionId.slice(0, 8)}] Processing option ${optionIndex} (from ${optNum})`);
 
                     if (optionIndex >= 0 && optionIndex < pendingQuestion.currentOptions.length) {
                         const option = pendingQuestion.currentOptions[optionIndex];
@@ -378,13 +388,17 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                         } else {
                             optionValue = `Option ${optionIndex + 1}`;
                         }
-
-                        pendingQuestion.allAnswers.push(optionValue);
-                        this.plugin.log(`[${this.sessionId.slice(0, 8)}] Collected multi-select answer: "${optionValue}"`);
+                        selectedValues.push(optionValue);
+                        console.log(`[${this.sessionId.slice(0, 8)}] Collected multi-select answer: "${optionValue}"`);
                     } else {
-                        this.plugin.log(`[${this.sessionId.slice(0, 8)}] Option index ${optionIndex} out of range`);
+                        console.log(`[${this.sessionId.slice(0, 8)}] Option index ${optionIndex} out of range`);
                     }
                 }
+
+                // Store just the answer array
+                const currentQuestionIndex = pendingQuestion.currentQuestionIndex;
+                pendingQuestion.allAnswers.push(selectedValues);
+                console.log(`[${this.sessionId.slice(0, 8)}] Stored multi-select answer for question ${currentQuestionIndex + 1}:`, JSON.stringify(selectedValues));
 
                 // After processing all options, move to next question
                 pendingQuestion.currentQuestionIndex++;
@@ -395,7 +409,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             // Single option selection
             // This is an AskUserQuestion - convert 1-indexed button to 0-indexed option
             const optionIndex = parseInt(optionNumber, 10) - 1;
-            this.plugin.log(`[${this.sessionId.slice(0, 8)}] Option index: ${optionIndex} (from button ${optionNumber})`);
+            console.log(`[${this.sessionId.slice(0, 8)}] Option index: ${optionIndex} (from button ${optionNumber})`);
 
             if (optionIndex >= 0 && optionIndex < pendingQuestion.currentOptions.length) {
                 // Get the option value (not just the index)
@@ -405,21 +419,22 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                 let optionValue: string;
                 if (typeof option === 'string') {
                     optionValue = option;
-                    this.plugin.log(`[${this.sessionId.slice(0, 8)}] Option ${optionIndex} is string: "${optionValue}"`);
+                    console.log(`[${this.sessionId.slice(0, 8)}] Option ${optionIndex} is string: "${optionValue}"`);
                 } else if (option && typeof option === 'object') {
                     const keys = Object.keys(option);
-                    this.plugin.log(`[${this.sessionId.slice(0, 8)}] Option ${optionIndex} is object with keys: ${keys.join(', ')}`);
-                    this.plugin.log(`[${this.sessionId.slice(0, 8)}] Option ${optionIndex}: label="${option.label || 'N/A'}", value="${option.value || 'N/A'}"`);
+                    console.log(`[${this.sessionId.slice(0, 8)}] Option ${optionIndex} is object with keys: ${keys.join(', ')}`);
+                    console.log(`[${this.sessionId.slice(0, 8)}] Option ${optionIndex}: label="${option.label || 'N/A'}", value="${option.value || 'N/A'}"`);
                     optionValue = option.value || option.label || `Option ${optionIndex + 1}`;
-                    this.plugin.log(`[${this.sessionId.slice(0, 8)}] Extracted value: "${optionValue}"`);
+                    console.log(`[${this.sessionId.slice(0, 8)}] Extracted value: "${optionValue}"`);
                 } else {
                     optionValue = `Option ${optionIndex + 1}`;
-                    this.plugin.log(`[${this.sessionId.slice(0, 8)}] Option ${optionIndex} is ${typeof option}, using fallback: "${optionValue}"`);
+                    console.log(`[${this.sessionId.slice(0, 8)}] Option ${optionIndex} is ${typeof option}, using fallback: "${optionValue}"`);
                 }
 
-                // Add answer to collection
+                // Store just the answer value
+                const currentQuestionIndex = pendingQuestion.currentQuestionIndex;
                 pendingQuestion.allAnswers.push(optionValue);
-                this.plugin.log(`[${this.sessionId.slice(0,  8)}] Collected answer ${pendingQuestion.allAnswers.length}: "${optionValue}"`);
+                console.log(`[${this.sessionId.slice(0, 8)}] Stored answer ${pendingQuestion.allAnswers.length} for question ${currentQuestionIndex + 1}: "${optionValue}"`);
 
                 // Move to next question
                 pendingQuestion.currentQuestionIndex++;
@@ -428,7 +443,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                 await this.askNextQuestion();
                 return;
             } else {
-                this.plugin.log(`[${this.sessionId.slice(0, 8)}] Option index ${optionIndex} out of range (0-${pendingQuestion.currentOptions.length - 1})`);
+                console.log(`[${this.sessionId.slice(0, 8)}] Option index ${optionIndex} out of range (0-${pendingQuestion.currentOptions.length - 1})`);
             }
         }
 
@@ -448,7 +463,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             toolUseID: this.currentRequestId
         };
 
-        this.plugin.log(`[${this.sessionId.slice(0, 8)}] Sending approval: ${behavior}`);
+        console.log(`[${this.sessionId.slice(0, 8)}] Sending approval: ${behavior}`);
 
         await this.sendControlResponse(response);
     }
@@ -1315,17 +1330,43 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
      * Handle AskUserQuestion control request
      */
     private async handleAskUserQuestion(requestId: string, request: ControlRequest): Promise<void> {
-        const input = request.input!;
+        // Write full request to debug file
+        const fs = require('fs');
+        const debugDir = '/tmp/claude-sdk-debug';
+        try {
+            fs.mkdirSync(debugDir, { recursive: true });
+        } catch (e) {
+            // Ignore if directory exists
+        }
 
-        this.plugin.log(`[${this.sessionId.slice(0, 8)}] AskUserQuestion received:`, JSON.stringify({
-            hasQuestions: !!input.questions,
-            hasQuestion: !!input.question,
-            questionsCount: input.questions?.length,
-            optionsCount: input.options?.length
-        }));
+        const debugPath = `${debugDir}/${this.sessionId.slice(0, 8)}-ask-user-question.json`;
+        try {
+            fs.writeFileSync(debugPath, JSON.stringify({
+                timestamp: new Date().toISOString(),
+                sessionId: this.sessionId,
+                requestId: requestId,
+                fullRequest: request
+            }, null, 2) + '\n');
+            console.log(`[${this.sessionId.slice(0, 8)}] WROTE FULL CONTROL REQUEST TO: ${debugPath}`);
+        } catch (e) {
+            console.error('Failed to write debug file:', e);
+        }
 
-        // Handle both single question and questions array format
-        const questionsArray = input.questions || (input.question ? [{ question: input.question, options: input.options || [], multiSelect: input.multiSelect || false }] : []);
+        // Get input - can be directly questions array or wrapped in an object
+        let questionsArray: any[] = [];
+
+        if (Array.isArray(request.input)) {
+            // input IS the questions array
+            questionsArray = request.input;
+        } else if (request.input && Array.isArray(request.input.questions)) {
+            // input.questions contains the questions array
+            questionsArray = request.input.questions;
+        } else if (request.input && request.input.question) {
+            // Single question format - wrap in array
+            questionsArray = [request.input];
+        }
+
+        console.log(`[${this.sessionId.slice(0, 8)}] Parsed ${questionsArray.length} questions from input`);
 
         if (questionsArray.length === 0) {
             this.plugin.log(`[${this.sessionId.slice(0, 8)}] Invalid AskUserQuestion format - no questions found`);
@@ -1334,7 +1375,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
         // Store all questions and track current question index for multi-question flows
         (this as any).pendingQuestion = {
-            input,
+            input: request.input,
             questions: questionsArray,
             allAnswers: [],  // Collect answers as we go
             currentQuestionIndex: 0,  // Start with first question
@@ -1443,10 +1484,28 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         const answers = pendingQuestion.allAnswers;
         const questionsCount = pendingQuestion.questions.length;
 
-        this.plugin.log(`[${this.sessionId.slice(0, 8)}] All ${questionsCount} questions answered, sending:`, JSON.stringify(answers));
+        console.log(`[${this.sessionId.slice(0, 8)}] All ${questionsCount} questions answered, sending:`, JSON.stringify(answers));
+
+        // Build answers object with question headers as keys (not array indices)
+        // Format: { "Question Header": answer } or { "Question Text": answer }
+        const answersObject: Record<string, any> = {};
+        for (let i = 0; i < pendingQuestion.questions.length; i++) {
+            const q = pendingQuestion.questions[i];
+            // Use header if available, otherwise use question text
+            const key = q.header || q.question || `Question ${i + 1}`;
+            answersObject[key] = answers[i];
+        }
+
+        // Build a summary question text for display (fixes "Question: undefined")
+        const questionSummary = questionsCount === 1
+            ? pendingQuestion.questions[0].question
+            : pendingQuestion.questions.map((q: any, i: number) =>
+                q.header || q.question || `Question ${i + 1}`
+            ).join(', ');
 
         const updatedInput: Record<string, any> = {
-            answers: answers
+            question: questionSummary,
+            answers: answersObject
         };
 
         const response: ControlResponseData = {
@@ -1463,10 +1522,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             }
         };
 
-        this.plugin.log(`[${this.sessionId.slice(0, 8)}] Sending control_response with updatedInput.answers=${JSON.stringify(answers)}`);
-
-        const jsonString = JSON.stringify(controlMessage);
-        console.log(`[${this.sessionId.slice(0, 8)}] WRITING TO STDIN:`, JSON.stringify(controlMessage, null, 2));
+        console.log(`[${this.sessionId.slice(0, 8)}] Sending control_response:`, JSON.stringify(controlMessage, null, 2));
 
         const fs = require('fs');
         const debugPath = `/tmp/claude-sdk-debug/${this.sessionId.slice(0, 8)}-control-response.json`;
@@ -1476,7 +1532,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             console.error('Failed to write debug file:', e);
         }
 
-        await this.writeToStdin(jsonString);
+        await this.writeToStdin(JSON.stringify(controlMessage));
 
         // Clear pending question
         delete (this as any).pendingQuestion;
