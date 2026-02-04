@@ -41,26 +41,46 @@ export async function handleApprovalResponse(
         }
     }
 
-    // Flow 2: TmuxPlugin approval (Discord buttons)
-    if (data.sessionId) {
-        console.log(`[Approval] Received approval response for session ${data.sessionId}: ${data.approved ? 'APPROVED' : 'DENIED'}`);
+    // Recover sessionId from requestId if missing (Runner generates requestId as `${sessionId}-${timestamp}`)
+    let sessionId = data.sessionId;
+    if (!sessionId && data.requestId && data.requestId.includes('-')) {
+        const lastDashIndex = data.requestId.lastIndexOf('-');
+        // Basic validation: ensure we have a timestamp part and the rest looks like a UUID (or at least substantial)
+        if (lastDashIndex > 0 && lastDashIndex < data.requestId.length - 1) {
+             const probableSessionId = data.requestId.substring(0, lastDashIndex);
+             // Verify if this session actually exists
+             if (cliSessions.has(probableSessionId) || (deps.assistantManager && deps.assistantManager.getSessionId() === probableSessionId)) {
+                 sessionId = probableSessionId;
+                 console.log(`[Approval] Recovered sessionId ${sessionId} from requestId ${data.requestId}`);
+             }
+        }
+    }
 
-        let approvalSession: { sendApproval: (opt: string) => Promise<void> } | undefined = cliSessions.get(data.sessionId);
+    // Flow 2: TmuxPlugin/SDK approval (Discord buttons)
+    if (sessionId) {
+        const derivedAllow =
+            data.approved ??
+            data.allow ??
+            (data.optionNumber ? data.optionNumber === '1' || data.optionNumber === '3' : false);
+        console.log(`[Approval] Received approval response for session ${sessionId}: ${derivedAllow ? 'APPROVED' : 'DENIED'}, Option: ${data.optionNumber}, Message: ${data.message || 'none'}`);
+
+        let approvalSession: { sendApproval: (opt: string, message?: string, requestId?: string) => Promise<void> } | undefined = cliSessions.get(sessionId);
 
         // Use assistant manager if session not found in standard sessions
         const { assistantManager } = deps;
-        if (!approvalSession && assistantManager && assistantManager.getSessionId() === data.sessionId) {
+        if (!approvalSession && assistantManager && assistantManager.getSessionId() === sessionId) {
             approvalSession = assistantManager;
         }
 
         if (approvalSession) {
             // Map boolean to option number if not provided
-            // 1 = Yes (approve), 3 = No (deny)
-            const option = data.optionNumber || (data.approved ? '1' : '3');
+            // 1 = Yes (approve), 2 = No (deny), 3 = Always
+            const option = data.optionNumber || (derivedAllow ? '1' : '2');
             try {
+                console.log(`[Approval] Dispatching to session ${sessionId}: option=${option}, message=${data.message || 'none'}`);
                 // Pass option number and optional custom message (for "Other" option)
-                await approvalSession.sendApproval(option, data.message);
-                console.log(`[Approval] Sent option ${option} to session ${data.sessionId}`);
+                await approvalSession.sendApproval(option, data.message, data.requestId);
+                console.log(`[Approval] Sent option ${option} to session ${sessionId}`);
 
                 // Send status update to Discord - mark as 'working' since approval was handled
                 wsManager.send({

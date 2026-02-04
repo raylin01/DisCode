@@ -66,17 +66,36 @@ describe('Embeds Utils', () => {
             });
         });
 
-        it('should include tool input as JSON code block', () => {
+        it('should format command input as a Command field', () => {
             const embed = createToolUseEmbed(mockRunner, 'bash', { command: 'ls', args: ['-la'] });
 
             expect(embed.data.fields?.[2]).toMatchObject({
-                name: 'Input',
-                value: expect.stringContaining('```json'),
+                name: 'Command',
+                value: '`ls`',
                 inline: false
             });
         });
 
-        it('should truncate long tool input to 1000 characters', () => {
+        it('should show description before command when both are present', () => {
+            const embed = createToolUseEmbed(mockRunner, 'bash', { 
+                description: 'List files in directory',
+                command: 'ls -la' 
+            });
+
+            // Find the description and command fields
+            const descField = embed.data.fields?.find(f => f.name === 'Description');
+            const cmdField = embed.data.fields?.find(f => f.name === 'Command');
+            
+            expect(descField?.value).toBe('List files in directory');
+            expect(cmdField?.value).toBe('`ls -la`');
+            
+            // Description should come before Command
+            const descIndex = embed.data.fields?.findIndex(f => f.name === 'Description');
+            const cmdIndex = embed.data.fields?.findIndex(f => f.name === 'Command');
+            expect(descIndex).toBeLessThan(cmdIndex!);
+        });
+
+        it('should truncate long values appropriately', () => {
             const longInput = { data: 'x'.repeat(2000) };
             const embed = createToolUseEmbed(mockRunner, 'bash', longInput);
 

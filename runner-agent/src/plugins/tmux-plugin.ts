@@ -130,7 +130,7 @@ class TmuxSession extends EventEmitter implements PluginSession {
         this.status = 'working';
     }
 
-    async sendApproval(optionNumber: string): Promise<void> {
+    async sendApproval(optionNumber: string, _message?: string, _requestId?: string): Promise<void> {
         if (!/^\d+$/.test(optionNumber)) {
             throw new Error(`Invalid approval option: ${optionNumber}`);
         }
@@ -657,6 +657,13 @@ export class TmuxPlugin extends BasePlugin {
         // Get the actual working directory of the session
         const cwd = await this.getSessionCwd(sessionId) || '/';
         this.log(`Session ${sessionId} cwd: ${cwd}`);
+
+        // Install skills into the watched session's workspace
+        if (this.skillManager) {
+            const cliType = 'claude'; // Default for watched sessions
+            await this.skillManager.installSkills(cwd, cliType);
+            this.log(`Installed skills for watched session ${sessionId}`);
+        }
 
         // Create a config for this watched session
         const config: SessionConfig = {

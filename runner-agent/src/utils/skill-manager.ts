@@ -93,7 +93,12 @@ export class SkillManager {
                             // console.log(`[SkillManager] ${instructionFile} already exists in ${cwd}, skipping.`);
                         } catch {
                             try {
-                                await fs.copyFile(sourceInstruction, targetInstruction);
+                                // Read and replace bin path in instruction file too
+                                let instructionContent = await fs.readFile(sourceInstruction, 'utf8');
+                                const targetBin = path.join(targetPath, 'bin');
+                                instructionContent = instructionContent.replace(/\/path\/to\/bin/g, targetBin);
+
+                                await fs.writeFile(targetInstruction, instructionContent);
                                 console.log(`[SkillManager] Copied ${instructionFile} for ${skillName}`);
                             } catch (copyErr) {
                                 console.warn(`[SkillManager] Failed to copy instruction file:`, copyErr);

@@ -118,6 +118,7 @@ export async function handleSessionStart(
         sessionMetadata.set(data.sessionId, {
             sessionId: data.sessionId,
             cliType: data.cliType,
+            plugin: data.plugin,
             folderPath: data.folderPath,
             runnerId: data.runnerId
         });

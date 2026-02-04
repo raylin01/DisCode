@@ -448,6 +448,7 @@ export async function handleRespawnSession(interaction: any, userId: string): Pr
         createdAt: new Date().toISOString(),
         status: 'active',
         cliType: lastSession.cliType,
+        plugin: lastSession.plugin,  // Preserve plugin type from original session
         folderPath: lastSession.folderPath,
         interactionToken: interaction.token,
         creatorId: userId
@@ -470,6 +471,7 @@ export async function handleRespawnSession(interaction: any, userId: string): Pr
             sessionId: newSessionId,
             runnerId: runner.runnerId,
             cliType: lastSession.cliType,
+            plugin: lastSession.plugin,  // Include plugin type from original session
             folderPath: lastSession.folderPath
         }
     }));

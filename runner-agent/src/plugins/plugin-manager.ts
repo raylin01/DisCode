@@ -204,12 +204,12 @@ export class PluginManager extends EventEmitter {
     /**
      * Send an approval response to a session
      */
-    async sendApproval(sessionId: string, optionNumber: string): Promise<void> {
+    async sendApproval(sessionId: string, optionNumber: string, message?: string, requestId?: string): Promise<void> {
         const session = this.getSession(sessionId);
         if (!session) {
             throw new Error(`Session ${sessionId} not found`);
         }
-        await session.sendApproval(optionNumber);
+        await session.sendApproval(optionNumber, message, requestId);
     }
 
     /**

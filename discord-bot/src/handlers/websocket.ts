@@ -18,7 +18,11 @@ import {
 import {
     getOrCreateRunnerChannel,
 } from '../utils/channels.js';
+import { permissionStateStore } from '../permissions/state-store.js';
+import { rebuildPermissionButtons } from './permission-buttons.js';
 import type { WebSocketMessage, RunnerInfo, Session } from '../../../shared/types.ts';
+
+console.log('[DEBUG] websocket.ts MODULE LOADED - Unified UI Version');
 
 const config = getConfig();
 
@@ -500,10 +504,23 @@ function createQuestionButtons(data: any, requestId: string): { rows: ActionRowB
     return { rows, multiSelectState };
 }
 
+// Track recently processed requests to prevent duplicates
+const recentlyProcessedRequests = new Set<string>();
+
 /**
  * Handle approval request from runner
  */
 async function handleApprovalRequest(ws: any, data: any): Promise<void> {
+    // Deduplicate requests
+    if (data.requestId && recentlyProcessedRequests.has(data.requestId)) {
+        console.log(`[Approval] Skipping duplicate request: ${data.requestId}`);
+        return;
+    }
+    console.log(`[DEBUG] handleApprovalRequest called for ${data.requestId} (tool: ${data.toolName})`);
+    if (data.requestId) {
+        recentlyProcessedRequests.add(data.requestId);
+        setTimeout(() => recentlyProcessedRequests.delete(data.requestId), 5000);
+    }
 
 
     const runner = storage.getRunner(data.runnerId);
@@ -515,6 +532,21 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
         }));
         return;
     }
+
+    // Normalize tool input for permission UI
+    let normalizedToolInput: Record<string, any> = {};
+    if (data.toolInput && typeof data.toolInput === 'object') {
+        normalizedToolInput = data.toolInput;
+    } else if (typeof data.toolInput === 'string') {
+        try {
+            normalizedToolInput = JSON.parse(data.toolInput);
+        } catch {
+            normalizedToolInput = { raw: data.toolInput };
+        }
+    }
+
+    const hasSuggestions = Array.isArray(data.suggestions) && data.suggestions.length > 0;
+    const isQuestion = data.toolName === 'AskUserQuestion';
 
     // Check if this is an assistant session
     if (data.sessionId && data.sessionId.startsWith('assistant-')) {
@@ -534,17 +566,37 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
 
         // If no options/AskUserQuestion, add default approval buttons
         if (rows.length === 0) {
+            // Get user's scope preference
+            const userId = (channel as any).recipient?.id;
+            const scope = botState.userScopePreferences.get(userId) || 'session';
+            const scopeLabel = scope === 'global' ? 'Global' : scope.charAt(0).toUpperCase() + scope.slice(1);
+
             const allowButton = new ButtonBuilder()
                 .setCustomId(`allow_${data.requestId}`)
-                .setLabel('✅ Allow Once')
+                .setLabel('Allow')
                 .setStyle(ButtonStyle.Success);
+
+            const allowAllButton = new ButtonBuilder()
+                .setCustomId(`allow_all_${data.requestId}`)
+                .setLabel('Allow All')
+                .setStyle(ButtonStyle.Primary);
+
+            const scopeButton = new ButtonBuilder()
+                .setCustomId(`scope_${data.requestId}`)
+                .setLabel(`Scope: ${scopeLabel} 🔄`)
+                .setStyle(ButtonStyle.Secondary);
+
+            const tellButton = new ButtonBuilder()
+                .setCustomId(`tell_${data.requestId}`)
+                .setLabel('Tell Claude')
+                .setStyle(ButtonStyle.Secondary);
 
             const denyButton = new ButtonBuilder()
                 .setCustomId(`deny_${data.requestId}`)
-                .setLabel('❌ Deny')
+                .setLabel('Deny')
                 .setStyle(ButtonStyle.Danger);
 
-            rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(allowButton, denyButton));
+            rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(allowButton, allowAllButton, scopeButton, tellButton, denyButton));
         }
 
         // Create embed
@@ -581,6 +633,23 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
             isMultiSelect: data.isMultiSelect,
             hasOther: data.hasOther
         });
+
+        // Also store in new permission state store for new permission buttons
+        permissionStateStore.save({
+            requestId: data.requestId,
+            sessionId: data.sessionId,
+            runnerId: data.runnerId,
+            toolName: data.toolName,
+            toolInput: normalizedToolInput,
+            suggestions: data.suggestions || [],
+            isPlanMode: data.toolName === 'ExitPlanMode',
+            isQuestion: data.toolName === 'AskUserQuestion',
+            currentScope: 'session',
+            blockedPath: data.blockedPath,
+            decisionReason: data.decisionReason,
+            timestamp: new Date().toISOString()
+        });
+
         return;
     }
 
@@ -597,11 +666,28 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
     // Check if this tool is auto-approved for this session
     const sessionAllowedTools = botState.allowedTools.get(data.sessionId);
     if (sessionAllowedTools && sessionAllowedTools.has(data.toolName)) {
-
+        // Send the approval response to runner
         ws.send(JSON.stringify({
             type: 'approval_response',
-            data: { requestId: data.requestId, allow: true, message: `Auto-approved (tool ${data.toolName} was previously allowed for all)` }
+            data: { 
+                requestId: data.requestId, 
+                sessionId: data.sessionId,
+                optionNumber: '1',  // "Allow" option
+                allow: true, 
+                message: `Auto-approved (tool ${data.toolName} was previously allowed for all)` 
+            }
         }));
+
+        // Also show in Discord so user can see what's being run
+        const thread = await botState.client.channels.fetch(session.threadId);
+        if (thread && 'send' in thread) {
+            const runner = storage.getRunner(data.runnerId);
+            const embed = createToolUseEmbed(runner, data.toolName, data.toolInput)
+                .setColor(0x00FF00)  // Green for auto-approved
+                .setTitle(`✅ Auto-Approved: ${data.toolName}`);
+            
+            await thread.send({ embeds: [embed] });
+        }
         return;
     }
 
@@ -621,32 +707,89 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
     }
 
     // If no options/AskUserQuestion, add default approval buttons for regular sessions
-    if (rows.length === 0) {
+    if (rows.length === 0 && !hasSuggestions) {
+        console.log(`[DEBUG] Generating unified buttons for tool: ${data.toolName}`);
+        // Get user's scope preference (thread participants not easily avail, default to session)
+        // For buttons.ts handler we will have the userId
+        const scope = 'session'; 
+        const scopeLabel = 'Session';
+
         const allowButton = new ButtonBuilder()
             .setCustomId(`allow_${data.requestId}`)
-            .setLabel('✅ Allow Once')
+            .setLabel('Allow')
             .setStyle(ButtonStyle.Success);
 
         const allowAllButton = new ButtonBuilder()
             .setCustomId(`allow_all_${data.requestId}`)
-            .setLabel('✅ Allow All (This Tool)')
+            .setLabel('Allow All')
             .setStyle(ButtonStyle.Primary);
 
-        const modifyButton = new ButtonBuilder()
-            .setCustomId(`modify_${data.requestId}`)
-            .setLabel('✏️ Modify')
+        const scopeButton = new ButtonBuilder()
+            .setCustomId(`scope_${data.requestId}`)
+            .setLabel(`Scope: ${scopeLabel} 🔄`)
+            .setStyle(ButtonStyle.Secondary);
+
+        const tellButton = new ButtonBuilder()
+            .setCustomId(`tell_${data.requestId}`)
+            .setLabel('Tell Claude')
             .setStyle(ButtonStyle.Secondary);
 
         const denyButton = new ButtonBuilder()
             .setCustomId(`deny_${data.requestId}`)
-            .setLabel('❌ Deny')
+            .setLabel('Deny')
             .setStyle(ButtonStyle.Danger);
 
         rows.push(new ActionRowBuilder<ButtonBuilder>()
-            .addComponents(allowButton, allowAllButton, modifyButton, denyButton));
+            .addComponents(allowButton, allowAllButton, scopeButton, tellButton, denyButton));
     }
 
-    const embed = createToolUseEmbed(runner, data.toolName, data.toolInput);
+    let embed = createToolUseEmbed(runner, data.toolName, data.toolInput);
+    let permissionSaved = false;
+    if (rows.length === 0 && hasSuggestions && !isQuestion) {
+        // Get initial scope from user preference if available
+        let initialScope: any = 'session';
+        if (session.creatorId) {
+            const pref = botState.userScopePreferences.get(session.creatorId);
+            if (pref === 'global') initialScope = 'userSettings';
+            else if (pref === 'project') initialScope = 'projectSettings';
+            else if (pref === 'session') initialScope = 'session';
+        }
+
+        permissionStateStore.save({
+            requestId: data.requestId,
+            sessionId: data.sessionId,
+            runnerId: data.runnerId,
+            toolName: data.toolName,
+            toolInput: normalizedToolInput,
+            suggestions: data.suggestions || [],
+            isPlanMode: data.toolName === 'ExitPlanMode',
+            isQuestion: false,
+            currentScope: initialScope,
+            blockedPath: data.blockedPath,
+            decisionReason: data.decisionReason,
+            timestamp: new Date().toISOString()
+        });
+        permissionSaved = true;
+
+        const state = permissionStateStore.get(data.requestId);
+        if (state) {
+            const uiState = state.uiState;
+            rows.push(...rebuildPermissionButtons(state.request, uiState));
+            
+            // Re-use the existing nicely formatted embed (created at line 741)
+            // Just updated the fields to include scope info
+            // We need to clone it or modify it. EmbedBuilder is mutable? 
+            // createToolUseEmbed returns an EmbedBuilder instance.
+            
+            // Add Scope field to the existing embed
+            embed.addFields([
+                { name: 'Current Scope', value: `**${uiState.scopeLabel}**\n${uiState.scopeDescription}`, inline: false }
+            ]);
+            
+            // Ensure timestamp and color
+            embed.setColor('Yellow').setTimestamp();
+        }
+    }
 
     // Build ping content based on config
     const userMention = session.creatorId ? `<@${session.creatorId}>` : '';
@@ -676,6 +819,23 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
         timestamp: new Date()
     });
 
+    // Also store in new permission state store for new permission buttons
+    if (!permissionSaved) {
+        permissionStateStore.save({
+            requestId: data.requestId,
+            sessionId: data.sessionId,
+            runnerId: data.runnerId,
+            toolName: data.toolName,
+            toolInput: normalizedToolInput,
+            suggestions: data.suggestions || [],
+            isPlanMode: data.toolName === 'ExitPlanMode',
+            isQuestion,
+            currentScope: 'session',
+            blockedPath: data.blockedPath,
+            decisionReason: data.decisionReason,
+            timestamp: new Date().toISOString()
+        });
+    }
 
 }
 
@@ -691,25 +851,100 @@ async function handleOutput(data: any): Promise<void> {
 
     const outputType = data.outputType || 'stdout';
     const now = Date.now();
+    const STREAMING_TIMEOUT = 10000;
 
     const streaming = botState.streamingMessages.get(data.sessionId);
 
-    // Clear streaming state if output type changes (e.g., stdout → tool_use)
-    // This ensures tool output creates a new message instead of appending to text
+    // Clear streaming state if output type changes (e.g., stdout → thinking)
+    // This ensures different output types get separate messages
     if (streaming && streaming.outputType !== outputType) {
         console.log(`[Output] Output type changed from ${streaming.outputType} to ${outputType}, clearing streaming state`);
         botState.streamingMessages.delete(data.sessionId);
     }
 
-    // Edit the most recent message if we have an active streaming state for this session
-    // The streaming state is cleared when isComplete=true, so the next message starts fresh
-    const shouldStream = !!botState.streamingMessages.get(data.sessionId);
-
-    // Accumulate content for this session
+    // Re-fetch after potential deletion
     const currentStreaming = botState.streamingMessages.get(data.sessionId);
-    const accumulatedContent = currentStreaming ? (currentStreaming.accumulatedContent || '') + data.content : data.content;
+    
+    // Content is already accumulated by the runner - use directly
+    const displayContent = data.content;
 
-    const embed = createOutputEmbed(outputType, accumulatedContent);
+    // Check if we should edit existing message or create new one
+    // Edit if: we have streaming state, same output type, and within timeout
+    const shouldStream = currentStreaming &&
+        (now - currentStreaming.lastUpdateTime) < STREAMING_TIMEOUT &&
+        currentStreaming.outputType === outputType;
+
+    console.log(`[Output] Session: ${data.sessionId}, Type: ${outputType}, ShouldStream: ${shouldStream}, HasStreaming: ${!!currentStreaming}, ContentLen: ${displayContent.length}`);
+
+    // Check for message length limit (Discord embed description max is 4096)
+    const SOFT_LIMIT = 3000;
+    const HARD_LIMIT = 3900;
+
+    // Handle message splitting if content exceeds limits
+    if (shouldStream && displayContent.length > SOFT_LIMIT) {
+        let splitIndex = -1;
+
+        if (displayContent.length > HARD_LIMIT) {
+            console.log(`[Output] Hit hard limit ${displayContent.length}, forcing split`);
+            const searchWindow = displayContent.substring(SOFT_LIMIT);
+            const lastNewline = searchWindow.lastIndexOf('\n');
+            
+            if (lastNewline !== -1) {
+                splitIndex = SOFT_LIMIT + lastNewline;
+            } else {
+                const lastSpace = searchWindow.lastIndexOf(' ');
+                if (lastSpace !== -1) {
+                    splitIndex = SOFT_LIMIT + lastSpace;
+                } else {
+                    splitIndex = HARD_LIMIT;
+                }
+            }
+        } else if (displayContent.includes('\n')) {
+            const searchWindow = displayContent.substring(SOFT_LIMIT);
+            const lastNewline = searchWindow.lastIndexOf('\n');
+            
+            if (lastNewline !== -1) {
+                splitIndex = SOFT_LIMIT + lastNewline;
+                console.log(`[Output] Soft limit reached, found paragraph break at ${splitIndex}`);
+            }
+        }
+
+        if (splitIndex !== -1) {
+            const contentForOld = displayContent.substring(0, splitIndex);
+            const contentForNew = displayContent.substring(splitIndex);
+
+            console.log(`[Output] Splitting message: Old=${contentForOld.length}, New=${contentForNew.length}`);
+
+            // Finalize the old message
+            const embedOld = createOutputEmbed(outputType, contentForOld);
+            try {
+                const message = await thread.messages.fetch(currentStreaming!.messageId);
+                await message.edit({ embeds: [embedOld] });
+            } catch (e) {
+                console.error('Failed to finalize old message split:', e);
+            }
+            
+            // Clear streaming state and start new message with remainder
+            botState.streamingMessages.delete(data.sessionId);
+            
+            const nextData = {
+                ...data,
+                content: contentForNew,
+                outputType: outputType
+            };
+
+            await handleOutput(nextData);
+            return;
+        }
+    }
+
+    // Format content for display
+    let formattedContent = displayContent;
+    if (outputType === 'todos') {
+        formattedContent = formattedContent.replace(/box /g, '☐ ');
+    }
+
+    const embed = createOutputEmbed(outputType, formattedContent);
 
     if (shouldStream) {
         try {
@@ -719,9 +954,8 @@ async function handleOutput(data: any): Promise<void> {
             botState.streamingMessages.set(data.sessionId, {
                 messageId: currentStreaming!.messageId,
                 lastUpdateTime: now,
-                content: data.content,
-                outputType: outputType,
-                accumulatedContent: accumulatedContent
+                content: displayContent,
+                outputType: outputType
             });
         } catch (error) {
             console.error('Error editing message:', error);
@@ -729,9 +963,8 @@ async function handleOutput(data: any): Promise<void> {
             botState.streamingMessages.set(data.sessionId, {
                 messageId: newMessage.id,
                 lastUpdateTime: now,
-                content: data.content,
-                outputType: outputType,
-                accumulatedContent: accumulatedContent
+                content: displayContent,
+                outputType: outputType
             });
         }
     } else {
@@ -754,14 +987,13 @@ async function handleOutput(data: any): Promise<void> {
             botState.streamingMessages.set(data.sessionId, {
                 messageId: sentMessage.id,
                 lastUpdateTime: now,
-                content: data.content,
-                outputType: outputType,
-                accumulatedContent: accumulatedContent
+                content: displayContent,
+                outputType: outputType
             });
         }
     }
-
-    // Clear streaming state when message is complete, so next message starts fresh
+    
+    // Clear streaming state when message is complete
     if (data.isComplete) {
         botState.streamingMessages.delete(data.sessionId);
     }
@@ -1075,6 +1307,7 @@ async function handleSessionDiscovered(data: any): Promise<void> {
         createdAt: new Date().toISOString(),
         status: 'active',
         cliType: 'generic', // Best guess
+        plugin: 'tmux',  // Discovered sessions are tmux sessions
         folderPath: folderPath,
     };
 
@@ -1301,11 +1534,20 @@ async function handleAssistantOutput(data: any): Promise<void> {
     const STREAMING_TIMEOUT = 10000;
 
     const streaming = botState.assistantStreamingMessages.get(runnerId);
-    const shouldStream = streaming &&
-        (now - streaming.lastUpdateTime) < STREAMING_TIMEOUT &&
-        streaming.outputType === (outputType || 'stdout');
+    
+    // Clear streaming state if output type changes (e.g., stdout → thinking)
+    if (streaming && streaming.outputType !== (outputType || 'stdout')) {
+        console.log(`[AssistantOutput] Output type changed from ${streaming.outputType} to ${outputType}, clearing streaming state`);
+        botState.assistantStreamingMessages.delete(runnerId);
+    }
+    
+    // Re-fetch after potential deletion
+    const currentStreaming = botState.assistantStreamingMessages.get(runnerId);
+    const shouldStream = currentStreaming &&
+        (now - currentStreaming.lastUpdateTime) < STREAMING_TIMEOUT &&
+        currentStreaming.outputType === (outputType || 'stdout');
 
-    // Create embed for output
+    // Content is already accumulated by the runner - use directly
     const embed = createOutputEmbed(outputType || 'stdout', content);
 
     if (shouldStream) {
@@ -1407,6 +1649,7 @@ async function handleSpawnThread(ws: any, data: any): Promise<void> {
             createdAt: new Date().toISOString(),
             status: 'active',
             cliType: resolvedCliType,
+            plugin: 'tmux',  // Assistant mode always uses tmux plugin
             folderPath: folder,
             creatorId: runner.ownerId
         };

@@ -1,6 +1,6 @@
 /**
  * Button Interaction Handlers
- * 
+ *
  * Handles all button clicks from Discord UI.
  */
 
@@ -8,6 +8,7 @@ import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilde
 import * as botState from '../state.js';
 import { storage } from '../storage.js';
 import { createErrorEmbed, createApprovalDecisionEmbed } from '../utils/embeds.js';
+import { handlePermissionButton, rebuildPermissionButtons, handleTellClaudeModal } from './permission-buttons.js';
 
 /**
  * Main button interaction dispatcher
@@ -52,8 +53,27 @@ export async function handleButtonInteraction(interaction: any): Promise<void> {
         return;
     }
 
+    // Handle NEW permission buttons (with scope support)
+    if (customId.startsWith('perm_')) {
+        await handlePermissionButton(interaction, userId, customId);
+        return;
+    }
+
+    // Handle unified permission buttons (scope, tell)
+    if (customId.startsWith('scope_')) {
+        const requestId = customId.replace('scope_', '');
+        await handleScopeButton(interaction, userId, requestId);
+        return;
+    }
+
+    if (customId.startsWith('tell_')) {
+        const requestId = customId.replace('tell_', '');
+        await handleTellClaude(interaction, userId, requestId);
+        return;
+    }
+
     // Handle approval buttons
-    if (customId.startsWith('allow_') || customId.startsWith('deny_') || customId.startsWith('modify_')) {
+    if (customId.startsWith('allow_') || customId.startsWith('deny_')) {
         await handleApprovalButton(interaction, userId, customId);
         return;
     }
@@ -285,9 +305,9 @@ async function handleApprovalButton(interaction: any, userId: string, customId: 
         return;
     }
 
-    if (customId.startsWith('modify_')) {
-        const requestId = customId.replace('modify_', '');
-        await handleModify(interaction, userId, requestId);
+    if (customId.startsWith('allow_all_')) {
+        const requestId = customId.replace('allow_all_', '');
+        await handleAllowAll(interaction, userId, requestId);
         return;
     }
 
@@ -321,6 +341,8 @@ async function handleApprovalButton(interaction: any, userId: string, customId: 
             type: 'approval_response',
             data: {
                 requestId,
+                sessionId: pending.sessionId,
+                optionNumber: allow ? '1' : '2',
                 allow,
                 message: allow ? 'Approved via Discord' : 'Denied via Discord'
             }
@@ -334,7 +356,7 @@ async function handleApprovalButton(interaction: any, userId: string, customId: 
         .setDisabled(true);
 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(resultButton);
-    const embed = createApprovalDecisionEmbed(allow, pending.toolName, interaction.user.username);
+    const embed = createApprovalDecisionEmbed(allow, pending.toolName, interaction.user.username, undefined, pending.toolInput as Record<string, any>);
 
     await interaction.update({
         embeds: [embed],
@@ -385,15 +407,21 @@ async function handleAllowAll(interaction: any, userId: string, requestId: strin
             type: 'approval_response',
             data: {
                 requestId,
+                sessionId: pending.sessionId,
+                optionNumber: '3',
                 allow: true,
                 message: `Approved. Tool ${pending.toolName} is now auto-approved for this session.`
             }
         }));
     }
 
+    // Determine scope from user preference
+    const scope = botState.userScopePreferences.get(userId) || 'session';
+    const scopeLabel = scope === 'global' ? 'Global' : scope.charAt(0).toUpperCase() + scope.slice(1);
+
     const resultButton = new ButtonBuilder()
         .setCustomId(`result_${requestId}`)
-        .setLabel(`✅ Tool Auto-Approved`)
+        .setLabel(`✅ Auto-Approved (${scopeLabel})`)
         .setStyle(ButtonStyle.Success)
         .setDisabled(true);
 
@@ -414,9 +442,47 @@ async function handleAllowAll(interaction: any, userId: string, requestId: strin
 }
 
 /**
- * Handle Modify button - opens modal
+ * Handle Scope button - cycles through scopes
  */
-async function handleModify(interaction: any, userId: string, requestId: string): Promise<void> {
+async function handleScopeButton(interaction: any, userId: string, requestId: string): Promise<void> {
+    const currentScope = botState.userScopePreferences.get(userId) || 'session';
+    let nextScope: botState.UserScope;
+
+    switch (currentScope) {
+        case 'session': nextScope = 'project'; break;
+        case 'project': nextScope = 'global'; break;
+        case 'global': nextScope = 'session'; break;
+        default: nextScope = 'session';
+    }
+
+    // Save preference
+    botState.userScopePreferences.set(userId, nextScope);
+
+    // Update button label
+    const scopeLabel = nextScope === 'global' ? 'Global' : nextScope.charAt(0).toUpperCase() + nextScope.slice(1);
+    
+    // Reconstruct the row with updated scope button
+    // We need to fetch the message components and just update the scope button
+    const oldComponents = interaction.message.components[0].components;
+    
+    // Map components to new builders
+    const newComponents = oldComponents.map((comp: any) => {
+        const builder = ButtonBuilder.from(comp);
+        if (comp.customId === `scope_${requestId}`) {
+            builder.setLabel(`Scope: ${scopeLabel} 🔄`);
+        }
+        return builder;
+    });
+
+    await interaction.update({
+        components: [new ActionRowBuilder<ButtonBuilder>().addComponents(newComponents)]
+    });
+}
+
+/**
+ * Handle Tell Claude button - opens modal
+ */
+async function handleTellClaude(interaction: any, userId: string, requestId: string): Promise<void> {
     const pending = botState.pendingApprovals.get(requestId);
     if (!pending) {
         await interaction.reply({
@@ -426,30 +492,21 @@ async function handleModify(interaction: any, userId: string, requestId: string)
         return;
     }
 
-    const runner = storage.getRunner(pending.runnerId);
-    if (!runner || !storage.canUserAccessRunner(userId, pending.runnerId)) {
-        await interaction.reply({
-            embeds: [createErrorEmbed('Unauthorized', 'You are not authorized to approve this request.')],
-            flags: 64
-        });
-        return;
-    }
-
+    // Use shared modal handler from permission-buttons logic if available, 
+    // or create a new modal here. Currently we reuse the simpler logic.
     const modal = new ModalBuilder()
-        .setCustomId(`modify_modal_${requestId}`)
-        .setTitle('Modify Tool Input');
-
-    const inputString = JSON.stringify(pending.toolInput, null, 2);
+        .setCustomId(`tell_modal_${requestId}`)
+        .setTitle('Tell Claude What To Do');
 
     const inputRow = new ActionRowBuilder<TextInputBuilder>()
         .addComponents(
             new TextInputBuilder()
-                .setCustomId('modified_input')
-                .setLabel('Modified Tool Input (JSON)')
-                .setValue(inputString.substring(0, 4000))
+                .setCustomId('tell_input')
+                .setLabel('Instructions')
+                .setPlaceholder('Tell Claude what to do instead...')
                 .setStyle(TextInputStyle.Paragraph)
                 .setRequired(true)
-                .setMaxLength(4000)
+                .setMaxLength(1000)
         );
 
     modal.addComponents(inputRow);
@@ -1119,6 +1176,7 @@ async function handleStartSession(interaction: any, userId: string): Promise<voi
             createdAt: new Date().toISOString(),
             status: 'active' as const,
             cliType: storageCLIType as 'claude' | 'gemini' | 'generic',
+            plugin: state.plugin as 'tmux' | 'print' | 'stream' | 'claude-sdk' | undefined,
             folderPath: folderPath,
             interactionToken: interaction.token,
             creatorId: interaction.user.id

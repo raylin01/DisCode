@@ -251,6 +251,7 @@ export async function handleWatch(interaction: any, userId: string): Promise<voi
             createdAt: new Date().toISOString(),
             status: 'active',
             cliType: 'claude',
+            plugin: 'tmux',  // Watched sessions use tmux plugin
             folderPath: 'watched-session'
         };
 

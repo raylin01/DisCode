@@ -217,7 +217,7 @@ class PrintSession implements PluginSession {
         });
     }
 
-    async sendApproval(_optionNumber: string): Promise<void> {
+    async sendApproval(_optionNumber: string, _message?: string, _requestId?: string): Promise<void> {
         // PrintPlugin doesn't support interactive approvals
         // Approvals are handled via HTTP hooks
         this.plugin.log(`[${this.sessionId.slice(0, 8)}] Approval not supported in print mode (use hooks)`);

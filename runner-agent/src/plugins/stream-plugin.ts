@@ -1,9 +1,9 @@
 /**
  * Stream Plugin for CLI Integration
- * 
+ *
  * Generic plugin for CLIs that support streaming JSON output (JSONL).
  * Currently supports Gemini CLI with `--output-format stream-json`.
- * 
+ *
  * Each message spawns a new process with streaming output.
  * Events are parsed as JSONL and mapped to standard plugin events.
  */
@@ -16,6 +16,7 @@ import {
     SessionConfig,
     SessionStatus,
 } from './base.js';
+import { getConfig } from '../config.js';
 
 // ============================================================================
 // Types
@@ -156,7 +157,10 @@ class StreamSession extends EventEmitter implements PluginSession {
                 cwd: this.config.cwd,
                 env: {
                     ...process.env,
-                    ...this.config.options?.env
+                    ...this.config.options?.env,
+                    DISCODE_SESSION_ID: this.sessionId,
+                    DISCODE_HTTP_PORT: getConfig().httpPort.toString(),
+                    DISCODE_RUNNER_ID: process.env.DISCODE_RUNNER_NAME || 'local-runner',
                 }
             });
 
@@ -311,7 +315,7 @@ class StreamSession extends EventEmitter implements PluginSession {
         }
     }
 
-    async sendApproval(_optionNumber: string): Promise<void> {
+    async sendApproval(_optionNumber: string, _message?: string, _requestId?: string): Promise<void> {
         // Stream mode uses auto-approve, no interactive approval
         this.plugin.log(`[${this.sessionId.slice(0, 8)}] Approval not supported in stream mode (use --yolo)`);
     }

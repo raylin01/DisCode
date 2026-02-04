@@ -102,3 +102,6 @@ export interface MultiSelectState {
 }
 export const multiSelectState = new Map<string, MultiSelectState>();
 
+// User scope preference (userId -> scope)
+export type UserScope = 'session' | 'project' | 'global';
+export const userScopePreferences = new Map<string, UserScope>();

@@ -73,26 +73,31 @@ export interface OutputEvent {
 
 export interface ApprovalEvent {
     sessionId: string;
+    /** Unique request ID for correlating responses */
+    requestId?: string;
     /** Tool requesting approval (Bash, Write, Read, etc.) */
     tool: string;
     /** Context/description of what the tool wants to do */
     context: string;
+    /** Raw tool input (if available) */
+    toolInput?: Record<string, any>;
     /** Available options (usually Yes/No/Always) */
-    options: ApprovalOption[];
+    options: string[];
     /** When the approval was detected */
     detectedAt: Date;
     /** Whether this is a multi-select question (for AskUserQuestion) */
     isMultiSelect?: boolean;
     /** Whether this has an "Other" option (for AskUserQuestion) */
     hasOther?: boolean;
+    /** Permission suggestions for "Always" scope */
+    suggestions?: any[];
+    /** Blocked path (if provided) */
+    blockedPath?: string;
+    /** Decision reason (if provided) */
+    decisionReason?: string;
 }
 
-export interface ApprovalOption {
-    /** Option number to send (1, 2, 3, etc.) */
-    number: string;
-    /** Human-readable label */
-    label: string;
-}
+// ApprovalOption interface removed as we now use simple strings
 
 export interface StatusEvent {
     sessionId: string;
@@ -211,7 +216,7 @@ export interface PluginSession {
 
     // Approval handling
     /** Send an approval response (for plugins that support it) */
-    sendApproval(optionNumber: string): Promise<void>;
+    sendApproval(optionNumber: string, message?: string, requestId?: string): Promise<void>;
 
     // Question handling (for plugins that support AskUserQuestion)
     /** Send a response to an AskUserQuestion request */

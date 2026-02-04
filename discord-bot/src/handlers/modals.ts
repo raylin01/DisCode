@@ -11,6 +11,7 @@ import { storage } from '../storage.js';
 import { createErrorEmbed } from '../utils/embeds.js';
 import { getOrCreateRunnerChannel } from '../utils/channels.js';
 import { handleSessionReview } from './buttons.js';
+import { handleTellClaudeModal } from './permission-buttons.js';
 import type { Session } from '../../../shared/types.ts';
 
 /**
@@ -26,15 +27,21 @@ export async function handleModalSubmit(interaction: any): Promise<void> {
         return;
     }
 
-    // Handle modify approval modal
-    if (customId.startsWith('modify_modal_')) {
-        await handleModifyModal(interaction, userId, customId);
+    // Handle "Tell Claude" modal logic (unified)
+    if (customId.startsWith('tell_modal_')) {
+        await handleUnifiedTellClaudeModal(interaction, userId, customId);
         return;
     }
 
     // Handle "Other" modal for custom input
     if (customId.startsWith('other_modal_')) {
         await handleOtherModal(interaction, userId, customId);
+        return;
+    }
+
+    // Handle "Tell Claude" modal for custom rejection message
+    if (customId.startsWith('perm_tell_modal_')) {
+        await handleTellClaudeModal(interaction);
         return;
     }
 
@@ -123,11 +130,11 @@ async function handlePromptModal(interaction: any, userId: string, customId: str
 }
 
 /**
- * Handle modify approval modal submission
+ * Handle "Tell Claude" modal submission (Unified)
  */
-async function handleModifyModal(interaction: any, userId: string, customId: string): Promise<void> {
-    const requestId = customId.replace('modify_modal_', '');
-    const modifiedInput = interaction.fields.getTextInputValue('modified_input');
+async function handleUnifiedTellClaudeModal(interaction: any, userId: string, customId: string): Promise<void> {
+    const requestId = customId.replace('tell_modal_', '');
+    const instructions = interaction.fields.getTextInputValue('tell_input');
 
     const pending = botState.pendingApprovals.get(requestId);
     if (!pending) {
@@ -147,33 +154,41 @@ async function handleModifyModal(interaction: any, userId: string, customId: str
         return;
     }
 
-    let modifiedToolInput: unknown;
-    try {
-        modifiedToolInput = JSON.parse(modifiedInput);
-    } catch (error) {
-        await interaction.reply({
-            embeds: [createErrorEmbed('Invalid JSON', 'The modified input is not valid JSON.')],
-            flags: 64
-        });
-        return;
-    }
-
     const ws = botState.runnerConnections.get(pending.runnerId);
     if (ws) {
         ws.send(JSON.stringify({
             type: 'approval_response',
             data: {
                 requestId,
-                allow: true,
-                message: 'Approved with modifications',
-                modifiedToolInput
+                sessionId: pending.sessionId,
+                optionNumber: '2', // Deny
+                allow: false,
+                message: instructions // Send instructions as rejection message
             }
         }));
     }
 
-    await interaction.reply({
-        content: '✅ Tool use approved with modified input.',
-        flags: 64
+    const resultButton = new ButtonBuilder()
+        .setCustomId(`result_${requestId}`)
+        .setLabel('❌ Denied')
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(true);
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(resultButton);
+
+    const embed = new EmbedBuilder()
+        .setColor(0xFF0000) // Red
+        .setTitle('❌ Denied with Instructions')
+        .setDescription(`**Instructions:** ${instructions}`)
+        .addFields(
+            { name: 'Tool', value: pending.toolName, inline: true },
+            { name: 'User', value: interaction.user.username, inline: true }
+        )
+        .setTimestamp();
+
+    await interaction.update({
+        embeds: [embed],
+        components: [row]
     });
 
     if (pending.sessionId.startsWith('assistant-')) {

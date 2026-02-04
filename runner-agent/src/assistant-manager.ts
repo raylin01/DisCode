@@ -299,7 +299,7 @@ The spawn-thread skill is available at: spawn-thread.sh "<folder>" "<cli_type>" 
     /**
      * Handle approval request for assistant session
      */
-    async sendApproval(optionNumber: string): Promise<void> {
+    async sendApproval(optionNumber: string, _message?: string, _requestId?: string): Promise<void> {
         if (!this.session) {
             console.error('[AssistantManager] No active session for approval');
             return;

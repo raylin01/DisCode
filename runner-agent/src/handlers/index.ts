@@ -14,6 +14,7 @@ import type { AssistantManager } from '../assistant-manager.js';
 import { handleSessionStart, handleSessionEnd } from './session.js';
 import { handleUserMessage } from './message.js';
 import { handleApprovalResponse } from './approval.js';
+import { handlePermissionDecision } from './permission-decision.js';
 import { handleListTerminals, handleWatchTerminal } from './terminal.js';
 import { handleInterrupt } from './interrupt.js';
 
@@ -68,6 +69,14 @@ export async function handleWebSocketMessage(
                 cliSessions: deps.cliSessions,
                 wsManager: deps.wsManager,
                 assistantManager: deps.assistantManager
+            });
+            break;
+        }
+
+        case 'permission_decision': {
+            await handlePermissionDecision(message.data as any, {
+                cliSessions: deps.cliSessions,
+                wsManager: deps.wsManager
             });
             break;
         }
@@ -166,5 +175,6 @@ export async function handleWebSocketMessage(
 export type { SessionHandlerDeps } from './session.js';
 export type { MessageHandlerDeps } from './message.js';
 export type { ApprovalHandlerDeps } from './approval.js';
+export type { PermissionDecisionHandlerDeps } from './permission-decision.js';
 export type { TerminalHandlerDeps } from './terminal.js';
 export type { InterruptHandlerDeps } from './interrupt.js';

@@ -131,8 +131,7 @@ function detectPermissionPrompt(output: string): ParsedApproval | null {
     // For selector prompts (like Settings Error), we may only have 1 option
     // Allow these through since they're blocking prompts that need user action
     if (options.length < 1) return null;
-    // RELAXED: Allow single option for permission prompts too (e.g. "1. Yes")
-    // if (options.length < 2 && promptType === 'permission') return null;
+    if (options.length < 2 && promptType === 'permission') return null;
 
     // Find tool name based on prompt type
     let tool = 'Unknown';

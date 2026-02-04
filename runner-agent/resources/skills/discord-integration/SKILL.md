@@ -12,7 +12,7 @@ Communicate directly with users in the Discord channel tied to this session.
 ### `update-channel.sh` — Rename Channel
 
 ```bash
-update-channel.sh "channel-name" "Description of current task"
+/path/to/bin/update-channel.sh "channel-name" "Description of current task"
 ```
 
 - **channel-name**: kebab-case, max 5 words (e.g., `fix-auth-bug`)
@@ -24,12 +24,12 @@ update-channel.sh "channel-name" "Description of current task"
 
 #### Plain Message
 ```bash
-send-to-discord.sh "Your message here"
+/path/to/bin/send-to-discord.sh "Your message here"
 ```
 
 #### Rich Embed (for status updates)
 ```bash
-send-to-discord.sh --title "Title" --description "Details" --color "green"
+/path/to/bin/send-to-discord.sh --title "Title" --description "Details" --color "green"
 ```
 
 **Required:** Either plain message content, OR both `--title` AND `--description` for embeds.
@@ -38,7 +38,7 @@ send-to-discord.sh --title "Title" --description "Details" --color "green"
 
 #### Sending Files
 ```bash
-send-to-discord.sh --file "path/to/image.png" "Here is the image."
+/path/to/bin/send-to-discord.sh --file "path/to/image.png" "Here is the image."
 ```
 
 ---
@@ -47,7 +47,7 @@ send-to-discord.sh --file "path/to/image.png" "Here is the image."
 
 | Situation         | Command |
 |-------------------|---------|
-| Start/switch task | `update-channel.sh "task-name" "description"` |
-| Task done         | `send-to-discord.sh --title "✅ Done" --description "..." --color "green"` |
-| Need user input   | `send-to-discord.sh "Hey @username, I need..."` |
-| Error occurred    | `send-to-discord.sh --title "⚠️ Error" --description "..." --color "red"` |
+| Start/switch task | `/path/to/bin/update-channel.sh "task-name" "description"` |
+| Task done         | `/path/to/bin/send-to-discord.sh --title "✅ Done" --description "..." --color "green"` |
+| Need user input   | `/path/to/bin/send-to-discord.sh "Hey @username, I need..."` |
+| Error occurred    | `/path/to/bin/send-to-discord.sh --title "⚠️ Error" --description "..." --color "red"` |

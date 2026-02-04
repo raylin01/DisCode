@@ -30,7 +30,7 @@ export function wirePluginEvents(
     // Approval requests -> Discord
     pluginManager.on('approval', (data) => {
         if (wsManager.isConnected) {
-            const requestId = `${data.sessionId}-${Date.now()}`;
+            const requestId = data.requestId || `${data.sessionId}-${Date.now()}`;
             const message = {
                 type: 'approval_request' as const,
                 data: {
@@ -38,12 +38,15 @@ export function wirePluginEvents(
                     sessionId: data.sessionId,
                     requestId,
                     toolName: data.tool,
-                    toolInput: data.context,
+                    toolInput: data.toolInput ?? data.context,
                     options: data.options?.map((o: any) => o.label || o),
                     timestamp: data.detectedAt.toISOString(),
                     // Multi-select and Other option support for AskUserQuestion
                     isMultiSelect: data.isMultiSelect,
-                    hasOther: data.hasOther
+                    hasOther: data.hasOther,
+                    suggestions: data.suggestions,
+                    blockedPath: data.blockedPath,
+                    decisionReason: data.decisionReason
                 }
             };
             wsManager.send(message);

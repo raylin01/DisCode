@@ -145,6 +145,21 @@ export function createHttpServer(
                     return;
                 }
 
+                // Check if this session is managed by Claude SDK Plugin
+                // If so, the SDK plugin handles approvals natively via events, so we skip this HTTP request
+                // This prevents duplicate approval prompts (one from SDK, one from hook)
+                if (pluginManager) {
+                    const pluginType = pluginManager.getSessionPluginType(approvalReq.sessionId);
+                    if (pluginType === 'claude-sdk') {
+                        console.log(`[HttpServer] Skipping HTTP approval for SDK session ${approvalReq.sessionId} (handled by plugin)`);
+                        sendJsonResponse(res, {
+                            allow: true,
+                            message: 'Handled by SDK plugin'
+                        });
+                        return;
+                    }
+                }
+
                 // Generate request ID
                 const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
