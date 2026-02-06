@@ -7,7 +7,7 @@
 
 import { EventEmitter } from 'events';
 import { randomUUID } from 'crypto';
-import { appendFileSync, mkdirSync } from 'fs';
+import { appendFileSync, mkdirSync, readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import {
     BasePlugin,
@@ -27,7 +27,10 @@ import {
     ControlRequestMessage,
     ControlResponseData,
     Suggestion,
-    PermissionScope
+    PermissionScope,
+    ToolUseStartEvent,
+    ToolResultEvent,
+    ResultMessage
 } from '../../../claude-client/src/index.js';
 
 // ============================================================================
@@ -62,6 +65,11 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     private currentActivity: string | null = null;
     private currentThinking = '';
     private currentOutputType: 'stdout' | 'thinking' = 'stdout';
+
+
+    // Plan Mode State
+    private currentPlanPath: string | null = null;
+    private activeToolExecutions = new Map<string, string>();
 
     // AskUserQuestion state
     private pendingQuestion: {
@@ -232,6 +240,17 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                     return;
                 }
 
+                if (request.tool_name === 'ExitPlanMode') {
+                    this.handleExitPlanModeRequest(req).catch((err) => {
+                         this.plugin.emit('error', {
+                            sessionId: this.sessionId,
+                            error: `ExitPlanMode error: ${err.message}`,
+                            fatal: false
+                        });
+                    });
+                    return;
+                }
+
                 this.status = 'waiting';
                 const approvalId = `${this.sessionId}-${Date.now()}-${randomUUID().slice(0, 8)}`;
                 
@@ -306,6 +325,61 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         this.client.on('exit', (code) => {
             this.status = 'offline';
         });
+
+        // Tool use start - surfaces ALL tool invocations including auto-approved
+        this.client.on('tool_use_start', (tool: ToolUseStartEvent) => {
+            // Track tool name for result matching
+            this.activeToolExecutions.set(tool.id, tool.name);
+
+            this.plugin.emit('tool_execution', {
+                sessionId: this.sessionId,
+                toolName: tool.name,
+                toolId: tool.id,
+                input: tool.input,
+                timestamp: new Date()
+            });
+        });
+
+        // Tool result - surfaces success/failure status
+        this.client.on('tool_result', (result: ToolResultEvent) => {
+            // Check for EnterPlanMode to capture plan path
+            const toolName = this.activeToolExecutions.get(result.toolUseId);
+            
+            if (toolName === 'EnterPlanMode' && !result.isError) {
+                // Look for "A plan file was designated: <path>"
+                const match = result.content.match(/A plan file was designated: (.*)$/m);
+                if (match && match[1]) {
+                    this.currentPlanPath = match[1].trim();
+                    console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Captured plan path: ${this.currentPlanPath}`);
+                }
+            }
+            
+            // Cleanup
+            this.activeToolExecutions.delete(result.toolUseId);
+
+            this.plugin.emit('tool_result', {
+                sessionId: this.sessionId,
+                toolUseId: result.toolUseId,
+                content: result.content,
+                isError: result.isError,
+                timestamp: new Date()
+            });
+        });
+
+        // Result events - surfaces final session summary
+        this.client.on('result', (result: ResultMessage) => {
+            this.plugin.emit('result', {
+                sessionId: this.sessionId,
+                result: result.result,
+                subtype: result.subtype,
+                durationMs: result.duration_ms,
+                durationApiMs: result.duration_api_ms,
+                numTurns: result.num_turns,
+                isError: result.is_error,
+                error: result.error,
+                timestamp: new Date()
+            });
+        });
     }
 
     async start(): Promise<void> {
@@ -313,10 +387,46 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         await this.client.start();
     }
 
+    /**
+     * Interrupt the current operation (proper protocol method, not Ctrl+C)
+     */
+    async interrupt(): Promise<void> {
+        await this.client.interrupt();
+    }
+
     async sendMessage(message: string): Promise<void> {
         this.status = 'working';
         this.lastActivity = new Date();
         await this.client.sendMessage(message);
+    }
+
+    /**
+     * Send a message with image attachments
+     */
+    async sendMessageWithImages(text: string, images: Array<{ data: string; mediaType: string }>): Promise<void> {
+        this.status = 'working';
+        this.lastActivity = new Date();
+
+        const content: Array<{ type: string; [key: string]: any }> = [];
+
+        // Add images first
+        for (const image of images) {
+            content.push({
+                type: 'image',
+                source: {
+                    type: 'base64',
+                    media_type: image.mediaType,
+                    data: image.data
+                }
+            });
+        }
+
+        // Add text
+        if (text) {
+            content.push({ type: 'text', text });
+        }
+
+        await this.client.sendMessageWithContent(content);
     }
     
     async sendApproval(optionNumber: string, message?: string, requestId?: string): Promise<void> {
@@ -379,6 +489,66 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         await this.client.sendControlResponse(perm.sdkRequestId, responseData);
         this.pendingPermissions.delete(approvalId);
         this.status = 'working';
+    }
+
+    private async handleExitPlanModeRequest(req: ControlRequestMessage): Promise<void> {
+        let planContent = '';
+        
+        // Try to read the plan file
+        if (this.currentPlanPath && existsSync(this.currentPlanPath)) {
+            try {
+                planContent = readFileSync(this.currentPlanPath, 'utf8');
+            } catch (err) {
+                console.error(`[ClaudeSDK] Failed to read plan file: ${err}`);
+            }
+        }
+
+        const request = req.request;
+        const approvalId = `${this.sessionId}-${Date.now()}-${randomUUID().slice(0, 8)}`;
+        
+        // Register pending permission with special handling for ExitPlanMode
+        // We re-use 'AskUserQuestion' style mechanism but map it back to a tool permission
+        this.pendingPermissions.set(approvalId, {
+            requestId: approvalId,
+            sdkRequestId: req.request_id,
+            toolName: 'ExitPlanMode',
+            input: request.input || {},
+            toolUseId: request.tool_use_id || '',
+            suggestions: [],
+            blockedPath: undefined,
+            decisionReason: undefined
+        });
+
+        // If we have plan content, present it for review
+        if (planContent) {
+            console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Intercepted ExitPlanMode, requesting review of plan (${planContent.length} chars)`);
+            
+            this.plugin.emit('approval', {
+                sessionId: this.sessionId,
+                requestId: approvalId,
+                tool: 'ExitPlanMode',
+                context: planContent, // Pass full plan content as context
+                toolInput: { 
+                    question: 'Please review the proposed plan before proceeding.',
+                    planPath: this.currentPlanPath
+                },
+                options: ['Approve Plan'], // Option 1
+                hasOther: true,            // Option 0 triggers feedback (Deny)
+                detectedAt: new Date()
+            });
+        } else {
+            // Fallback if no plan content found (standard approval)
+            console.log(`[ClaudeSDK] Plan content missing, falling back to standard ExitPlanMode approval`);
+            this.plugin.emit('approval', {
+                sessionId: this.sessionId,
+                requestId: approvalId,
+                tool: 'ExitPlanMode',
+                context: JSON.stringify(request.input),
+                toolInput: request.input || {},
+                suggestions: [],
+                detectedAt: new Date()
+            });
+        }
     }
 
     private async handleAskUserQuestion(requestId: string, request: any): Promise<void> {

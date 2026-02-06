@@ -14,10 +14,13 @@ import {
     createOutputEmbed,
     createActionItemEmbed,
     createRunnerOfflineEmbed,
+    formatContentWithTables,
 } from '../utils/embeds.js';
 import {
     getOrCreateRunnerChannel,
 } from '../utils/channels.js';
+import { getCategoryManager } from '../services/category-manager.js';
+import { getSessionSyncService } from '../services/session-sync.js';
 import { permissionStateStore } from '../permissions/state-store.js';
 import { rebuildPermissionButtons } from './permission-buttons.js';
 import type { WebSocketMessage, RunnerInfo, Session } from '../../../shared/types.ts';
@@ -168,6 +171,12 @@ async function notifyRunnerOffline(runner: RunnerInfo): Promise<void> {
             console.error('Failed to send notification to runner channel:', error);
         }
     }
+
+    // Update stats voice channel
+    const categoryManager = getCategoryManager();
+    if (categoryManager) {
+        await categoryManager.updateRunnerStats(runner.runnerId);
+    }
 }
 
 /**
@@ -211,6 +220,19 @@ export async function notifyRunnerOnline(runner: RunnerInfo, wasReclaimed: boole
     } catch (error) {
         console.error('Failed to send runner online notification:', error);
     }
+
+    // Update stats voice channel
+    const categoryManager = getCategoryManager();
+    if (categoryManager) {
+        await categoryManager.updateRunnerStats(runner.runnerId);
+    }
+    
+    // Start session sync
+    const sessionSync = getSessionSyncService();
+    if (sessionSync) {
+        // Start syncing (idempotent)
+        await sessionSync.startSyncingRunner(runner.runnerId);
+    }
 }
 
 /**
@@ -250,9 +272,6 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
             await handleRunnerStatusUpdate(message.data);
             break;
 
-        case 'session_discovered':
-            await handleSessionDiscovered(message.data);
-            break;
 
         case 'terminal_list':
             await handleTerminalList(message.data);
@@ -268,6 +287,34 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
 
         case 'spawn_thread':
             await handleSpawnThread(ws, message.data);
+            break;
+
+        case 'tool_execution':
+            await handleToolExecution(message.data);
+            break;
+
+        case 'tool_result':
+            await handleToolResult(message.data);
+            break;
+
+        case 'result':
+            await handleResult(message.data);
+            break;
+
+        case 'sync_projects_response':
+            await handleSyncProjectsResponse(message.data);
+            break;
+
+        case 'sync_sessions_response':
+            await handleSyncSessionsResponse(message.data);
+            break;
+
+        case 'sync_session_discovered':
+            await handleSyncSessionDiscovered(message.data);
+            break;
+
+        case 'sync_session_updated':
+            await handleSyncSessionUpdated(message.data);
             break;
 
         default:
@@ -319,11 +366,18 @@ async function handleRegister(ws: any, data: any): Promise<void> {
         tokenInUse.cliTypes = data.cliTypes;
         tokenInUse.defaultWorkspace = data.defaultWorkspace;
 
-        if (!tokenInUse.privateChannelId) {
+        const categoryManager = getCategoryManager();
+        if (categoryManager) {
             try {
-                tokenInUse.privateChannelId = await getOrCreateRunnerChannel(tokenInUse, tokenInfo.guildId);
+                // Ensure category exists
+                let category = categoryManager.getRunnerCategory(tokenInUse.runnerId);
+                if (!category) {
+                    category = await categoryManager.createRunnerCategory(tokenInUse.runnerId, data.runnerName, tokenInfo.guildId);
+                }
+                tokenInUse.privateChannelId = category.controlChannelId;
             } catch (error) {
-                console.error(`Failed to create private channel for reclaimed runner: ${error}`);
+                console.error(`Failed to create category for reclaimed runner: ${error}`);
+                // Fallback or just log
             }
         }
 
@@ -351,11 +405,17 @@ async function handleRegister(ws: any, data: any): Promise<void> {
         // Update assistantEnabled from registration message
         existingRunner.assistantEnabled = data.assistantEnabled ?? true;
 
-        if (!existingRunner.privateChannelId) {
+        const categoryManager = getCategoryManager();
+        if (categoryManager) {
             try {
-                existingRunner.privateChannelId = await getOrCreateRunnerChannel(existingRunner, tokenInfo.guildId);
+                // Ensure category exists
+                let category = categoryManager.getRunnerCategory(existingRunner.runnerId);
+                if (!category) {
+                    category = await categoryManager.createRunnerCategory(existingRunner.runnerId, existingRunner.name, tokenInfo.guildId);
+                }
+                existingRunner.privateChannelId = category.controlChannelId;
             } catch (error) {
-                console.error(`Failed to create private channel for existing runner: ${error}`);
+                console.error(`Failed to create category for existing runner: ${error}`);
             }
         }
 
@@ -388,10 +448,14 @@ async function handleRegister(ws: any, data: any): Promise<void> {
             assistantEnabled: data.assistantEnabled ?? true
         };
 
-        try {
-            newRunner.privateChannelId = await getOrCreateRunnerChannel(newRunner, tokenInfo.guildId);
-        } catch (error) {
-            console.error(`Failed to create private channel for runner: ${error}`);
+        const categoryManager = getCategoryManager();
+        if (categoryManager) {
+            try {
+                const category = await categoryManager.createRunnerCategory(newRunner.runnerId, newRunner.name, tokenInfo.guildId);
+                newRunner.privateChannelId = category.controlChannelId;
+            } catch (error) {
+                console.error(`Failed to create category for new runner: ${error}`);
+            }
         }
 
         storage.registerRunner(newRunner);
@@ -698,6 +762,48 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
         return;
     }
 
+    // Special handling for large context (e.g. Plan Mode)
+    // Discord Embed Description limit is 4096. We split if it's large.
+    if (data.context && typeof data.context === 'string') {
+        const MAX_LENGTH = 3800; // Safe limit below 4096
+        const context = data.context;
+
+        if (context.length > MAX_LENGTH) {
+            console.log(`[Approval] Context too large (${context.length}), splitting...`);
+            const chunks: string[] = [];
+            let remaining = context;
+            
+            while (remaining.length > 0) {
+                if (remaining.length <= MAX_LENGTH) {
+                    chunks.push(remaining);
+                    break;
+                }
+                
+                // Try to split at a newline closest to limit
+                let splitIndex = remaining.lastIndexOf('\n', MAX_LENGTH);
+                if (splitIndex === -1 || splitIndex < MAX_LENGTH / 2) {
+                    // If no convenient newline, hard split
+                    splitIndex = MAX_LENGTH;
+                }
+                
+                chunks.push(remaining.substring(0, splitIndex));
+                remaining = remaining.substring(splitIndex).trim();
+            }
+
+            // Send all chunks except the last one as separate messages
+            for (let i = 0; i < chunks.length - 1; i++) {
+                const partEmbed = new EmbedBuilder()
+                    .setColor(0xFFD700)
+                    .setTitle(`Plan Review (Part ${i + 1} of ${chunks.length})`)
+                    .setDescription(chunks[i]);
+                await thread.send({ embeds: [partEmbed] });
+            }
+
+            // Update data.context to be only the last chunk for the final embed
+            data.context = `**(Part ${chunks.length} of ${chunks.length})**\n\n` + chunks[chunks.length - 1];
+        }
+    }
+
     // Create buttons using shared helper
     const { rows, multiSelectState } = createQuestionButtons(data, data.requestId);
 
@@ -744,6 +850,14 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
     }
 
     let embed = createToolUseEmbed(runner, data.toolName, data.toolInput);
+    
+    // If we have context (Plan Mode), override/append description
+    if (data.context) {
+        embed.setDescription(data.context);
+        // Maybe clear fields if they are redundant or just showing "path"
+        // But keep them for now as they might contain metadata
+    }
+    
     let permissionSaved = false;
     if (rows.length === 0 && hasSuggestions && !isQuestion) {
         // Get initial scope from user preference if available
@@ -1150,246 +1264,51 @@ async function handleRunnerStatusUpdate(data: any): Promise<void> {
 
     // TODO: Add visual status updates to thread if needed
 
+
+
 }
+
 
 /**
- * Handle session discovered (for watched terminals)
+ * Handle session result (summary)
  */
-async function handleSessionDiscovered(data: any): Promise<void> {
-    const { runnerId, sessionId, exists, cwd } = data;
-
-    const runner = storage.getRunner(runnerId);
-    if (!runner) {
-        console.error(`[handleSessionDiscovered] Unknown runner: ${runnerId}`);
-        return;
-    }
-
-    if (!exists) {
-        console.log(`[handleSessionDiscovered] Session ${sessionId} does not exist on runner ${runnerId}`);
-        return;
-    }
-
-    // Check if we already have this session
-    const existingSession = storage.getSession(sessionId);
-    if (existingSession) {
-        // Check if this session was already active - if so, no need for restoration message
-        const wasAlreadyActive = existingSession.status === 'active';
-
-        console.log(`[handleSessionDiscovered] Session ${sessionId} already exists (status: ${existingSession.status}), updating CWD to: ${cwd}`);
-        if (cwd) {
-            existingSession.folderPath = cwd;
-        }
-        // Ensure status is active
-        existingSession.status = 'active';
-        storage.updateSession(existingSession.sessionId, existingSession);
-
-        // Only notify if session was previously NOT active (i.e., was ended/offline and is now restored)
-        // Skip notification for sessions that are already active (just created through Discord)
-        if (!wasAlreadyActive && existingSession.threadId && existingSession.channelId) {
-            try {
-                const channel = await botState.client.channels.fetch(existingSession.channelId);
-                if (channel && 'threads' in channel) {
-                    const thread = await (channel as any).threads.fetch(existingSession.threadId);
-                    if (thread) {
-                        // Unarchive thread if needed
-                        if (thread.archived) {
-                            await thread.setArchived(false);
-                        }
-
-                        // Re-add the creator to the thread (they may have been removed when archived)
-                        if (existingSession.creatorId) {
-                            try {
-                                await thread.members.add(existingSession.creatorId);
-                            } catch (addErr) {
-                                console.warn(`[handleSessionDiscovered] Could not add creator to thread:`, addErr);
-                            }
-                        }
-
-                        const shouldPing = config.notifications.useAtHere;
-                        await thread.send({
-                            content: shouldPing ? '@here Session Connection Restored!' : undefined,
-                            embeds: [{
-                                title: 'Session Connection Restored',
-                                description: `The runner agent has reconnected to this session.\nYou can continue using it.`,
-                                color: 0x57F287 // Green
-                            }]
-                        });
-                        console.log(`[handleSessionDiscovered] Notified existing thread ${existingSession.threadId} of restoration`);
-                    }
-                }
-            } catch (err) {
-                console.error(`[handleSessionDiscovered] Failed to notify existing thread:`, err);
-            }
-        } else if (wasAlreadyActive) {
-            console.log(`[handleSessionDiscovered] Session ${sessionId} was already active, skipping restoration notification`);
-        }
-        return;
-    }
-
-    // Check if this is a 'discode-' session that we might already know by its short ID
-    // The tmux session name format is: discode-{first8charsOfUUID}
-    if (sessionId.startsWith('discode-')) {
-        const shortId = sessionId.replace('discode-', '');
-        const existingByShortId = storage.getSessionByShortId(shortId);
-
-        if (existingByShortId) {
-            // Check if the session was already active - skip restoration message if so
-            const wasAlreadyActive = existingByShortId.status === 'active';
-
-            console.log(`[handleSessionDiscovered] Found existing session ${existingByShortId.sessionId} for restored ${sessionId} (status: ${existingByShortId.status}). Session already tracked.`);
-
-            // Session already exists in storage - just update status if needed
-            existingByShortId.status = 'active';
-            storage.updateSession(existingByShortId.sessionId, existingByShortId);
-
-            // Only post restoration message if session was previously NOT active
-            if (!wasAlreadyActive && existingByShortId.threadId && existingByShortId.channelId) {
-                try {
-                    const channel = await botState.client.channels.fetch(existingByShortId.channelId);
-                    if (channel && 'threads' in channel) {
-                        const thread = await (channel as any).threads.fetch(existingByShortId.threadId);
-                        if (thread) {
-                            // Unarchive thread if needed
-                            if (thread.archived) {
-                                await thread.setArchived(false);
-                            }
-
-                            // Re-add the creator to the thread (they may have been removed when archived)
-                            if (existingByShortId.creatorId) {
-                                try {
-                                    await thread.members.add(existingByShortId.creatorId);
-                                } catch (addErr) {
-                                    console.warn(`[handleSessionDiscovered] Could not add creator to thread:`, addErr);
-                                }
-                            }
-
-                            const shouldPing = config.notifications.useAtHere;
-                            await thread.send({
-                                content: shouldPing ? '@here Session Connection Restored!' : undefined,
-                                embeds: [{
-                                    title: 'Session Connection Restored',
-                                    description: `The runner agent has reconnected to this session.\nYou can continue using it.`,
-                                    color: 0x57F287 // Green
-                                }]
-                            });
-                            console.log(`[handleSessionDiscovered] Notified existing thread ${existingByShortId.threadId} of restoration`);
-                        }
-                    }
-                } catch (error) {
-                    console.error(`[handleSessionDiscovered] Failed to notify thread:`, error);
-                }
-            } else if (wasAlreadyActive) {
-                console.log(`[handleSessionDiscovered] Session ${existingByShortId.sessionId} was already active, skipping restoration notification`);
-            }
-
-            return;
-        }
-    }
-
-    console.log(`[handleSessionDiscovered] New session discovered: ${sessionId} (CWD: ${cwd || 'unknown'})`);
-    // Session discovered but not tracked - create new session tracking
-    console.log(`[handleSessionDiscovered] Discovered orphaned session ${sessionId} on runner ${runnerId}`);
-
-    // We don't know the creator ID or original CLI type since it's an orphan
-    // Default to the runner owner and 'generic' CLI
-    const ownerId = runner.ownerId;
-    if (!ownerId) return;
-
-    // Use a default folder if CWD is unknown
-    const folderPath = cwd || runner.defaultWorkspace || '.';
-
-    // Create session structure
-    const session: Session = {
-        sessionId: sessionId,
-        runnerId: runner.runnerId,
-        channelId: runner.privateChannelId || '',
-        threadId: '', // Will create below
-        createdAt: new Date().toISOString(),
-        status: 'active',
-        cliType: 'generic', // Best guess
-        plugin: 'tmux',  // Discovered sessions are tmux sessions
-        folderPath: folderPath,
-    };
-
+async function handleResult(data: any): Promise<void> {
+    console.log(`[Result] Session: ${data.sessionId}, Subtype: ${data.subtype}`);
+    
+    const session = storage.getSession(data.sessionId);
+    if (!session) return;
+    
+    // We try/catch fetching the thread in case it was deleted
+    let thread: any;
     try {
-        // Need to find the channel
-        let channelId = runner.privateChannelId;
-        if (!channelId) {
-            // Try to recover channel
-            // This requires an interaction or knowing the guild... 
-            // If we don't have the channel ID, we can't really restore it easily without more info
-            console.error(`[handleSessionDiscovered] Cannot restore session ${sessionId}: runner has no private channel`);
-            return;
-        }
-
-        const channel = await botState.client.channels.fetch(channelId);
-        if (!channel || !('threads' in channel)) {
-            console.error(`[handleSessionDiscovered] Cannot restore session ${sessionId}: invalid channel`);
-            return;
-        }
-
-        const textChannel = channel as any; // Cast to TextChannel
-
-        // Create a new thread for this restored session
-        const thread = await textChannel.threads.create({
-            name: `${session.cliType.toUpperCase()}-${Date.now()}`, // Use CLI type for consistent naming
-            type: 12, // PrivateThread
-            invitable: false,
-            reason: `Restored session ${sessionId}`
-        });
-
-        session.threadId = thread.id;
-        session.channelId = channel.id;
-
-        // Save session
-        storage.createSession(session);
-        botState.actionItems.set(session.sessionId, []);
-
-        // Add owner
-        await thread.members.add(ownerId);
-
-        console.log(`[handleSessionDiscovered] Restored session ${sessionId} to thread ${thread.id}`);
-
-        // Notify
-        const embed = new EmbedBuilder()
-            .setColor(0x00FF00)
-            .setTitle('Session Restored')
-            .setDescription(`Found existing session \`${sessionId}\` on runner. Reconnected!`)
-            .addFields(
-                { name: 'Working Directory', value: `\`${folderPath}\``, inline: true },
-                { name: 'Note', value: 'This session was recovered from the runner.', inline: false }
-            )
-            .setTimestamp();
-
-        await thread.send({ content: `<@${ownerId}>`, embeds: [embed] });
-
-    } catch (error) {
-        console.error(`[handleSessionDiscovered] Failed to restore session:`, error);
+        thread = await botState.client.channels.fetch(session.threadId);
+    } catch (e) {
+        console.log(`[Result] Could not fetch thread ${session.threadId}, maybe deleted?`);
+        return;
     }
 
-    // Auto-watch the session
-    // This ensures we start receiving output immediately
-    try {
-        console.log(`[handleSessionDiscovered] Attempting to auto-watch session ${sessionId} on runner ${runnerId}`);
-        const ws = botState.runnerConnections.get(runnerId);
-        if (ws) {
-            console.log(`[handleSessionDiscovered] Sending watch_terminal request for ${sessionId}`);
-            ws.send(JSON.stringify({
-                type: 'watch_terminal',
-                data: {
-                    sessionId: sessionId,
-                    runnerId: runnerId
-                }
-            }));
-        } else {
-            console.warn(`[handleSessionDiscovered] No WebSocket connection for runner ${runnerId}, cannot auto-watch`);
-        }
-    } catch (error) {
-        console.error(`[handleSessionDiscovered] Failed to auto-watch session:`, error);
+    if (!thread || !('send' in thread)) return;
+
+    // Format tables in result summary
+    const formattedResult = formatContentWithTables(data.result || 'No result summary provided.');
+
+    const embed = new EmbedBuilder()
+        .setTitle(data.subtype === 'error' ? 'Session Failed ❌' : 'Session Completed ✅')
+        .setDescription(formattedResult)
+        .addFields([
+            { name: 'Duration', value: `${(data.durationMs / 1000).toFixed(1)}s`, inline: true },
+            { name: 'API Duration', value: `${(data.durationApiMs / 1000).toFixed(1)}s`, inline: true },
+            { name: 'Turns', value: `${data.numTurns}`, inline: true }
+        ])
+        .setColor(data.subtype === 'error' || data.isError ? 0xFF0000 : 0x00FF00)
+        .setTimestamp(new Date(data.timestamp));
+
+    if (data.error) {
+        embed.addFields({ name: 'Error', value: data.error.slice(0, 1024), inline: false });
     }
+
+    await thread.send({ embeds: [embed] });
 }
-
-
 
 /**
  * Handle terminal list response
@@ -1707,8 +1626,138 @@ async function handleSpawnThread(ws: any, data: any): Promise<void> {
     }
 }
 
+// Track pending tool executions (toolId -> execution data)
+const pendingToolExecutions = new Map<string, {
+    sessionId: string;
+    toolName: string;
+    input: any;
+    timestamp: string;
+}>();
+
+/**
+ * Handle tool execution events (for auto-approved tools that bypass permission UI)
+ * Just tracks the execution - waits for result to show in Discord
+ */
+async function handleToolExecution(data: any): Promise<void> {
+    const { sessionId, toolName, toolId, input, timestamp } = data;
+    
+    // Store for when result arrives
+    pendingToolExecutions.set(toolId, {
+        sessionId,
+        toolName,
+        input,
+        timestamp
+    });
+    
+    // Auto-expire after 60 seconds
+    setTimeout(() => pendingToolExecutions.delete(toolId), 60000);
+}
+
+/**
+ * Handle tool result events - show success (green) or failure (red)
+ */
+async function handleToolResult(data: any): Promise<void> {
+    const { sessionId, toolUseId, content, isError, timestamp } = data;
+
+    // Get the original execution info
+    const execution = pendingToolExecutions.get(toolUseId);
+    pendingToolExecutions.delete(toolUseId);
+    
+    const toolName = execution?.toolName || 'Tool';
+    const input = execution?.input;
+
+    const session = storage.getSession(sessionId);
+    if (!session) {
+        console.log(`[ToolResult] No session found for ${sessionId}, skipping display`);
+        return;
+    }
+
+    try {
+        const thread = await botState.client.channels.fetch(session.threadId);
+        if (!thread || !('send' in thread)) {
+            return;
+        }
+
+        // Choose color and emoji based on success/failure
+        const color = isError ? 0xFF0000 : 0x00FF00;  // Red for error, Green for success
+        const statusEmoji = isError ? '🔴' : '🟢';
+        const statusText = isError ? 'Failed' : 'Success';
+
+        const embed = new EmbedBuilder()
+            .setColor(color)
+            .setTitle(`${statusEmoji} ${toolName}`)
+            .setDescription(`**${statusText}** - Auto-executed tool`)
+            .setTimestamp(new Date(timestamp));
+
+        // Show input (truncated)
+        if (input) {
+            const inputStr = typeof input === 'string' ? input : JSON.stringify(input, null, 2);
+            const inputDisplay = inputStr.length > 300 ? inputStr.slice(0, 300) + '...' : inputStr;
+            embed.addFields({ 
+                name: 'Input', 
+                value: `\`\`\`json\n${inputDisplay}\n\`\`\``, 
+                inline: false 
+            });
+        }
+
+        // Show output/error (truncated)
+        if (content) {
+            const contentDisplay = content.length > 300 ? content.slice(0, 300) + '...' : content;
+            embed.addFields({ 
+                name: isError ? 'Error' : 'Output', 
+                value: `\`\`\`\n${contentDisplay}\n\`\`\``, 
+                inline: false 
+            });
+        }
+
+        await thread.send({ embeds: [embed] });
+    } catch (error) {
+        console.error('[ToolResult] Error displaying tool result:', error);
+    }
+}
+
 // Export action items for external access
 export { botState };
+
+/**
+ * Handle sync projects response
+ */
+async function handleSyncProjectsResponse(data: any): Promise<void> {
+    const sessionSync = getSessionSyncService();
+    if (sessionSync) {
+        await sessionSync.handleProjectSyncResponse(data.runnerId, data.projects);
+    }
+}
+
+/**
+ * Handle sync sessions response
+ */
+async function handleSyncSessionsResponse(data: any): Promise<void> {
+    const sessionSync = getSessionSyncService();
+    if (sessionSync) {
+        await sessionSync.handleSyncSessionsResponse(data.runnerId, data.projectPath, data.sessions);
+    }
+}
+
+/**
+ * Handle sync session discovered push
+ */
+async function handleSyncSessionDiscovered(data: any): Promise<void> {
+    const sessionSync = getSessionSyncService();
+    if (sessionSync) {
+        await sessionSync.handleSessionDiscovered(data.runnerId, data.session);
+    }
+}
+
+/**
+ * Handle sync session updated push
+ */
+async function handleSyncSessionUpdated(data: any): Promise<void> {
+    const sessionSync = getSessionSyncService();
+    if (sessionSync) {
+        await sessionSync.handleSessionUpdated(data.runnerId, data);
+    }
+}
 
 
 

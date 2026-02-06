@@ -125,7 +125,7 @@ export function createToolUseEmbed(runner: RunnerInfo, toolName: string, toolInp
  * Discord doesn't render markdown tables, so we wrap them in code blocks
  * to preserve alignment.
  */
-function formatContentWithTables(content: string): string {
+export function formatContentWithTables(content: string): string {
     const lines = content.split('\n');
     const result: string[] = [];
     let inTable = false;

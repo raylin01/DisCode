@@ -209,6 +209,14 @@ class Storage {
     }
   }
 
+  updateRunner(runnerId: string, updates: Partial<RunnerInfo>): void {
+    const runner = this._data.runners[runnerId];
+    if (runner) {
+      Object.assign(runner, updates);
+      this.saveRunners();
+    }
+  }
+
   shareRunner(userId: string, runnerId: string, targetUserId: string): boolean {
     const runner = this.data.runners[runnerId];
 
@@ -244,6 +252,16 @@ class Storage {
     if (runner.authorizedUsers.includes(userId)) return true;
 
     return false;
+  }
+
+  getRunnerForUser(userId: string): RunnerInfo | undefined {
+      // Return the first runner owned by the user
+      // Or we can check user.runners list
+      const user = this._data.users[userId];
+      if (user && user.runners.length > 0) {
+          return this.getRunner(user.runners[0]) || undefined;
+      }
+      return undefined;
   }
 
   // Session operations

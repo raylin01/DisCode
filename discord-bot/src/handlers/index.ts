@@ -15,3 +15,6 @@ export { handleModalSubmit } from './modals.js';
 
 // Command handlers
 export * from './commands/index.js';
+
+// Runner Config
+export { handleRunnerConfig, handleConfigAction } from './config.js';

@@ -29,6 +29,7 @@ export interface BotConfig {
     // Discord credentials (env only)
     discordToken: string;
     discordClientId: string;
+    guildId?: string; // Optional: for faster dev command registration
 
     // WebSocket server
     wsPort: number;
@@ -96,6 +97,7 @@ export function loadConfig(): BotConfig {
     return {
         discordToken,
         discordClientId,
+        guildId: process.env.DISCODE_GUILD_ID,
 
         // WS port - env overrides file
         wsPort: parseInt(

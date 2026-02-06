@@ -23,6 +23,12 @@ export async function handlePermissionButton(interaction: any, userId: string, c
     const parts = customId.split('_');
     const action = parts[1]; // yes, always, no, scope, tell
     const requestId = parts.slice(2).join('_'); // Rejoin remaining parts
+    
+    // Defer immediately to prevent 3-second timeout, UNLESS it's a modal trigger
+    // Modals must be the first response to an interaction
+    if (action !== 'tell') {
+        await interaction.deferUpdate().catch(() => {});
+    }
 
     console.log(`[Permission] Button clicked: action=${action}, requestId=${requestId}`);
 
@@ -58,10 +64,15 @@ export async function handlePermissionButton(interaction: any, userId: string, c
 async function handlePermApprove(interaction: any, userId: string, requestId: string): Promise<void> {
     const state = permissionStateStore.get(requestId);
     if (!state) {
-        await interaction.reply({
+        await interaction.editReply({
             embeds: [createErrorEmbed('Expired', 'This permission request has expired.')],
-            flags: 64
-        });
+            components: []
+        }).catch((e: any) => console.error('[DEBUG] Failed to editReply:', e.message));
+        return;
+    }
+
+    if (state.status === 'completed') {
+        await interaction.editReply({ components: [] }).catch(() => {});
         return;
     }
 
@@ -98,13 +109,13 @@ async function handlePermApprove(interaction: any, userId: string, requestId: st
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(resultButton);
     const embed = createApprovalDecisionEmbed(true, request.toolName, interaction.user.username, undefined, request.toolInput);
 
-    await interaction.update({
+    await interaction.editReply({
         embeds: [embed],
         components: [row]
     });
 
-    // Clean up
-    permissionStateStore.delete(requestId);
+    // Mark as completed
+    permissionStateStore.complete(requestId);
 }
 
 /**
@@ -113,11 +124,16 @@ async function handlePermApprove(interaction: any, userId: string, requestId: st
 async function handlePermAlways(interaction: any, userId: string, requestId: string): Promise<void> {
     const state = permissionStateStore.get(requestId);
     if (!state) {
-        await interaction.reply({
+        await interaction.editReply({
             embeds: [createErrorEmbed('Expired', 'This permission request has expired.')],
-            flags: 64
-        });
+            components: []
+        }).catch((e: any) => console.error('[DEBUG] Failed to editReply:', e.message));
         return;
+    }
+
+    if (state.status === 'completed') {
+         await interaction.editReply({ components: [] }).catch(() => {});
+         return;
     }
 
     const { request, uiState } = state;
@@ -125,10 +141,10 @@ async function handlePermAlways(interaction: any, userId: string, requestId: str
 
     const runner = storage.getRunner(request.runnerId);
     if (!runner || !storage.canUserAccessRunner(userId, runner.runnerId)) {
-        await interaction.reply({
+        await interaction.editReply({
             embeds: [createErrorEmbed('Unauthorized', `You are not authorized to approve this request.\nRunner: ${runner ? runner.runnerId : 'Unknown'}\nUser: ${userId}`)],
-            flags: 64
-        });
+            components: []
+        }).catch((e: any) => console.error('[DEBUG] Failed to editReply:', e.message));
         return;
     }
 
@@ -160,13 +176,13 @@ async function handlePermAlways(interaction: any, userId: string, requestId: str
 
     embed.setDescription(`${embed.data.description || ''}\n\n**Scope:** ${scopeLabel}`);
 
-    await interaction.update({
+    await interaction.editReply({
         embeds: [embed],
         components: [row]
     });
 
-    // Clean up
-    permissionStateStore.delete(requestId);
+    // Mark as completed
+    permissionStateStore.complete(requestId);
 }
 
 /**
@@ -175,20 +191,25 @@ async function handlePermAlways(interaction: any, userId: string, requestId: str
 async function handlePermDeny(interaction: any, userId: string, requestId: string): Promise<void> {
     const state = permissionStateStore.get(requestId);
     if (!state) {
-        await interaction.reply({
+        await interaction.editReply({
             embeds: [createErrorEmbed('Expired', 'This permission request has expired.')],
-            flags: 64
-        });
+            components: []
+        }).catch((e: any) => console.error('[DEBUG] Failed to editReply:', e.message));
         return;
+    }
+
+    if (state.status === 'completed') {
+         await interaction.editReply({ components: [] }).catch(() => {});
+         return;
     }
 
     const { request } = state;
     const runner = storage.getRunner(request.runnerId);
     if (!runner || !storage.canUserAccessRunner(userId, runner.runnerId)) {
-        await interaction.reply({
+        await interaction.editReply({
             embeds: [createErrorEmbed('Unauthorized', `You are not authorized to respond to this request.\nRunner: ${runner ? runner.runnerId : 'Unknown'}\nUser: ${userId}`)],
-            flags: 64
-        });
+            components: []
+        }).catch((e: any) => console.error('[DEBUG] Failed to editReply:', e.message));
         return;
     }
 
@@ -215,13 +236,13 @@ async function handlePermDeny(interaction: any, userId: string, requestId: strin
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(resultButton);
     const embed = createApprovalDecisionEmbed(false, request.toolName, interaction.user.username, undefined, request.toolInput);
 
-    await interaction.update({
+    await interaction.editReply({
         embeds: [embed],
         components: [row]
     });
 
-    // Clean up
-    permissionStateStore.delete(requestId);
+    // Mark as completed
+    permissionStateStore.complete(requestId);
 }
 
 /**
@@ -231,10 +252,10 @@ async function handlePermDeny(interaction: any, userId: string, requestId: strin
 async function handlePermScope(interaction: any, userId: string, requestId: string): Promise<void> {
     const state = permissionStateStore.get(requestId);
     if (!state) {
-        await interaction.reply({
+        await interaction.editReply({
             embeds: [createErrorEmbed('Expired', 'This permission request has expired.')],
-            flags: 64
-        });
+            components: []
+        }).catch((e: any) => console.error('[DEBUG] Failed to editReply:', e.message));
         return;
     }
 
@@ -267,7 +288,7 @@ async function handlePermScope(interaction: any, userId: string, requestId: stri
         .setColor('Yellow')
         .setTimestamp(new Date(request.timestamp));
 
-    await interaction.update({
+    await interaction.editReply({
         embeds: [embed],
         components
     });
@@ -311,6 +332,9 @@ async function handlePermTell(interaction: any, userId: string, requestId: strin
  * Handle "Tell Claude" modal submit
  */
 export async function handleTellClaudeModal(interaction: any): Promise<void> {
+    // Defer immediately to prevent timeout
+    await interaction.deferUpdate().catch(() => {});
+    
     const customId = interaction.customId;
     const parts = customId.split('_');
     const requestId = parts[3]; // perm_tell_modal_<requestId>
@@ -319,20 +343,25 @@ export async function handleTellClaudeModal(interaction: any): Promise<void> {
 
     const state = permissionStateStore.get(requestId);
     if (!state) {
-        await interaction.reply({
+        await interaction.editReply({
             embeds: [createErrorEmbed('Expired', 'This permission request has expired.')],
-            flags: 64 // Ephemeral
-        });
+            components: []
+        }).catch((e: any) => console.error('[DEBUG] Failed to editReply:', e.message));
+        return;
+    }
+
+    if (state.status === 'completed') {
+        await interaction.editReply({ components: [] }).catch(() => {});
         return;
     }
 
     const { request } = state;
     const runner = storage.getRunner(request.runnerId);
     if (!runner || !storage.canUserAccessRunner(interaction.user.id, runner.runnerId)) {
-        await interaction.reply({
+        await interaction.editReply({
             embeds: [createErrorEmbed('Unauthorized', `You are not authorized to respond to this request.\nRunner: ${runner ? runner.runnerId : 'Unknown'}\nUser: ${interaction.user.id}`)],
-            flags: 64
-        });
+            components: []
+        }).catch((e: any) => console.error('[DEBUG] Failed to editReply:', e.message));
         return;
     }
 
@@ -376,13 +405,13 @@ export async function handleTellClaudeModal(interaction: any): Promise<void> {
         });
     }
 
-    await interaction.reply({
+    await interaction.editReply({
         embeds: [embed],
         components: [row]
     });
 
-    // Clean up
-    permissionStateStore.delete(requestId);
+    // Mark as completed
+    permissionStateStore.complete(requestId);
 }
 
 /**

@@ -17,6 +17,7 @@ import { createHttpServer } from './http-server.js';
 import { handleWebSocketMessage } from './handlers/index.js';
 import { wirePluginEvents } from './plugin-events.js';
 import { AssistantManager } from './assistant-manager.js';
+import { getSyncService } from './services/sync-service.js';
 import type { SessionMetadata, PendingApproval, PendingMessage, CliPaths } from './types.js';
 
 // Load configuration
@@ -121,6 +122,12 @@ async function startup(): Promise<void> {
       });
       console.log(`  ✓ AssistantManager initialized (enabled: ${assistantManager.isEnabled()})`);
     }
+    // Initialize SyncService
+    const syncService = getSyncService(wsManager);
+    if (syncService) {
+        console.log('  ✓ SyncService initialized');
+        // Initial projects will be synced on Bot request or heartbeat
+    }
   } catch (error) {
     console.error(`  ✗ PluginManager initialization failed:`, error);
   }
@@ -164,6 +171,12 @@ process.on('SIGINT', async () => {
     await pluginManager.shutdown();
   }
 
+  const syncService = getSyncService();
+  if (syncService) {
+      console.log('Stopping sync service...');
+      syncService.shutdown();
+  }
+
   server.close(() => {
     console.log('HTTP server closed');
     process.exit(0);
@@ -171,9 +184,10 @@ process.on('SIGINT', async () => {
 });
 
 // Start assistant when WebSocket connects
-wsManager.on('connected', async () => {
-  if (assistantManager && assistantManager.isEnabled() && !assistantManager.isRunning()) {
-    console.log('[AssistantManager] Starting assistant session on connect...');
-    await assistantManager.start();
-  }
-});
+// Start assistant when WebSocket connects
+// wsManager.on('connected', async () => {
+//   if (assistantManager && assistantManager.isEnabled() && !assistantManager.isRunning()) {
+//     console.log('[AssistantManager] Starting assistant session on connect...');
+//     await assistantManager.start();
+//   }
+// });

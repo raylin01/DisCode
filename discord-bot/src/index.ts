@@ -9,6 +9,8 @@ import { REST, Routes, SlashCommandBuilder, Events } from 'discord.js';
 import { storage } from './storage.js';
 import { getConfig } from './config.js';
 import * as botState from './state.js';
+import { initCategoryManager, getCategoryManager } from './services/category-manager.js';
+import { initSessionSyncService, getSessionSyncService } from './services/session-sync.js';
 import {
   createWebSocketServer,
   handleButtonInteraction,
@@ -30,6 +32,10 @@ import {
   handleUnwatch,
   handleInterrupt,
   handleAssistantCommand,
+  handleSyncProjects,
+  handleResumeSession,
+  handleRegisterProject,
+  handleDeleteProject,
 } from './handlers/index.js';
 
 // Load configuration
@@ -138,6 +144,22 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
         await handleAssistantCommand(interaction, userId);
         break;
 
+      case 'sync-projects':
+        await handleSyncProjects(interaction, userId);
+        break;
+
+      case 'register-project':
+        await handleRegisterProject(interaction, userId);
+        break;
+
+      case 'resume':
+        await handleResumeSession(interaction, userId);
+        break;
+
+      case 'delete-project':
+        await handleDeleteProject(interaction, userId);
+        break;
+
       default:
         await interaction.reply({
           content: 'Unknown command',
@@ -146,10 +168,27 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
     }
   } catch (error) {
     console.error(`Error handling command ${commandName}:`, error);
-    await interaction.reply({
-      content: `❌ Error executing command: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      flags: 64
-    });
+    
+    // Check if we can still reply
+    if (interaction.replied || interaction.deferred) {
+        try {
+            await interaction.followUp({
+                content: `❌ Error executing command: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                flags: 64
+            });
+        } catch (followUpError) {
+             console.error('Failed to follow up with error:', followUpError);
+        }
+    } else {
+        try {
+            await interaction.reply({
+                content: `❌ Error executing command: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                flags: 64
+            });
+        } catch (replyError) {
+             console.error('Failed to reply with error:', replyError);
+        }
+    }
   }
 });
 
@@ -164,7 +203,104 @@ botState.client.on(Events.MessageCreate, async (message) => {
     const allSessions = Object.values(storage.data.sessions);
     const session = allSessions.find(s => s.threadId === message.channel.id && s.status === 'active');
 
-    if (!session) return;
+    if (!session) {
+      // Check if this is a synced session (so we can auto-resume it)
+      const sessionSync = getSessionSyncService();
+      if (sessionSync) {
+        const syncEntry = sessionSync.getSessionByThreadId(message.channel.id);
+        if (syncEntry) {
+          // It's a synced session. Let's auto-resume it!
+          
+          // 1. Verify access
+          const runner = storage.getRunner(syncEntry.runnerId);
+          if (!runner || !storage.canUserAccessRunner(message.author.id, syncEntry.runnerId)) {
+             return; // Silent fail if no access
+          }
+
+          if (runner.status !== 'online') {
+              try {
+                await message.reply({ content: '❌ **Runner Offline**: Cannot resume this session because the runner is offline.', flags: 64 as any });
+              } catch (e) { /* ignore */ }
+              return;
+          }
+
+          const ws = botState.runnerConnections.get(runner.runnerId);
+          if (!ws) return;
+
+          // 2. Add reaction to indicate "Attaching"
+          try { await message.react('🔄'); } catch (e) { /* ignore */ }
+
+          // 3. Send START session command (Resume)
+          // We need to construct a valid Session object for storage if it doesn't exist
+          let sessionObj = storage.getSession(syncEntry.session.claudeSessionId);
+          if (!sessionObj) {
+               sessionObj = {
+                  sessionId: syncEntry.session.claudeSessionId,
+                  runnerId: runner.runnerId,
+                  channelId: syncEntry.session.threadId || message.channel.id, // thread is channel
+                  threadId: syncEntry.session.threadId || message.channel.id,
+                  createdAt: new Date().toISOString(),
+                  status: 'active',
+                  cliType: 'claude',
+                  plugin: 'claude-sdk',
+                  folderPath: syncEntry.projectPath, // Important for context
+                  creatorId: message.author.id,
+                  interactionToken: '' // No token as it's auto-resume
+              };
+              storage.createSession(sessionObj);
+          } else {
+              sessionObj.status = 'active';
+              storage.updateSession(sessionObj.sessionId, sessionObj);
+          }
+
+          // Mark as owned immediately to stop watcher syncing (bidirectional switch)
+          sessionSync.markSessionAsOwned(syncEntry.session.claudeSessionId);
+
+          // Update active sessions state
+          botState.sessionStatuses.set(syncEntry.session.claudeSessionId, 'working');
+
+          // Send start/resume command
+          ws.send(JSON.stringify({
+              type: 'session_start',
+              data: {
+                  sessionId: syncEntry.session.claudeSessionId,
+                  runnerId: runner.runnerId,
+                  cliType: 'claude',
+                  plugin: 'claude-sdk',
+                  folderPath: syncEntry.projectPath,
+                  resume: true 
+              }
+          }));
+
+          // 4. Forward the user message immediately (queued by runner-agent)
+          const attachments = message.attachments.map(att => ({
+              name: att.name,
+              url: att.url,
+              contentType: att.contentType || 'application/octet-stream',
+              size: att.size
+          }));
+
+          ws.send(JSON.stringify({
+              type: 'user_message',
+              data: {
+                  sessionId: syncEntry.session.claudeSessionId,
+                  userId: message.author.id,
+                  username: message.author.username,
+                  content: message.content,
+                  attachments: attachments.length > 0 ? attachments : undefined,
+                  timestamp: new Date().toISOString()
+              }
+          }));
+
+          // Clear streaming state
+          botState.streamingMessages.delete(syncEntry.session.claudeSessionId);
+
+          // Done! Runner plugin will handle queueing the message until ready.
+          return;
+        }
+      }
+      return;
+    }
 
     // Check if user has access
     const runner = storage.getRunner(session.runnerId);
@@ -433,7 +569,58 @@ async function registerCommands(): Promise<void> {
 
     new SlashCommandBuilder()
       .setName('respawn-session')
-      .setDescription('Respawn a dead session in this thread with the same settings')
+      .setDescription('Respawn a dead session in this thread with the same settings'),
+
+    new SlashCommandBuilder()
+      .setName('sync-projects')
+      .setDescription('Sync projects from ~/.claude/projects/ to Discord')
+      .addStringOption(option =>
+        option.setName('runner')
+          .setDescription('Runner ID to sync (optional)')
+          .setRequired(false)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('register-project')
+      .setDescription('Manually register a project')
+      .addStringOption(option =>
+        option.setName('path')
+          .setDescription('Full path to project folder')
+          .setRequired(true)
+      )
+      .addStringOption(option =>
+        option.setName('runner')
+          .setDescription('Runner ID (optional)')
+          .setRequired(false)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('resume')
+      .setDescription('Resume a synced session or restart a previous session')
+      .addStringOption(option =>
+        option.setName('session')
+          .setDescription('Session ID to resume (optional if in thread)')
+          .setRequired(false)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('delete-project')
+      .setDescription('Delete a project and its channel')
+      .addStringOption(option =>
+        option.setName('path')
+          .setDescription('Project path (optional if in project channel)')
+          .setRequired(false)
+      )
+      .addStringOption(option =>
+        option.setName('runner')
+          .setDescription('Runner ID (optional)')
+          .setRequired(false)
+      )
+      .addBooleanOption(option =>
+        option.setName('all')
+          .setDescription('Delete ALL projects for this runner')
+          .setRequired(false)
+      ),
   ];
 
   const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
@@ -441,10 +628,19 @@ async function registerCommands(): Promise<void> {
   try {
 
 
-    await rest.put(
-      Routes.applicationCommands(DISCORD_CLIENT_ID!),
-      { body: commands }
-    );
+    if (config.guildId) {
+      console.log(`Registering guild commands for ${config.guildId}...`);
+      await rest.put(
+        Routes.applicationGuildCommands(DISCORD_CLIENT_ID!, config.guildId),
+        { body: commands }
+      );
+    } else {
+      console.log('Registering global commands...');
+      await rest.put(
+        Routes.applicationCommands(DISCORD_CLIENT_ID!),
+        { body: commands }
+      );
+    }
 
 
   } catch (error) {
@@ -461,6 +657,19 @@ async function main(): Promise<void> {
   if (cleanedCount > 0) {
 
   }
+
+  // Initialize services
+  const categoryManager = initCategoryManager(botState.client);
+  await categoryManager.initialize();
+  const sessionSync = initSessionSyncService(botState.client);
+
+  // Wire up stats updates
+  sessionSync.on('session_new', ({ runnerId }) => {
+    getCategoryManager()?.updateRunnerStats(runnerId);
+  });
+  sessionSync.on('session_updated', ({ runnerId }) => {
+    getCategoryManager()?.updateRunnerStats(runnerId);
+  });
 
   await registerCommands();
   await botState.client.login(DISCORD_TOKEN!);

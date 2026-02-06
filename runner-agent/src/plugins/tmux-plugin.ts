@@ -24,12 +24,14 @@ import {
     PluginSession,
     SessionConfig,
     SessionStatus,
-    ApprovalOption,
     OutputEvent,
     ApprovalEvent,
     StatusEvent,
     MetadataEvent,
     HookEvent,
+    ToolExecutionEvent,
+    ToolResultEvent,
+    ApprovalOption
 } from './base.js';
 import { getPluginManager } from './plugin-manager.js';
 import { getParser, type CliParser } from './parsers/index.js';

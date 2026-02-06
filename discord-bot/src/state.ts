@@ -64,6 +64,7 @@ export interface SessionCreationState {
     runnerId?: string;
     cliType?: 'claude' | 'gemini' | 'terminal';
     plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk';
+    folder?: string; // Pre-selected folder (for "New Session" button)
     folderPath?: string;
     options?: {
         approvalMode?: 'manual' | 'auto';

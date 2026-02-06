@@ -26,6 +26,7 @@ export interface RequestState {
   request: PermissionRequest;
   uiState: PermissionUIState;
   timestamp: number;
+  status: 'pending' | 'completed';
 }
 
 /**
@@ -35,6 +36,7 @@ export interface RequestState {
 export class PermissionStateStore {
   private states: Map<string, RequestState> = new Map();
   private readonly TTL = 1000 * 60 * 15; // 15 minutes
+  private readonly COMPLETION_TTL = 1000 * 30; // 30 seconds to keep completed requests
 
   /**
    * Save a permission request with UI state
@@ -45,13 +47,32 @@ export class PermissionStateStore {
     this.states.set(request.requestId, {
       request,
       uiState,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      status: 'pending'
     });
 
     // Schedule cleanup for this request
     setTimeout(() => {
-      this.delete(request.requestId);
+      // Only delete if still pending or very old
+      const state = this.states.get(request.requestId);
+      if (state && state.status === 'pending') {
+         this.delete(request.requestId);
+      }
     }, this.TTL);
+  }
+
+  /**
+   * Mark a request as completed and schedule cleanup
+   */
+  complete(requestId: string): void {
+      const state = this.states.get(requestId);
+      if (state) {
+          state.status = 'completed';
+          // Keep it for a bit to handle race conditions/duplicate clicks
+          setTimeout(() => {
+              this.delete(requestId);
+          }, this.COMPLETION_TTL);
+      }
   }
 
   /**

@@ -19,6 +19,9 @@ import {
     ErrorEvent,
     MetadataEvent,
     HookEvent,
+    ToolExecutionEvent,
+    ToolResultEvent,
+    ResultEvent,
 } from './base.js';
 import { TmuxPlugin } from './tmux-plugin.js';
 import { PrintPlugin } from './print-plugin.js';
@@ -271,9 +274,20 @@ export class PluginManager extends EventEmitter {
         plugin.on('session_discovered', (data) => {
             this.emit('session_discovered', data);
         });
+
+        plugin.on('tool_execution', (data: ToolExecutionEvent) => {
+            this.emit('tool_execution', data);
+        });
+
+        plugin.on('tool_result', (data: ToolResultEvent) => {
+            this.emit('tool_result', data);
+        });
+
+        plugin.on('result', (data: ResultEvent) => {
+            this.emit('result', data);
+        });
     }
 
-    // TypeScript event declarations
     on(event: 'output', listener: (data: OutputEvent) => void): this;
     on(event: 'approval', listener: (data: ApprovalEvent) => void): this;
     on(event: 'status', listener: (data: StatusEvent) => void): this;
@@ -281,6 +295,9 @@ export class PluginManager extends EventEmitter {
     on(event: 'metadata', listener: (data: MetadataEvent) => void): this;
     on(event: 'session_discovered', listener: (data: any) => void): this;
     on(event: 'hook_event', listener: (data: HookEvent) => void): this;
+    on(event: 'tool_execution', listener: (data: ToolExecutionEvent) => void): this;
+    on(event: 'tool_result', listener: (data: ToolResultEvent) => void): this;
+    on(event: 'result', listener: (data: ResultEvent) => void): this;
     on(event: string, listener: (...args: any[]) => void): this {
         return super.on(event, listener);
     }

@@ -82,7 +82,7 @@ export interface ApprovalEvent {
     /** Raw tool input (if available) */
     toolInput?: Record<string, any>;
     /** Available options (usually Yes/No/Always) */
-    options: string[];
+    options: string[] | ApprovalOption[];
     /** When the approval was detected */
     detectedAt: Date;
     /** Whether this is a multi-select question (for AskUserQuestion) */
@@ -98,6 +98,20 @@ export interface ApprovalEvent {
 }
 
 // ApprovalOption interface removed as we now use simple strings
+export interface ApprovalOption {
+    label: string;
+    number: string;
+    value?: string;
+}
+
+export type PermissionScope = 'session' | 'directory' | 'global';
+
+export interface Suggestion {
+    type: 'allow' | 'deny' | 'allow_always' | 'deny_always' | 'setMode';
+    scope?: PermissionScope;
+    description: string;
+    destination?: PermissionScope; // For setMode
+}
 
 export interface StatusEvent {
     sessionId: string;
@@ -142,6 +156,34 @@ export interface SessionDiscoveredEvent {
     exists: boolean; // true if it's an existing session we found
 }
 
+export interface ToolExecutionEvent {
+    sessionId: string;
+    toolName: string;
+    toolId: string;
+    input: Record<string, any>;
+    timestamp: Date;
+}
+
+export interface ToolResultEvent {
+    sessionId: string;
+    toolUseId: string;
+    content: string;
+    isError: boolean;
+    timestamp: Date;
+}
+
+export interface ResultEvent {
+    sessionId: string;
+    result: string;
+    subtype: 'success' | 'error';
+    durationMs: number;
+    durationApiMs: number;
+    numTurns: number;
+    isError: boolean;
+    error?: string;
+    timestamp: Date;
+}
+
 // ============================================================================
 // Plugin Interface
 // ============================================================================
@@ -182,6 +224,9 @@ export interface CliPlugin extends EventEmitter {
     on(event: 'error', listener: (data: ErrorEvent) => void): this;
     on(event: 'metadata', listener: (data: MetadataEvent) => void): this;
     on(event: 'session_discovered', listener: (data: SessionDiscoveredEvent) => void): this;
+    on(event: 'tool_execution', listener: (data: ToolExecutionEvent) => void): this;
+    on(event: 'tool_result', listener: (data: ToolResultEvent) => void): this;
+    on(event: 'result', listener: (data: ResultEvent) => void): this;
 
     emit(event: 'output', data: OutputEvent): boolean;
     emit(event: 'approval', data: ApprovalEvent): boolean;
@@ -189,6 +234,9 @@ export interface CliPlugin extends EventEmitter {
     emit(event: 'error', data: ErrorEvent): boolean;
     emit(event: 'metadata', data: MetadataEvent): boolean;
     emit(event: 'session_discovered', data: SessionDiscoveredEvent): boolean;
+    emit(event: 'tool_execution', data: ToolExecutionEvent): boolean;
+    emit(event: 'tool_result', data: ToolResultEvent): boolean;
+    emit(event: 'result', data: ResultEvent): boolean;
 }
 
 // ============================================================================

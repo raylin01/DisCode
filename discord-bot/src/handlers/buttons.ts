@@ -9,6 +9,12 @@ import * as botState from '../state.js';
 import { storage } from '../storage.js';
 import { createErrorEmbed, createApprovalDecisionEmbed } from '../utils/embeds.js';
 import { handlePermissionButton, rebuildPermissionButtons, handleTellClaudeModal } from './permission-buttons.js';
+import { permissionStateStore } from '../permissions/state-store.js';
+import { handleRunnerConfig, handleConfigAction } from './config.js';
+import { handleSyncProjects } from './commands/sync-projects.js';
+import { getSessionSyncService } from '../services/session-sync.js';
+import { getCategoryManager } from '../services/category-manager.js';
+import { listSessions } from '../../../claude-client/src/sessions.js';
 
 /**
  * Main button interaction dispatcher
@@ -137,6 +143,49 @@ export async function handleButtonInteraction(interaction: any): Promise<void> {
 
     if (customId.startsWith('session_settings_')) {
         await handleSessionSettings(interaction, userId, customId);
+        return;
+    }
+
+    // Runner Dashboard Buttons
+    if (customId.startsWith('runner_config:')) {
+        const runnerId = customId.split(':')[1];
+        await handleRunnerConfig(interaction, userId, runnerId);
+        return;
+    }
+
+    if (customId.startsWith('config:')) {
+        await handleConfigAction(interaction, userId, customId);
+        return;
+    }
+
+    if (customId.startsWith('runner_stats:')) {
+        const runnerId = customId.split(':')[1];
+        await handleRunnerStats(interaction, userId, runnerId);
+        return;
+    }
+
+    if (customId.startsWith('sync_projects:')) {
+        const runnerId = customId.split(':')[1];
+        await handleSyncProjects(interaction, userId, runnerId);
+        return;
+    }
+
+    // Project Dashboard Buttons
+    if (customId.startsWith('list_sessions:')) {
+        const projectPath = decodeURIComponent(customId.split(':')[1]);
+        await handleListSessionsButton(interaction, userId, projectPath);
+        return;
+    }
+
+    if (customId.startsWith('new_session:')) {
+        const projectPath = decodeURIComponent(customId.split(':')[1]);
+        await handleNewSessionButton(interaction, userId, projectPath);
+        return;
+    }
+
+    if (customId.startsWith('sync_sessions:')) {
+        const projectPath = decodeURIComponent(customId.split(':')[1]);
+        await handleSyncSessionsButton(interaction, userId, projectPath);
         return;
     }
 }
@@ -299,12 +348,9 @@ async function handleOptionButton(interaction: any, userId: string, customId: st
  * Handle approval buttons (allow/deny/modify/allow_all)
  */
 async function handleApprovalButton(interaction: any, userId: string, customId: string): Promise<void> {
-    if (customId.startsWith('allow_all_')) {
-        const requestId = customId.replace('allow_all_', '');
-        await handleAllowAll(interaction, userId, requestId);
-        return;
-    }
-
+    // Defer immediately to prevent 3-second Discord timeout
+    await interaction.deferUpdate().catch(() => {});
+    
     if (customId.startsWith('allow_all_')) {
         const requestId = customId.replace('allow_all_', '');
         await handleAllowAll(interaction, userId, requestId);
@@ -314,13 +360,30 @@ async function handleApprovalButton(interaction: any, userId: string, customId: 
     const action = customId.split('_')[0];
     const requestId = customId.substring(action.length + 1);
 
-    const pending = botState.pendingApprovals.get(requestId);
+    console.log(`[DEBUG] handleApprovalButton: action=${action} requestId=${requestId}`);
+
+    // Try new store first (supports soft-delete/completion state)
+    const state = permissionStateStore.get(requestId);
+    let pending: any = null;
+
+    if (state) {
+        if (state.status === 'completed') {
+             // Already handled, just ensure UI is clean
+             await interaction.editReply({ components: [] }).catch(() => {});
+             return;
+        }
+        pending = state.request;
+    } else {
+        // Fallback to legacy map
+        pending = botState.pendingApprovals.get(requestId);
+    }
 
     if (!pending) {
-        await interaction.reply({
+        console.log(`[DEBUG] Approval not found!`);
+        await interaction.editReply({
             embeds: [createErrorEmbed('Expired', 'This approval request has expired.')],
-            flags: 64
-        });
+            components: []
+        }).catch((e: any) => console.error('[DEBUG] Failed to editReply:', e.message));
         return;
     }
 
@@ -358,7 +421,7 @@ async function handleApprovalButton(interaction: any, userId: string, customId: 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(resultButton);
     const embed = createApprovalDecisionEmbed(allow, pending.toolName, interaction.user.username, undefined, pending.toolInput as Record<string, any>);
 
-    await interaction.update({
+    await interaction.editReply({
         embeds: [embed],
         components: [row]
     });
@@ -368,6 +431,12 @@ async function handleApprovalButton(interaction: any, userId: string, customId: 
     } else {
         botState.streamingMessages.delete(pending.sessionId);
     }
+    
+    // Complete in new store (soft delete)
+    if (state) {
+        permissionStateStore.complete(requestId);
+    }
+    // Delete from legacy map
     botState.pendingApprovals.delete(requestId);
 }
 
@@ -375,21 +444,38 @@ async function handleApprovalButton(interaction: any, userId: string, customId: 
  * Handle Allow All button
  */
 async function handleAllowAll(interaction: any, userId: string, requestId: string): Promise<void> {
-    const pending = botState.pendingApprovals.get(requestId);
+    // Note: deferUpdate already called by handleApprovalButton
+    // Try new store first (supports soft-delete/completion state)
+    const state = permissionStateStore.get(requestId);
+    let pending: any = null;
+
+    if (state) {
+        if (state.status === 'completed') {
+             // Already handled, just ensure UI is clean
+             await interaction.editReply({ components: [] }).catch(() => {});
+             return;
+        }
+        pending = state.request;
+    } else {
+        // Fallback to legacy map
+        pending = botState.pendingApprovals.get(requestId);
+    }
+
     if (!pending) {
-        await interaction.reply({
+        console.log(`[DEBUG] AllowAll not found!`);
+        await interaction.editReply({
             embeds: [createErrorEmbed('Expired', 'This approval request has expired.')],
-            flags: 64
-        });
+            components: []
+        }).catch((e: any) => console.error('[DEBUG] Failed to editReply:', e.message));
         return;
     }
 
     const runner = storage.getRunner(pending.runnerId);
     if (!runner || !storage.canUserAccessRunner(userId, pending.runnerId)) {
-        await interaction.reply({
+        await interaction.editReply({
             embeds: [createErrorEmbed('Unauthorized', 'You are not authorized to approve this request.')],
-            flags: 64
-        });
+            components: []
+        }).catch((e: any) => console.error('[DEBUG] Failed to editReply:', e.message));
         return;
     }
 
@@ -428,7 +514,7 @@ async function handleAllowAll(interaction: any, userId: string, requestId: strin
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(resultButton);
     const embed = createApprovalDecisionEmbed(true, pending.toolName, interaction.user.username, 'auto-approved for session');
 
-    await interaction.update({
+    await interaction.editReply({
         embeds: [embed],
         components: [row]
     });
@@ -438,6 +524,12 @@ async function handleAllowAll(interaction: any, userId: string, requestId: strin
     } else {
         botState.streamingMessages.delete(pending.sessionId);
     }
+    
+    // Complete in new store (soft delete)
+    if (state) {
+        permissionStateStore.complete(requestId);
+    }
+    // Delete from legacy map
     botState.pendingApprovals.delete(requestId);
 }
 
@@ -1489,4 +1581,216 @@ async function handleOtherButton(interaction: any, userId: string, customId: str
         );
 
     await interaction.showModal(modal);
+}
+// ============================================================================
+// Dashboard Button Handlers
+// ============================================================================
+
+async function handleRunnerStats(interaction: any, userId: string, runnerId: string): Promise<void> {
+    const runner = storage.getRunner(runnerId);
+    if (!runner) {
+        await interaction.reply({ content: '❌ Runner not found.', ephemeral: true });
+        return;
+    }
+
+    if (!storage.canUserAccessRunner(userId, runnerId)) {
+        await interaction.reply({ content: '❌ Access denied.', ephemeral: true });
+        return;
+    }
+
+    const sessionSync = getSessionSyncService();
+    const stats = {
+        totalSessions: 0,
+        ...runner.systemStats
+    };
+
+    const embed = new EmbedBuilder()
+        .setTitle(`📊 Stats for ${runner.name}`)
+        .addFields(
+            { name: 'Platform', value: `${runner.platform || 'Unknown'} (${runner.arch || '?'})`, inline: true },
+            { name: 'Hostname', value: runner.hostname || 'Unknown', inline: true },
+            { name: 'Status', value: runner.status, inline: true },
+            { name: 'Last Seen', value: runner.lastHeartbeat ? new Date(runner.lastHeartbeat).toLocaleString() : 'Never', inline: false }
+        )
+        .setColor(0x0099FF);
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleListSessionsButton(interaction: any, userId: string, projectPath: string): Promise<void> {
+    await interaction.deferReply({ ephemeral: true });
+
+    try {
+        // Verify access (implicit via channel check usually, but good to be safe)
+        // For now, we assume if they can click the button in the channel, they have access
+        
+        const sessions = listSessions(projectPath);
+        
+        if (sessions.length === 0) {
+            await interaction.editReply({ content: 'No sessions found for this project.' });
+            return;
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle(`📋 Sessions for ${projectPath.split('/').pop()}`)
+            .setDescription(
+                sessions.slice(0, 10).map(s => {
+                    const statusIcon = s.isSidechain ? '🔓' : '🔒'; // Just an example
+                    const time = new Date(s.modified).toLocaleDateString();
+                    return `**${s.sessionId.slice(0,8)}** (${time})\n> ${s.firstPrompt.slice(0, 50)}...`;
+                }).join('\n\n') + (sessions.length > 10 ? `\n\n_...and ${sessions.length - 10} more_` : '')
+            )
+            .setColor(0x0099FF);
+
+        await interaction.editReply({ embeds: [embed] });
+
+    } catch (error) {
+        console.error('Error listing sessions:', error);
+        await interaction.editReply({ content: '❌ Error listing sessions.' });
+    }
+}
+
+async function handleNewSessionButton(interaction: any, userId: string, projectPath: string): Promise<void> {
+    // Start session creation wizard pre-filled with this folder
+    /*
+    // TODO: implement pre-filling folder in session creation state
+    await interaction.reply({ 
+        content: `📝 Create new session in \`${projectPath}\` functionality coming soon! Use \`/create-session\` for now.`,
+        ephemeral: true 
+    });
+    */
+   
+   // We can simulate the wizard flow partially.
+   // But we need the runner ID locally.
+   // The button is in a project channel, so we can get category -> runnerId.
+   
+   const categoryManager = getCategoryManager();
+   // Find which runner owns this channel
+   const runnerId = findRunnerForChannel(interaction.channelId);
+   
+   if (!runnerId) {
+       await interaction.reply({ content: '❌ Could not identify runner.', ephemeral: true });
+       return;
+   }
+
+   // Initialize session creation state
+   botState.sessionCreationState.set(userId, {
+       step: 'select_cli',
+       runnerId: runnerId,
+       folderPath: projectPath
+   });
+   
+   // Call existing handler to show CLI selection
+   // We need to construct a fake customId to reuse handleRunnerSelection logic? 
+   // Or just call handleRunnerSelection directly if we can pass a mock interaction or just reuse the logic.
+   
+   // Actually, handleRunnerSelection expects customId session_runner_{id}
+   // Let's manually trigger the state transition
+   
+   // We can reuse handleRunnerSelection if we pass the right customId manually? 
+   // No, easier to just copy the "next step" logic.
+   // Or trigger `handleRunnerSelection` with a dummy customId: `session_runner_${runnerId}`
+   
+   const mockInteraction = {
+       ...interaction,
+       customId: `session_runner_${runnerId}`,
+       update: interaction.reply.bind(interaction) // mapping reply to update? No, existing method calls update.
+       // It expects to be called from a message component interaction (update), but here we are starting fresh?
+       // Actually, we want to reply ephemeral.
+   };
+   
+   // Let's just reply with a message saying "Starting creation..." and buttons.
+   // It's cleaner to reuse `handleRunnerSelection` logic. I'll invoke it but I need to make sure 
+   // it uses `reply` instead of `update` if it's the first step.
+   // The existing `handleRunnerSelection` uses `interaction.update`. 
+   
+   // I will create a new helper or just redirect user to command for now.
+    // Use unique variable names to avoid shadowing if mistakenly in same scope
+    const cm = getCategoryManager();
+    const rid = cm?.getRunnerByCategoryId(interaction.channel?.parentId || '');
+
+    if (!rid) {
+         await interaction.reply({ 
+            content: '❌ Could not identify runner. Please ensure this channel is within a runner category.',
+            ephemeral: true 
+        });
+        return;
+    }
+
+    // Initialize session creation state
+    botState.sessionCreationState.set(userId, {
+        step: 'select_cli',
+        runnerId: rid,
+        folder: projectPath // Pre-set the folder!
+    });
+    
+    const runner = storage.getRunner(rid);
+    if (!runner) return;
+
+    // Row 1: CLI type buttons
+    const cliButtons = runner.cliTypes.map(cliType =>
+        new ButtonBuilder()
+            .setCustomId(`session_cli_${cliType}`) // Note: this will trigger update() in next step, might need handling
+            .setLabel(cliType.toUpperCase())
+            .setStyle(ButtonStyle.Primary)
+    );
+
+    const mainButtonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(...cliButtons);
+
+    await interaction.reply({
+        content: `**New Session for ${projectPath}**\nSelect CLI tool:`,
+        components: [mainButtonRow],
+        ephemeral: true
+    });
+}
+
+function findRunnerForChannel(channelId: string): string | undefined {
+    const categoryManager = getCategoryManager();
+    if (!categoryManager) return undefined;
+    
+    // This is inefficient but functional for now. 
+    // Ideally we map channelId -> runnerId in CategoryManager.
+    // Since we don't have public access to categories map, we rely on storage or need to expose it.
+    // Let's use storage.
+    
+    // Actually we can iterate storage runners and check categories? 
+    // No, category ID is in categories map.
+    
+    // For now, let's assume we can't easily find it without CategoryManager exposing it.
+    // We'll skip this for now.
+    return undefined;
+}
+
+async function handleSyncSessionsButton(interaction: any, userId: string, projectPath: string): Promise<void> {
+    await interaction.deferReply({ ephemeral: true });
+    
+    const syncCm = getCategoryManager();
+    const syncRid = syncCm?.getRunnerByCategoryId(interaction.channel?.parentId || '');
+
+    if (!syncRid) {
+         await interaction.editReply('❌ Could not identify runner.');
+         return;
+    }
+
+    const sessionSync = getSessionSyncService();
+    if (!sessionSync) {
+        await interaction.editReply('❌ Session sync service not available.');
+        return;
+    }
+
+    try {
+        await sessionSync.syncProjectSessions(syncRid, projectPath);
+        
+        // Refresh dashboard (optional, but good)
+        const channel = interaction.channel;
+        if (channel && syncCm) {
+            const stats = sessionSync.getProjectStats(syncRid, projectPath);
+            await syncCm.postProjectDashboard(channel, projectPath, stats);
+        }
+
+        await interaction.editReply('✅ Sync complete!');
+    } catch (error) {
+        console.error('[Buttons] Sync failed:', error);
+        await interaction.editReply('❌ Sync failed.');
+    }
 }

@@ -19,6 +19,7 @@ export {
 } from './runner.js';
 
 // Session commands
+// Session commands
 export {
     handleCreateSession,
     handleStatus,
@@ -27,6 +28,10 @@ export {
     handleRespawnSession,
     endSession,
 } from './session.js';
+
+export { handleResumeSession } from './resume.js';
+export { handleRegisterProject } from './register-project.js';
+export { handleDeleteProject } from './delete-project.js';
 
 // Terminal commands
 export {
@@ -39,4 +44,8 @@ export { handleInterrupt } from './interrupt.js';
 
 // Assistant command
 export { handleAssistantCommand } from './assistant.js';
+
+// Sync Projects command
+export { handleSyncProjects } from './sync-projects.js';
+
 

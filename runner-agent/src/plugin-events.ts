@@ -104,17 +104,60 @@ export function wirePluginEvents(
         }
     });
 
-    // Session discovery -> Discord
-    pluginManager.on('session_discovered', (data) => {
-        console.log(`[PluginManager] Session discovered: ${data.sessionId} (cwd: ${data.cwd || 'unknown'})`);
+
+    // Tool execution events -> Discord (includes auto-approved tools)
+    pluginManager.on('tool_execution', (data) => {
+        console.log(`[PluginManager] Tool execution for ${data.sessionId}: ${data.toolName}`);
         if (wsManager.isConnected) {
             wsManager.send({
-                type: 'session_discovered',
+                type: 'tool_execution',
                 data: {
                     runnerId: wsManager.runnerId,
                     sessionId: data.sessionId,
-                    exists: data.exists,
-                    cwd: data.cwd
+                    toolName: data.toolName,
+                    toolId: data.toolId,
+                    input: data.input,
+                    timestamp: data.timestamp.toISOString()
+                }
+            });
+        }
+    });
+
+    // Tool result events -> Discord (shows success/failure status)
+    pluginManager.on('tool_result', (data) => {
+        console.log(`[PluginManager] Tool result for ${data.sessionId}: ${data.toolUseId} (error: ${data.isError})`);
+        if (wsManager.isConnected) {
+            wsManager.send({
+                type: 'tool_result',
+                data: {
+                    runnerId: wsManager.runnerId,
+                    sessionId: data.sessionId,
+                    toolUseId: data.toolUseId,
+                    content: data.content,
+                    isError: data.isError,
+                    timestamp: data.timestamp.toISOString()
+                }
+            });
+        }
+    });
+
+    // Result events -> Discord (final session summary)
+    pluginManager.on('result', (data) => {
+        console.log(`[PluginManager] Result for ${data.sessionId}: ${data.subtype}`);
+        if (wsManager.isConnected) {
+            wsManager.send({
+                type: 'result',
+                data: {
+                    runnerId: wsManager.runnerId,
+                    sessionId: data.sessionId,
+                    result: data.result,
+                    subtype: data.subtype,
+                    durationMs: data.durationMs,
+                    durationApiMs: data.durationApiMs,
+                    numTurns: data.numTurns,
+                    isError: data.isError,
+                    error: data.error,
+                    timestamp: data.timestamp.toISOString()
                 }
             });
         }
