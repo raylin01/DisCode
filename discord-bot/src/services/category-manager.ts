@@ -108,6 +108,7 @@ export class CategoryManager {
                 }
             }
         }
+        console.log(`[CategoryManager] Initialization complete. Loaded ${this.categories.size} categories.`);
     }
 
     /**
@@ -356,11 +357,19 @@ export class CategoryManager {
      * Get runner ID from category ID
      */
     getRunnerByCategoryId(categoryId: string): string | undefined {
+        console.log(`[DEBUG] getRunnerByCategoryId: Looking for ${categoryId}`);
         for (const [runnerId, category] of this.categories) {
             if (category.categoryId === categoryId) {
+                console.log(`[DEBUG] Found runner ${runnerId} for category ${categoryId}`);
                 return runnerId;
             }
         }
+        const fallbackRunner = Object.values(storage.data.runners).find(r => r.discordState?.categoryId === categoryId);
+        if (fallbackRunner) {
+            console.log(`[DEBUG] Found runner ${fallbackRunner.runnerId} for category ${categoryId} via storage fallback`);
+            return fallbackRunner.runnerId;
+        }
+        console.log(`[DEBUG] No runner found for category ${categoryId}. Available: ${Array.from(this.categories.values()).map(c => `${c.runnerId}:${c.categoryId}`)}`);
         return undefined;
     }
 
@@ -369,6 +378,45 @@ export class CategoryManager {
      */
     getRunnerCategory(runnerId: string): RunnerCategory | undefined {
         return this.categories.get(runnerId);
+    }
+
+    /**
+     * Get runner ID by project path
+     */
+    getRunnerByProjectPath(projectPath: string): string | undefined {
+        console.log(`[DEBUG] getRunnerByProjectPath: Looking for ${projectPath}`);
+        for (const [runnerId, category] of this.categories) {
+            if (category.projects.has(projectPath)) {
+                console.log(`[DEBUG] Found runner ${runnerId} for project ${projectPath}`);
+                return runnerId;
+            }
+        }
+        console.log(`[DEBUG] No runner found for project ${projectPath}`);
+        // Log available projects for debugging
+        this.categories.forEach((cat, rid) => {
+             console.log(`[DEBUG] Runner ${rid} projects: ${Array.from(cat.projects.keys()).join(', ')}`);
+        });
+        return undefined;
+    }
+
+    /**
+     * Get runner ID by channel ID (for any channel in the runner's category)
+     */
+    getRunnerByChannelId(channelId: string): string | undefined {
+        for (const [runnerId, category] of this.categories) {
+            // Check if it's the control channel
+            if (category.controlChannelId === channelId) {
+                return runnerId;
+            }
+
+            // Check if it's a project channel
+            for (const project of category.projects.values()) {
+                if (project.channelId === channelId) {
+                    return runnerId;
+                }
+            }
+        }
+        return undefined;
     }
 
     /**

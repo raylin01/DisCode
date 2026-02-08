@@ -48,23 +48,44 @@ const WS_PORT = config.wsPort;
 createWebSocketServer(WS_PORT);
 
 // Discord bot events
-botState.client.once(Events.ClientReady, () => {
+botState.client.once(Events.ClientReady, async () => {
   console.log(`Discord bot logged in as ${botState.client.user?.tag}`);
   botState.setBotReady(true);
 
+  // Initialize CategoryManager now that we are logged in
+  const categoryManager = getCategoryManager();
+  if (categoryManager) {
+      console.log('[Index] Initializing CategoryManager...');
+      await categoryManager.initialize();
+      await reconcileRunnerCategories();
+  }
 });
 
 botState.client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand()) {
-    // Handle button interactions
-    if (interaction.isButton()) {
-      await handleButtonInteraction(interaction);
+  try {
+    if (!interaction.isChatInputCommand()) {
+      // Handle button interactions
+      if (interaction.isButton()) {
+        await handleButtonInteraction(interaction);
+        return;
+      }
+      // Handle modal submissions
+      if (interaction.isModalSubmit()) {
+        await handleModalSubmit(interaction);
+        return;
+      }
       return;
     }
-    // Handle modal submissions
-    if (interaction.isModalSubmit()) {
-      await handleModalSubmit(interaction);
-      return;
+  } catch (error) {
+    console.error('Error handling interaction:', error);
+    try {
+        if ((interaction as any).replied || (interaction as any).deferred) {
+            await (interaction as any).followUp({ content: '❌ Interaction failed.', ephemeral: true });
+        } else {
+            await (interaction as any).reply({ content: '❌ Interaction failed.', ephemeral: true });
+        }
+    } catch (e) {
+        // Ignore secondary error
     }
     return;
   }
@@ -659,8 +680,7 @@ async function main(): Promise<void> {
   }
 
   // Initialize services
-  const categoryManager = initCategoryManager(botState.client);
-  await categoryManager.initialize();
+  initCategoryManager(botState.client);
   const sessionSync = initSessionSyncService(botState.client);
 
   // Wire up stats updates
@@ -673,6 +693,31 @@ async function main(): Promise<void> {
 
   await registerCommands();
   await botState.client.login(DISCORD_TOKEN!);
+}
+
+async function reconcileRunnerCategories(): Promise<void> {
+  const categoryManager = getCategoryManager();
+  if (!categoryManager) return;
+
+  const runners = Object.values(storage.data.runners);
+  for (const runner of runners) {
+    if (runner.discordState?.categoryId && runner.discordState?.controlChannelId) {
+      continue;
+    }
+
+    const tokenInfo = storage.findTokenInfoByToken(runner.token);
+    if (!tokenInfo?.guildId) {
+      console.warn(`[Reconcile] Missing guildId for runner ${runner.runnerId}, cannot create category`);
+      continue;
+    }
+
+    try {
+      await categoryManager.createRunnerCategory(runner.runnerId, runner.name, tokenInfo.guildId);
+      console.log(`[Reconcile] Created category for runner ${runner.runnerId}`);
+    } catch (error) {
+      console.error(`[Reconcile] Failed to create category for runner ${runner.runnerId}:`, error);
+    }
+  }
 }
 
 // Global error handlers

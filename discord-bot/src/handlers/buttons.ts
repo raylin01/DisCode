@@ -188,6 +188,14 @@ export async function handleButtonInteraction(interaction: any): Promise<void> {
         await handleSyncSessionsButton(interaction, userId, projectPath);
         return;
     }
+
+    if (!interaction.replied && !interaction.deferred) {
+        await interaction.deferReply({ ephemeral: true });
+    }
+
+    await interaction.editReply({
+        content: '❓ Unknown action. Please try again or refresh the dashboard.'
+    });
 }
 
 /**
@@ -680,12 +688,24 @@ async function handleCliSelection(interaction: any, userId: string, customId: st
     }
 
     state.cliType = cliType;
-
     const runner = storage.getRunner(state.runnerId);
 
-    // For terminal type, skip plugin selection and go directly to folder selection with tmux
+    // Check if folder is already pre-filled (from project channel)
+    const hasFolder = !!state.folderPath;
+
+    // For terminal type, skip plugin selection
     if (cliType === 'terminal') {
         state.plugin = 'tmux';
+
+        // If we already have a folder, proceed to session creation
+        if (hasFolder) {
+            state.step = 'complete';
+            botState.sessionCreationState.set(userId, state);
+            await handleSessionReview(interaction, userId);
+            return;
+        }
+
+        // Otherwise, show folder selection
         state.step = 'select_folder';
         botState.sessionCreationState.set(userId, state);
 
@@ -808,6 +828,19 @@ async function handlePluginSelection(interaction: any, userId: string, customId:
     }
 
     state.plugin = plugin;
+
+    // Check if folder is already pre-filled (from project channel)
+    const hasFolder = !!state.folderPath;
+
+    if (hasFolder) {
+        // Skip folder selection, proceed to session creation
+        state.step = 'complete';
+        botState.sessionCreationState.set(userId, state);
+        await handleSessionReview(interaction, userId);
+        return;
+    }
+
+    // Show folder selection
     state.step = 'select_folder';
     botState.sessionCreationState.set(userId, state);
 
@@ -1624,7 +1657,7 @@ async function handleListSessionsButton(interaction: any, userId: string, projec
         // Verify access (implicit via channel check usually, but good to be safe)
         // For now, we assume if they can click the button in the channel, they have access
         
-        const sessions = listSessions(projectPath);
+        const sessions = await listSessions(projectPath);
         
         if (sessions.length === 0) {
             await interaction.editReply({ content: 'No sessions found for this project.' });
@@ -1651,124 +1684,168 @@ async function handleListSessionsButton(interaction: any, userId: string, projec
 }
 
 async function handleNewSessionButton(interaction: any, userId: string, projectPath: string): Promise<void> {
-    // Start session creation wizard pre-filled with this folder
-    /*
-    // TODO: implement pre-filling folder in session creation state
-    await interaction.reply({ 
-        content: `📝 Create new session in \`${projectPath}\` functionality coming soon! Use \`/create-session\` for now.`,
-        ephemeral: true 
-    });
-    */
-   
-   // We can simulate the wizard flow partially.
-   // But we need the runner ID locally.
-   // The button is in a project channel, so we can get category -> runnerId.
-   
-   const categoryManager = getCategoryManager();
-   // Find which runner owns this channel
-   const runnerId = findRunnerForChannel(interaction.channelId);
-   
-   if (!runnerId) {
-       await interaction.reply({ content: '❌ Could not identify runner.', ephemeral: true });
-       return;
-   }
+    const categoryManager = getCategoryManager();
 
-   // Initialize session creation state
-   botState.sessionCreationState.set(userId, {
-       step: 'select_cli',
-       runnerId: runnerId,
-       folderPath: projectPath
-   });
-   
-   // Call existing handler to show CLI selection
-   // We need to construct a fake customId to reuse handleRunnerSelection logic? 
-   // Or just call handleRunnerSelection directly if we can pass a mock interaction or just reuse the logic.
-   
-   // Actually, handleRunnerSelection expects customId session_runner_{id}
-   // Let's manually trigger the state transition
-   
-   // We can reuse handleRunnerSelection if we pass the right customId manually? 
-   // No, easier to just copy the "next step" logic.
-   // Or trigger `handleRunnerSelection` with a dummy customId: `session_runner_${runnerId}`
-   
-   const mockInteraction = {
-       ...interaction,
-       customId: `session_runner_${runnerId}`,
-       update: interaction.reply.bind(interaction) // mapping reply to update? No, existing method calls update.
-       // It expects to be called from a message component interaction (update), but here we are starting fresh?
-       // Actually, we want to reply ephemeral.
-   };
-   
-   // Let's just reply with a message saying "Starting creation..." and buttons.
-   // It's cleaner to reuse `handleRunnerSelection` logic. I'll invoke it but I need to make sure 
-   // it uses `reply` instead of `update` if it's the first step.
-   // The existing `handleRunnerSelection` uses `interaction.update`. 
-   
-   // I will create a new helper or just redirect user to command for now.
-    // Use unique variable names to avoid shadowing if mistakenly in same scope
-    const cm = getCategoryManager();
-    const rid = cm?.getRunnerByCategoryId(interaction.channel?.parentId || '');
+    // Find which runner owns this project
+    let runnerId = categoryManager?.getRunnerByProjectPath(projectPath);
+    if (!runnerId) {
+        const runners = Object.values(storage.data.runners);
+        const match = runners.find(r => r.discordState?.projects?.[projectPath]);
+        if (match) runnerId = match.runnerId;
+    }
+    
+    // Fallback: Try to identify runner from the channel context
+    if (!runnerId) {
+        runnerId = await getRunnerIdFromContext(interaction);
+    }
 
-    if (!rid) {
-         await interaction.reply({ 
-            content: '❌ Could not identify runner. Please ensure this channel is within a runner category.',
-            ephemeral: true 
+    console.log(`[DEBUG] handleNewSessionButton: projectPath=${projectPath} runnerId=${runnerId}`);
+
+    if (!runnerId) {
+        await interaction.reply({
+            content: '❌ Could not identify runner. Try running this from the Project Channel.',
+            ephemeral: true
         });
         return;
     }
 
-    // Initialize session creation state
+    const runner = storage.getRunner(runnerId);
+    if (!runner) {
+        await interaction.reply({
+            content: '❌ Runner not found.',
+            ephemeral: true
+        });
+        return;
+    }
+
+    // Initialize session creation state with pre-filled values
     botState.sessionCreationState.set(userId, {
         step: 'select_cli',
-        runnerId: rid,
-        folder: projectPath // Pre-set the folder!
+        runnerId: runnerId,
+        folderPath: projectPath // Pre-fill the folder!
     });
-    
-    const runner = storage.getRunner(rid);
-    if (!runner) return;
 
-    // Row 1: CLI type buttons
+    // If there's only one CLI type, skip directly to plugin selection
+    if (runner.cliTypes.length === 1) {
+        const cliType = runner.cliTypes[0];
+        botState.sessionCreationState.set(userId, {
+            step: 'select_plugin',
+            runnerId: runnerId,
+            cliType: cliType as 'claude' | 'gemini' | 'terminal',
+            folderPath: projectPath
+        });
+
+        // Show plugin selection for this CLI
+        const plugins = cliType === 'claude'
+            ? [
+                { id: 'claude-sdk', label: 'Claude SDK' },
+                { id: 'tmux', label: 'Tmux' },
+                { id: 'print', label: 'Print' }
+              ]
+            : cliType === 'gemini'
+            ? [
+                { id: 'tmux', label: 'Tmux' },
+                { id: 'print', label: 'Print' }
+              ]
+            : [
+                { id: 'tmux', label: 'Tmux' }
+              ];
+
+        const pluginButtons = plugins.map(plugin =>
+            new ButtonBuilder()
+                .setCustomId(`session_plugin_${plugin.id}`)
+                .setLabel(plugin.label)
+                .setStyle(ButtonStyle.Primary)
+        );
+
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(...pluginButtons);
+
+        await interaction.reply({
+            content: `**New Session for ${projectPath}**\n\nSelected: **${cliType.toUpperCase()}**\nSelect plugin:`,
+            components: [row],
+            ephemeral: true
+        });
+        return;
+    }
+
+    // Show CLI type selection (multiple CLI types available)
     const cliButtons = runner.cliTypes.map(cliType =>
         new ButtonBuilder()
-            .setCustomId(`session_cli_${cliType}`) // Note: this will trigger update() in next step, might need handling
+            .setCustomId(`session_cli_${cliType}`)
             .setLabel(cliType.toUpperCase())
             .setStyle(ButtonStyle.Primary)
     );
 
-    const mainButtonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(...cliButtons);
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(...cliButtons);
 
     await interaction.reply({
-        content: `**New Session for ${projectPath}**\nSelect CLI tool:`,
-        components: [mainButtonRow],
+        content: `**New Session for ${projectPath}**\n\nSelect CLI tool:`,
+        components: [row],
         ephemeral: true
     });
 }
 
-function findRunnerForChannel(channelId: string): string | undefined {
-    const categoryManager = getCategoryManager();
-    if (!categoryManager) return undefined;
+async function getRunnerIdFromContext(interaction: any): Promise<string | undefined> {
+    const syncCm = getCategoryManager();
+    if (!syncCm) return undefined;
+
+    let channel = interaction.channel;
     
-    // This is inefficient but functional for now. 
-    // Ideally we map channelId -> runnerId in CategoryManager.
-    // Since we don't have public access to categories map, we rely on storage or need to expose it.
-    // Let's use storage.
-    
-    // Actually we can iterate storage runners and check categories? 
-    // No, category ID is in categories map.
-    
-    // For now, let's assume we can't easily find it without CategoryManager exposing it.
-    // We'll skip this for now.
-    return undefined;
+    // If we don't have the channel object or it's partial, try to fetch it
+    if (!channel || !channel.parentId) {
+        try {
+            channel = await interaction.client.channels.fetch(interaction.channelId);
+        } catch (e) {
+            console.error('[Buttons] Failed to fetch channel for runner lookup:', e);
+            return undefined;
+        }
+    }
+
+    // If it's a thread, get the parent channel (which should be the project channel)
+    if (channel?.isThread()) {
+        try {
+            // Threads have parentId pointing to the text channel
+            if (channel.parent) {
+                channel = channel.parent;
+            } else if (channel.parentId) {
+                channel = await interaction.client.channels.fetch(channel.parentId);
+            }
+        } catch (e) {
+            console.error('[Buttons] Failed to fetch parent channel of thread:', e);
+            return undefined;
+        }
+    }
+
+    // Now channel should be the Project Channel (TextChannel)
+    // Its parentId should be the Category ID
+    const categoryId = channel?.parentId;
+    if (!categoryId) return undefined;
+
+    const runnerId = syncCm.getRunnerByCategoryId(categoryId);
+    if (runnerId) return runnerId;
+
+    const fallbackRunner = Object.values(storage.data.runners).find(r => r.discordState?.categoryId === categoryId);
+    return fallbackRunner?.runnerId;
 }
 
 async function handleSyncSessionsButton(interaction: any, userId: string, projectPath: string): Promise<void> {
-    await interaction.deferReply({ ephemeral: true });
+    try {
+        await interaction.deferReply({ ephemeral: true });
+    } catch (error) {
+        console.error('[Buttons] deferReply failed for sync_sessions:', error);
+        return; // Cannot proceed if interaction is dead
+    }
     
-    const syncCm = getCategoryManager();
-    const syncRid = syncCm?.getRunnerByCategoryId(interaction.channel?.parentId || '');
+    let syncRid = await getRunnerIdFromContext(interaction);
+    if (!syncRid) {
+        const runners = Object.values(storage.data.runners);
+        const match = runners.find(r => r.discordState?.projects?.[projectPath]);
+        if (match) syncRid = match.runnerId;
+    }
+    console.log(`[DEBUG] handleSyncSessionsButton: projectPath=${projectPath} syncRid=${syncRid}`);
 
     if (!syncRid) {
-         await interaction.editReply('❌ Could not identify runner.');
+         await interaction.editReply('❌ Could not identify runner. Try running this from the Project Channel, not a thread.');
          return;
     }
 
@@ -1782,15 +1859,32 @@ async function handleSyncSessionsButton(interaction: any, userId: string, projec
         await sessionSync.syncProjectSessions(syncRid, projectPath);
         
         // Refresh dashboard (optional, but good)
+        const syncCm = getCategoryManager();
         const channel = interaction.channel;
-        if (channel && syncCm) {
-            const stats = sessionSync.getProjectStats(syncRid, projectPath);
-            await syncCm.postProjectDashboard(channel, projectPath, stats);
+        // If in thread, try to post to parent channel? Or just skip dashboard update if in thread.
+        // Dashboard is usually in the project channel (TextChannel).
+        if (syncCm) {
+             let dashboardChannel = channel;
+             if (channel.isThread()) {
+                 // Try to find parent for dashboard update
+                 try {
+                     dashboardChannel = channel.parent || await interaction.client.channels.fetch(channel.parentId);
+                 } catch (e) { /* ignore */ }
+             }
+
+             if (dashboardChannel && !dashboardChannel.isThread()) {
+                 const stats = sessionSync.getProjectStats(syncRid, projectPath);
+                 await syncCm.postProjectDashboard(dashboardChannel, projectPath, stats);
+             }
         }
 
         await interaction.editReply('✅ Sync complete!');
     } catch (error) {
         console.error('[Buttons] Sync failed:', error);
-        await interaction.editReply('❌ Sync failed.');
+        try {
+            await interaction.editReply('❌ Sync failed.');
+        } catch (e) {
+            console.error('[Buttons] Failed to send failure message:', e);
+        }
     }
 }

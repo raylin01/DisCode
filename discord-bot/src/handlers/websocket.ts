@@ -15,6 +15,7 @@ import {
     createActionItemEmbed,
     createRunnerOfflineEmbed,
     formatContentWithTables,
+    createErrorEmbed,
 } from '../utils/embeds.js';
 import {
     getOrCreateRunnerChannel,
@@ -29,11 +30,72 @@ console.log('[DEBUG] websocket.ts MODULE LOADED - Unified UI Version');
 
 const config = getConfig();
 
+const OFFLINE_GRACE_MS = parseInt(process.env.DISCODE_OFFLINE_GRACE_MS || '45000');
+const WS_PING_INTERVAL_MS = parseInt(process.env.DISCODE_WS_PING_INTERVAL || '30000');
+const WS_PING_TIMEOUT_MS = parseInt(process.env.DISCODE_WS_PING_TIMEOUT || '90000');
+
+const runnerOfflineTimers = new Map<string, NodeJS.Timeout>();
+
+function applyDefaultRunnerConfig(runner: RunnerInfo): void {
+    if (!runner.config) {
+        runner.config = {
+            threadArchiveDays: 3,
+            autoSync: true,
+            thinkingLevel: 'low',
+            yoloMode: false
+        };
+        return;
+    }
+    if (runner.config.threadArchiveDays === undefined) runner.config.threadArchiveDays = 3;
+    if (runner.config.autoSync === undefined) runner.config.autoSync = true;
+    if (runner.config.thinkingLevel === undefined) runner.config.thinkingLevel = 'low';
+    if (runner.config.yoloMode === undefined) runner.config.yoloMode = false;
+}
+
+function clearOfflineTimer(runnerId: string): void {
+    const timer = runnerOfflineTimers.get(runnerId);
+    if (timer) {
+        clearTimeout(timer);
+        runnerOfflineTimers.delete(runnerId);
+    }
+}
+
+async function finalizeRunnerOffline(runnerId: string, closingWs: any): Promise<void> {
+    runnerOfflineTimers.delete(runnerId);
+
+    const currentWs = botState.runnerConnections.get(runnerId);
+    if (currentWs && currentWs !== closingWs) {
+        // Runner reconnected before grace period expired
+        return;
+    }
+
+    storage.updateRunnerStatus(runnerId, 'offline');
+
+    // Notify owner about runner going offline
+    const runner = storage.getRunner(runnerId);
+    if (runner) {
+        await endAllRunnerSessions(runner);
+        await notifyRunnerOffline(runner);
+    }
+}
+
+function scheduleRunnerOffline(runnerId: string, closingWs: any): void {
+    if (runnerOfflineTimers.has(runnerId)) return;
+    const timer = setTimeout(() => {
+        void finalizeRunnerOffline(runnerId, closingWs);
+    }, OFFLINE_GRACE_MS);
+    runnerOfflineTimers.set(runnerId, timer);
+}
+
 /**
  * Create and configure the WebSocket server
  */
 export function createWebSocketServer(port: number): WebSocketServer {
-    const wss = new WebSocketServer({ port, noServer: false });
+    const wss = new WebSocketServer({ 
+        port, 
+        noServer: false,
+        maxPayload: 500 * 1024 * 1024 // 500MB
+    });
 
     wss.on('listening', () => {
         console.log(`WebSocket server listening on port ${port}`);
@@ -48,8 +110,32 @@ export function createWebSocketServer(port: number): WebSocketServer {
         }
     });
 
-    wss.on('connection', (ws, req) => {
+    const pingInterval = setInterval(() => {
+        const now = Date.now();
+        for (const client of wss.clients) {
+            const ws: any = client as any;
+            const lastPong = ws.lastPongAt || 0;
+            if (now - lastPong > WS_PING_TIMEOUT_MS) {
+                console.warn(`[WebSocket] Terminating unresponsive client (last pong ${Math.round((now - lastPong) / 1000)}s ago)`);
+                ws.terminate();
+                continue;
+            }
+            try {
+                ws.ping();
+            } catch (err) {
+                console.error('[WebSocket] Ping failed:', err);
+            }
+        }
+    }, WS_PING_INTERVAL_MS);
 
+    wss.on('close', () => clearInterval(pingInterval));
+
+    wss.on('connection', (ws, req) => {
+        (ws as any).lastPongAt = Date.now();
+
+        ws.on('pong', () => {
+            (ws as any).lastPongAt = Date.now();
+        });
 
         ws.on('message', async (data: Buffer) => {
             try {
@@ -61,22 +147,22 @@ export function createWebSocketServer(port: number): WebSocketServer {
             }
         });
 
-        ws.on('close', async () => {
+        ws.on('close', async (code, reason) => {
+            const reasonStr = reason ? reason.toString() : '';
+            console.log(`[WebSocket] Connection closed. code=${code} reason=${reasonStr}`);
 
             // Remove connection
-            for (const [runnerId, connection] of botState.runnerConnections.entries()) {
+            const runnerId = (ws as any).runnerId;
+            if (runnerId && botState.runnerConnections.get(runnerId) === ws) {
+                botState.runnerConnections.delete(runnerId);
+                scheduleRunnerOffline(runnerId, ws);
+                return;
+            }
+
+            for (const [entryRunnerId, connection] of botState.runnerConnections.entries()) {
                 if (connection === ws) {
-                    botState.runnerConnections.delete(runnerId);
-                    storage.updateRunnerStatus(runnerId, 'offline');
-
-                    // Notify owner about runner going offline
-                    const runner = storage.getRunner(runnerId);
-                    if (runner) {
-                        await endAllRunnerSessions(runner);
-                        await notifyRunnerOffline(runner);
-                    }
-
-
+                    botState.runnerConnections.delete(entryRunnerId);
+                    scheduleRunnerOffline(entryRunnerId, ws);
                     break;
                 }
             }
@@ -305,8 +391,20 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
             await handleSyncProjectsResponse(message.data);
             break;
 
+        case 'sync_projects_progress':
+            await handleSyncProjectsProgress(message.data);
+            break;
+
+        case 'sync_projects_complete':
+            await handleSyncProjectsComplete(message.data);
+            break;
+
         case 'sync_sessions_response':
             await handleSyncSessionsResponse(message.data);
+            break;
+
+        case 'sync_sessions_complete':
+            await handleSyncSessionsComplete(message.data);
             break;
 
         case 'sync_session_discovered':
@@ -315,6 +413,14 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
 
         case 'sync_session_updated':
             await handleSyncSessionUpdated(message.data);
+            break;
+
+        case 'sync_status_response':
+            await handleSyncStatusResponse(message.data);
+            break;
+
+        case 'permission_decision_ack':
+            await handlePermissionDecisionAck(message.data);
             break;
 
         default:
@@ -326,6 +432,9 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
  * Handle runner registration
  */
 async function handleRegister(ws: any, data: any): Promise<void> {
+    (ws as any).runnerId = data.runnerId;
+    (ws as any).lastPongAt = Date.now();
+    clearOfflineTimer(data.runnerId);
     // Validate token
     const tokenInfo = storage.validateToken(data.token);
 
@@ -365,6 +474,8 @@ async function handleRegister(ws: any, data: any): Promise<void> {
         tokenInUse.lastHeartbeat = new Date().toISOString();
         tokenInUse.cliTypes = data.cliTypes;
         tokenInUse.defaultWorkspace = data.defaultWorkspace;
+        tokenInUse.assistantEnabled = data.assistantEnabled ?? tokenInUse.assistantEnabled ?? true;
+        applyDefaultRunnerConfig(tokenInUse);
 
         const categoryManager = getCategoryManager();
         if (categoryManager) {
@@ -404,6 +515,7 @@ async function handleRegister(ws: any, data: any): Promise<void> {
         if (data.defaultWorkspace) existingRunner.defaultWorkspace = data.defaultWorkspace;
         // Update assistantEnabled from registration message
         existingRunner.assistantEnabled = data.assistantEnabled ?? true;
+        applyDefaultRunnerConfig(existingRunner);
 
         const categoryManager = getCategoryManager();
         if (categoryManager) {
@@ -447,6 +559,7 @@ async function handleRegister(ws: any, data: any): Promise<void> {
             defaultWorkspace: data.defaultWorkspace,
             assistantEnabled: data.assistantEnabled ?? true
         };
+        applyDefaultRunnerConfig(newRunner);
 
         const categoryManager = getCategoryManager();
         if (categoryManager) {
@@ -476,6 +589,9 @@ async function handleRegister(ws: any, data: any): Promise<void> {
  */
 async function handleHeartbeat(ws: any, data: any): Promise<void> {
     storage.updateRunnerStatus(data.runnerId, 'online');
+    (ws as any).runnerId = data.runnerId;
+    (ws as any).lastPongAt = Date.now();
+    clearOfflineTimer(data.runnerId);
 
     if (!botState.runnerConnections.has(data.runnerId)) {
         botState.runnerConnections.set(data.runnerId, ws);
@@ -1729,6 +1845,20 @@ async function handleSyncProjectsResponse(data: any): Promise<void> {
     }
 }
 
+async function handleSyncProjectsProgress(data: any): Promise<void> {
+    const sessionSync = getSessionSyncService();
+    if (sessionSync) {
+        sessionSync.handleSyncProjectsProgress(data);
+    }
+}
+
+async function handleSyncProjectsComplete(data: any): Promise<void> {
+    const sessionSync = getSessionSyncService();
+    if (sessionSync) {
+        sessionSync.handleSyncProjectsComplete(data);
+    }
+}
+
 /**
  * Handle sync sessions response
  */
@@ -1736,6 +1866,13 @@ async function handleSyncSessionsResponse(data: any): Promise<void> {
     const sessionSync = getSessionSyncService();
     if (sessionSync) {
         await sessionSync.handleSyncSessionsResponse(data.runnerId, data.projectPath, data.sessions);
+    }
+}
+
+async function handleSyncSessionsComplete(data: any): Promise<void> {
+    const sessionSync = getSessionSyncService();
+    if (sessionSync) {
+        sessionSync.handleSyncSessionsComplete(data);
     }
 }
 
@@ -1759,5 +1896,68 @@ async function handleSyncSessionUpdated(data: any): Promise<void> {
     }
 }
 
+async function handleSyncStatusResponse(data: any): Promise<void> {
+    const sessionSync = getSessionSyncService();
+    if (sessionSync) {
+        sessionSync.handleSyncStatusResponse(data);
+    }
+}
 
+/**
+ * Handle permission decision acknowledgment from runner
+ */
+async function handlePermissionDecisionAck(data: any): Promise<void> {
+    const { requestId, success, error } = data;
 
+    console.log(`[PermissionAck] Received acknowledgment for ${requestId}: ${success ? 'SUCCESS' : 'FAILED'}`);
+
+    const pending = botState.pendingPermissionConfirmations.get(requestId);
+
+    if (!pending) {
+        console.log(`[PermissionAck] No pending confirmation for ${requestId} (may have timed out)`);
+        return;
+    }
+
+    // Clear timeout
+    clearTimeout(pending.timeout);
+    botState.pendingPermissionConfirmations.delete(requestId);
+
+    // Import helper functions
+    const { createConfirmedSuccessEmbed } = await import('./permission-buttons.js');
+
+    if (success) {
+        // Update UI to show confirmed success
+        const embed = createConfirmedSuccessEmbed(pending.toolName, pending.userId || 'Unknown', pending.scope);
+
+        const resultButton = new ButtonBuilder()
+            .setCustomId(`result_${requestId}`)
+            .setLabel(pending.behavior === 'deny' ? '❌ Denied' : `✅ ${pending.scope ? `Always (${pending.scope})` : 'Approved'}`)
+            .setStyle(pending.behavior === 'deny' ? ButtonStyle.Danger : ButtonStyle.Success)
+            .setDisabled(true);
+
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(resultButton);
+
+        await pending.interaction.editReply({
+            embeds: [embed],
+            components: [row]
+        }).catch((err: any) => console.error('[PermissionAck] Failed to show success:', err));
+
+        // Mark as completed in permission state store
+        permissionStateStore.complete(requestId);
+
+        console.log(`[PermissionAck] Confirmed ${pending.behavior} for ${requestId}`);
+    } else {
+        // Update UI to show error
+        const errorEmbed = createErrorEmbed(
+            'Failed',
+            `Runner rejected: ${error || 'Unknown error'}`
+        );
+
+        await pending.interaction.editReply({
+            embeds: [errorEmbed],
+            components: []
+        }).catch((err: any) => console.error('[PermissionAck] Failed to show error:', err));
+
+        console.log(`[PermissionAck] Failed for ${requestId}: ${error}`);
+    }
+}

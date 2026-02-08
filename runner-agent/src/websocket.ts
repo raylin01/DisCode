@@ -25,6 +25,8 @@ export class WebSocketManager extends EventEmitter {
     private ws: WebSocket | null = null;
     private _isConnected: boolean = false;
     private heartbeatTimer: NodeJS.Timeout | null = null;
+    private pingTimer: NodeJS.Timeout | null = null;
+    private lastPongAt: number = 0;
     private readonly config: WebSocketManagerConfig;
     readonly runnerId: string;
 
@@ -41,11 +43,14 @@ export class WebSocketManager extends EventEmitter {
     connect(): void {
 
 
-        this.ws = new WebSocket(this.config.botWsUrl);
+        this.ws = new WebSocket(this.config.botWsUrl, {
+            maxPayload: 500 * 1024 * 1024 // 500MB
+        });
 
         this.ws.on('open', () => {
 
             this._isConnected = true;
+            this.lastPongAt = Date.now();
 
             // Send registration message
             this.send({
@@ -65,6 +70,7 @@ export class WebSocketManager extends EventEmitter {
 
             // Start heartbeat
             this.startHeartbeat();
+            this.startPing();
         });
 
         this.ws.on('message', async (rawData: Buffer) => {
@@ -78,16 +84,22 @@ export class WebSocketManager extends EventEmitter {
             }
         });
 
-        this.ws.on('close', () => {
+        this.ws.on('close', (code, reason) => {
+            console.log(`[WebSocket] Closed. code=${code} reason=${reason ? reason.toString() : ''}`);
 
             this._isConnected = false;
             this.stopHeartbeat();
+            this.stopPing();
 
             // Reconnect after delay
             setTimeout(() => {
 
                 this.connect();
             }, this.config.reconnectDelay);
+        });
+
+        this.ws.on('pong', () => {
+            this.lastPongAt = Date.now();
         });
 
         this.ws.on('error', (error) => {
@@ -98,7 +110,11 @@ export class WebSocketManager extends EventEmitter {
 
     send(message: WebSocketMessage): boolean {
         if (this.ws && this._isConnected && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify(message));
+            this.ws.send(JSON.stringify(message), (err) => {
+                if (err) {
+                    console.error('WebSocket send error:', err);
+                }
+            });
             return true;
         }
         return false;
@@ -118,6 +134,38 @@ export class WebSocketManager extends EventEmitter {
         if (this.heartbeatTimer) {
             clearInterval(this.heartbeatTimer);
             this.heartbeatTimer = null;
+        }
+    }
+
+    private startPing(): void {
+        this.stopPing();
+        const interval = Math.max(15000, Math.min(this.config.heartbeatInterval, 30000));
+        const timeout = Math.max(interval * 3, 90000);
+
+        this.pingTimer = setInterval(() => {
+            if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+            const now = Date.now();
+            if (this.lastPongAt && now - this.lastPongAt > timeout) {
+                console.warn(`[WebSocket] Pong timeout (${Math.round((now - this.lastPongAt) / 1000)}s). Reconnecting...`);
+                try {
+                    this.ws.terminate();
+                } catch (err) {
+                    console.error('WebSocket terminate error:', err);
+                }
+                return;
+            }
+            try {
+                this.ws.ping();
+            } catch (err) {
+                console.error('WebSocket ping error:', err);
+            }
+        }, interval);
+    }
+
+    private stopPing(): void {
+        if (this.pingTimer) {
+            clearInterval(this.pingTimer);
+            this.pingTimer = null;
         }
     }
 

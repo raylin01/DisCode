@@ -135,6 +135,15 @@ class Storage {
     return null;
   }
 
+  findTokenInfoByToken(token: string): TokenInfo | null {
+    for (const userId in this._data.users) {
+      const user = this._data.users[userId];
+      const tokenInfo = user.tokens.find(t => t.token === token);
+      if (tokenInfo) return tokenInfo;
+    }
+    return null;
+  }
+
   getUserTokens(userId: string): TokenInfo[] {
     const user = this._data.users[userId];
     return user?.tokens.filter(t => t.isActive) || [];
