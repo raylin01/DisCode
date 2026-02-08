@@ -1537,7 +1537,6 @@ async function upsertSessionSettingsSummary(sessionId: string): Promise<void> {
     }
 
     const message = await thread.send({ embeds: [embed] });
-    await message.pin().catch(() => {});
     session.settingsMessageId = message.id;
     storage.updateSession(session.sessionId, session);
 }

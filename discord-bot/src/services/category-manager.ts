@@ -538,10 +538,7 @@ export class CategoryManager {
                 );
 
             const message = await channel.send({ embeds: [embed], components: [row] });
-            
-            // Pin the dashboard
-            await message.pin().catch(() => {});
-            
+
             return message.id;
         } catch (error) {
             console.error('[CategoryManager] Error posting project dashboard:', error);
