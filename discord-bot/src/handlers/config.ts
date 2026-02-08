@@ -171,7 +171,13 @@ export async function handleRunnerConfig(
                 { name: 'Max Budget (USD)', value: claudeDefaults.maxBudgetUsd ? String(claudeDefaults.maxBudgetUsd) : 'Default', inline: true },
                 { name: 'Agent', value: claudeDefaults.agent || 'Default', inline: true },
                 { name: 'Permission Mode', value: claudeDefaults.permissionMode || 'default', inline: true },
-                { name: 'Include Partials', value: claudeDefaults.includePartialMessages === false ? 'Disabled' : 'Enabled', inline: true }
+                { name: 'Include Partials', value: claudeDefaults.includePartialMessages === false ? 'Disabled' : 'Enabled', inline: true },
+                { name: 'Allowed Tools', value: claudeDefaults.allowedTools?.length ? claudeDefaults.allowedTools.join(', ') : 'Any', inline: true },
+                { name: 'Disallowed Tools', value: claudeDefaults.disallowedTools?.length ? claudeDefaults.disallowedTools.join(', ') : 'None', inline: true },
+                { name: 'Tools', value: claudeDefaults.tools ? (Array.isArray(claudeDefaults.tools) ? claudeDefaults.tools.join(', ') : 'default') : 'default', inline: true },
+                { name: 'Betas', value: claudeDefaults.betas?.length ? claudeDefaults.betas.join(', ') : 'None', inline: true },
+                { name: 'Setting Sources', value: claudeDefaults.settingSources?.length ? claudeDefaults.settingSources.join(', ') : 'Default', inline: true },
+                { name: 'Add Dirs', value: claudeDefaults.additionalDirectories?.length ? claudeDefaults.additionalDirectories.join(', ') : 'None', inline: true }
             );
 
             const claudeDefaultsRow = new ActionRowBuilder<ButtonBuilder>()
@@ -217,6 +223,40 @@ export async function handleRunnerConfig(
                 );
 
             rows.push(claudeDefaultsRowTwo);
+
+            const claudeDefaultsRowThree = new ActionRowBuilder<ButtonBuilder>()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setAllowedTools`)
+                        .setLabel('Set Allowed Tools')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setDisallowedTools`)
+                        .setLabel('Set Disallowed Tools')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setToolsList`)
+                        .setLabel('Set Tools List')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+
+            const claudeDefaultsRowFour = new ActionRowBuilder<ButtonBuilder>()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setBetas`)
+                        .setLabel('Set Betas')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setSettingSources`)
+                        .setLabel('Set Setting Sources')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setAdditionalDirs`)
+                        .setLabel('Set Add Dirs')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+
+            rows.push(claudeDefaultsRowThree, claudeDefaultsRowFour);
 
             const permissionModeRow = new ActionRowBuilder<ButtonBuilder>()
                 .addComponents(
@@ -367,6 +407,18 @@ async function handleConfigModal(
         input.setCustomId('maxBudgetUsd').setLabel('Max Budget USD (number)');
     } else if (param === 'setAgent') {
         input.setCustomId('agent').setLabel('Agent Name');
+    } else if (param === 'setAllowedTools') {
+        input.setCustomId('allowedTools').setLabel('Allowed Tools (comma-separated)');
+    } else if (param === 'setDisallowedTools') {
+        input.setCustomId('disallowedTools').setLabel('Disallowed Tools (comma-separated)');
+    } else if (param === 'setToolsList') {
+        input.setCustomId('toolsList').setLabel('Tools List (comma-separated or "default")');
+    } else if (param === 'setBetas') {
+        input.setCustomId('betas').setLabel('Betas (comma-separated)');
+    } else if (param === 'setSettingSources') {
+        input.setCustomId('settingSources').setLabel('Setting Sources (comma-separated)');
+    } else if (param === 'setAdditionalDirs') {
+        input.setCustomId('additionalDirectories').setLabel('Additional Dirs (comma-separated)');
     } else {
         await interaction.reply({ content: 'Unknown configuration option.', ephemeral: true });
         return;

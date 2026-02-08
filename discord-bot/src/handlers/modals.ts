@@ -288,6 +288,28 @@ async function handleRunnerConfigModal(interaction: any, userId: string, customI
             return;
         }
         runner.config.claudeDefaults.agent = agent;
+    } else if (param === 'setAllowedTools') {
+        const raw = interaction.fields.getTextInputValue('allowedTools').trim();
+        runner.config.claudeDefaults.allowedTools = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    } else if (param === 'setDisallowedTools') {
+        const raw = interaction.fields.getTextInputValue('disallowedTools').trim();
+        runner.config.claudeDefaults.disallowedTools = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    } else if (param === 'setToolsList') {
+        const raw = interaction.fields.getTextInputValue('toolsList').trim();
+        if (!raw || raw === 'default') {
+            runner.config.claudeDefaults.tools = 'default';
+        } else {
+            runner.config.claudeDefaults.tools = raw.split(',').map(s => s.trim()).filter(Boolean);
+        }
+    } else if (param === 'setBetas') {
+        const raw = interaction.fields.getTextInputValue('betas').trim();
+        runner.config.claudeDefaults.betas = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    } else if (param === 'setSettingSources') {
+        const raw = interaction.fields.getTextInputValue('settingSources').trim();
+        runner.config.claudeDefaults.settingSources = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    } else if (param === 'setAdditionalDirs') {
+        const raw = interaction.fields.getTextInputValue('additionalDirectories').trim();
+        runner.config.claudeDefaults.additionalDirectories = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
     } else {
         await interaction.reply({ content: 'Unknown configuration option.', flags: 64 });
         return;
