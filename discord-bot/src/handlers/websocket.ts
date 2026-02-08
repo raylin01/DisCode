@@ -1334,6 +1334,7 @@ async function handleSessionReady(data: any): Promise<void> {
     // Mark session as active
     session.status = 'active';
     storage.updateSession(session.sessionId, session);
+    await getCategoryManager()?.updateRunnerStats(runnerId);
 
     const runner = storage.getRunner(runnerId);
 
@@ -1399,6 +1400,9 @@ async function handleRunnerStatusUpdate(data: any): Promise<void> {
 
     const previousStatus = botState.sessionStatuses.get(sessionId);
     botState.sessionStatuses.set(sessionId, status);
+    if (previousStatus !== status) {
+        await getCategoryManager()?.updateRunnerStats(runnerId);
+    }
 
     const session = storage.getSession(sessionId);
     if (!session) return;

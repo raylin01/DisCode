@@ -23,6 +23,7 @@ import {
     StringSelectMenuBuilder
 } from 'discord.js';
 import { storage } from '../storage.js';
+import * as botState from '../state.js';
 
 // ============================================================================
 // Types
@@ -662,6 +663,8 @@ export class CategoryManager {
 
             const sessions = storage.getRunnerSessions(runnerId);
             const activeSessions = sessions.filter(s => s.status === 'active').length;
+            const pendingActions = Array.from(botState.pendingApprovals.values())
+                .filter(p => p.runnerId === runnerId).length;
             // Pending actions might need more complex logic (e.g. from session.pendingAction)
             // For now, we count sessions in 'input_needed' status if we track that in Session object
             // Currently Session object has 'status': 'active' | 'ended'.
@@ -674,7 +677,7 @@ export class CategoryManager {
             // But CategoryManager doesn't depend on SessionSyncService (circular dependency risk).
             // We'll stick to active count for now.
             
-            await this.updateStatsChannels(runnerId, activeSessions, 0); 
+            await this.updateStatsChannels(runnerId, activeSessions, pendingActions); 
             
             // Also update dashboard
             const runnerCategory = this.categories.get(runnerId);

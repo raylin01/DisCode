@@ -9,6 +9,7 @@ import * as botState from '../../state.js';
 import { buildSessionStartOptions } from '../../utils/session-options.js';
 import { storage } from '../../storage.js';
 import { createErrorEmbed, createInfoEmbed, createSuccessEmbed } from '../../utils/embeds.js';
+import { getCategoryManager } from '../../services/category-manager.js';
 import type { RunnerInfo, Session } from '../../../../shared/types.ts';
 
 /**
@@ -331,6 +332,8 @@ export async function endSession(sessionId: string, userId: string): Promise<voi
     botState.streamingMessages.delete(sessionId);
     botState.allowedTools.delete(sessionId);
     botState.actionItems.delete(sessionId);
+
+    await getCategoryManager()?.updateRunnerStats(session.runnerId);
 
     // Archive the thread
     try {
