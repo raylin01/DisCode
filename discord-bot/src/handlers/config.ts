@@ -164,9 +164,13 @@ export async function handleRunnerConfig(
 
             embed.addFields(
                 { name: 'Default Model', value: claudeDefaults.model || 'Auto', inline: true },
+                { name: 'Fallback Model', value: claudeDefaults.fallbackModel || 'None', inline: true },
                 { name: 'Max Turns', value: claudeDefaults.maxTurns ? String(claudeDefaults.maxTurns) : 'Default', inline: true },
                 { name: 'Max Thinking Tokens', value: claudeDefaults.maxThinkingTokens ? String(claudeDefaults.maxThinkingTokens) : 'Default', inline: true },
-                { name: 'Permission Mode', value: claudeDefaults.permissionMode || 'default', inline: true }
+                { name: 'Max Budget (USD)', value: claudeDefaults.maxBudgetUsd ? String(claudeDefaults.maxBudgetUsd) : 'Default', inline: true },
+                { name: 'Agent', value: claudeDefaults.agent || 'Default', inline: true },
+                { name: 'Permission Mode', value: claudeDefaults.permissionMode || 'default', inline: true },
+                { name: 'Include Partials', value: claudeDefaults.includePartialMessages === false ? 'Disabled' : 'Enabled', inline: true }
             );
 
             const claudeDefaultsRow = new ActionRowBuilder<ButtonBuilder>()
@@ -184,12 +188,34 @@ export async function handleRunnerConfig(
                         .setLabel('Set Max Thinking')
                         .setStyle(ButtonStyle.Secondary),
                     new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setFallbackModel`)
+                        .setLabel('Set Fallback')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
                         .setCustomId(`config:${runnerId}:action:clearClaudeDefaults`)
                         .setLabel('Clear Defaults')
                         .setStyle(ButtonStyle.Danger)
                 );
 
             rows.push(claudeDefaultsRow);
+
+            const claudeDefaultsRowTwo = new ActionRowBuilder<ButtonBuilder>()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setMaxBudget`)
+                        .setLabel('Set Max Budget')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setAgent`)
+                        .setLabel('Set Agent')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:toggle:includePartialMessages`)
+                        .setLabel(claudeDefaults.includePartialMessages === false ? 'Enable Partials' : 'Disable Partials')
+                        .setStyle(claudeDefaults.includePartialMessages === false ? ButtonStyle.Success : ButtonStyle.Secondary)
+                );
+
+            rows.push(claudeDefaultsRowTwo);
 
             const permissionModeRow = new ActionRowBuilder<ButtonBuilder>()
                 .addComponents(
@@ -263,6 +289,11 @@ export async function handleConfigAction(interaction: any, userId: string, custo
         } else if (param === 'yoloMode') {
             runner.config.yoloMode = !runner.config.yoloMode;
             updated = true;
+        } else if (param === 'includePartialMessages') {
+            runner.config.claudeDefaults = runner.config.claudeDefaults || {};
+            const current = runner.config.claudeDefaults.includePartialMessages;
+            runner.config.claudeDefaults.includePartialMessages = current === false ? true : false;
+            updated = true;
         }
     } else if (action === 'set') {
         if (param === 'archiveDays') {
@@ -299,7 +330,7 @@ export async function handleConfigAction(interaction: any, userId: string, custo
         // Determine current section to stay on
         // We can check the customId or infer likely section
         let section: ConfigSection = 'main';
-        if (param.startsWith('thinkingLevel') || param === 'yoloMode' || param.startsWith('permissionMode') || param === 'clearClaudeDefaults') section = 'claude';
+        if (param.startsWith('thinkingLevel') || param === 'yoloMode' || param.startsWith('permissionMode') || param === 'clearClaudeDefaults' || param === 'includePartialMessages') section = 'claude';
         if (param === 'autoSync' || param === 'archiveDays') section = 'threads';
 
         await handleRunnerConfig(interaction as ButtonInteraction, userId, runnerId, section);
@@ -325,6 +356,12 @@ async function handleConfigModal(
         input.setCustomId('maxTurns').setLabel('Max Turns (number)');
     } else if (param === 'setMaxThinking') {
         input.setCustomId('maxThinkingTokens').setLabel('Max Thinking Tokens (number)');
+    } else if (param === 'setFallbackModel') {
+        input.setCustomId('fallbackModel').setLabel('Fallback Model (optional)');
+    } else if (param === 'setMaxBudget') {
+        input.setCustomId('maxBudgetUsd').setLabel('Max Budget USD (number)');
+    } else if (param === 'setAgent') {
+        input.setCustomId('agent').setLabel('Agent Name');
     } else {
         await interaction.reply({ content: 'Unknown configuration option.', ephemeral: true });
         return;

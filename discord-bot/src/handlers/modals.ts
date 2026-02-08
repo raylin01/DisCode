@@ -175,6 +175,13 @@ async function handleRunnerConfigModal(interaction: any, userId: string, customI
             return;
         }
         runner.config.claudeDefaults.model = model;
+    } else if (param === 'setFallbackModel') {
+        const fallbackModel = interaction.fields.getTextInputValue('fallbackModel').trim();
+        if (!fallbackModel) {
+            await interaction.reply({ content: 'Fallback model cannot be empty.', flags: 64 });
+            return;
+        }
+        runner.config.claudeDefaults.fallbackModel = fallbackModel;
     } else if (param === 'setMaxTurns') {
         const raw = interaction.fields.getTextInputValue('maxTurns').trim();
         const value = parseInt(raw, 10);
@@ -191,6 +198,21 @@ async function handleRunnerConfigModal(interaction: any, userId: string, customI
             return;
         }
         runner.config.claudeDefaults.maxThinkingTokens = value;
+    } else if (param === 'setMaxBudget') {
+        const raw = interaction.fields.getTextInputValue('maxBudgetUsd').trim();
+        const value = parseFloat(raw);
+        if (!Number.isFinite(value) || value <= 0) {
+            await interaction.reply({ content: 'Max budget must be a positive number.', flags: 64 });
+            return;
+        }
+        runner.config.claudeDefaults.maxBudgetUsd = value;
+    } else if (param === 'setAgent') {
+        const agent = interaction.fields.getTextInputValue('agent').trim();
+        if (!agent) {
+            await interaction.reply({ content: 'Agent cannot be empty.', flags: 64 });
+            return;
+        }
+        runner.config.claudeDefaults.agent = agent;
     } else {
         await interaction.reply({ content: 'Unknown configuration option.', flags: 64 });
         return;
