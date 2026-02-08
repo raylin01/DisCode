@@ -20,6 +20,13 @@ export interface TokenInfo {
 }
 
 // Runner-related types
+export interface RunnerConfig {
+  threadArchiveDays?: number; // 3, 7, 30, or -1 (never)
+  autoSync?: boolean;
+  thinkingLevel?: 'high' | 'medium' | 'low';
+  yoloMode?: boolean; // If true, auto-approve commands
+}
+
 export interface RunnerInfo {
   runnerId: string;
   name: string;
@@ -32,6 +39,26 @@ export interface RunnerInfo {
   privateChannelId?: string; // ID of the private channel for this runner
   defaultWorkspace?: string;
   assistantEnabled?: boolean;  // Whether assistant is enabled for this runner
+  systemStats?: {
+    cpu?: number;
+    memory?: number;
+    uptime?: number;
+  };
+  platform?: string;
+  arch?: string;
+  hostname?: string;
+  config?: RunnerConfig;
+  discordState?: {
+    categoryId?: string;
+    controlChannelId?: string;
+    statsChannelIds?: {
+      sessions?: string;
+      pending?: string;
+    };
+    projects?: Record<string, { channelId: string; lastSync?: string }>;
+    // Persist session->thread mapping to prevent duplicates on restart
+    sessions?: Record<string, { threadId: string; projectPath: string; lastSync?: string }>;
+  };
 }
 
 // Session-related types
@@ -43,6 +70,7 @@ export interface Session {
   createdAt: string;
   status: 'active' | 'ended';
   cliType: 'claude' | 'gemini' | 'generic';
+  plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk'; // Plugin type used for this session
   folderPath?: string; // Optional custom working folder
   interactionToken?: string; // Token to update the ephemeral "Initializing" message
   creatorId?: string; // ID of the user who created the session
@@ -73,8 +101,168 @@ export interface ApprovalResponse {
 
 // WebSocket messages
 export interface WebSocketMessage {
-  type: 'approval_request' | 'approval_response' | 'heartbeat' | 'register' | 'session_start' | 'session_ready' | 'session_end' | 'output' | 'user_message' | 'list_terminals' | 'terminal_list' | 'watch_terminal' | 'session_discovered' | 'status' | 'action_item' | 'metadata' | 'discord_action' | 'assistant_message' | 'assistant_output' | 'spawn_thread';
+  type: 'approval_request' | 'approval_response' | 'heartbeat' | 'register' | 'session_start' | 'session_ready' | 'session_end' | 'output' | 'user_message' | 'list_terminals' | 'terminal_list' | 'watch_terminal' | 'session_discovered' | 'sync_session_discovered' | 'sync_session_updated' | 'status' | 'action_item' | 'metadata' | 'discord_action' | 'assistant_message' | 'assistant_output' | 'spawn_thread' | 'tool_execution' | 'tool_result' | 'result' | 'sync_projects' | 'sync_projects_response' | 'sync_projects_progress' | 'sync_projects_complete' | 'sync_sessions' | 'sync_sessions_response' | 'sync_sessions_complete' | 'sync_status_request' | 'sync_status_response' | 'permission_decision' | 'permission_decision_ack' | 'session_control';
   data: unknown;
+}
+
+export interface SyncProjectsMessage extends WebSocketMessage {
+    type: 'sync_projects';
+    data: {
+        runnerId: string;
+    requestId?: string;
+    };
+}
+
+export interface SyncProjectsResponseMessage extends WebSocketMessage {
+    type: 'sync_projects_response';
+    data: {
+        runnerId: string;
+    requestId?: string;
+        projects: {
+            path: string;
+            lastModified: string;
+            sessionCount: number;
+        }[];
+    };
+}
+
+export interface SyncProjectsProgressMessage extends WebSocketMessage {
+  type: 'sync_projects_progress';
+  data: {
+    runnerId: string;
+    requestId?: string;
+    phase: 'listing' | 'sessions' | 'watching';
+    completed: number;
+    total?: number;
+    projectPath?: string;
+    message?: string;
+    timestamp: string;
+  };
+}
+
+export interface SyncProjectsCompleteMessage extends WebSocketMessage {
+  type: 'sync_projects_complete';
+  data: {
+    runnerId: string;
+    requestId?: string;
+    projects: {
+      path: string;
+      lastModified: string;
+      sessionCount: number;
+    }[];
+    status: 'success' | 'error';
+    error?: string;
+    startedAt: string;
+    completedAt: string;
+  };
+}
+
+export interface SyncSessionsMessage extends WebSocketMessage {
+    type: 'sync_sessions';
+    data: {
+        runnerId: string;
+        projectPath: string;
+    requestId?: string;
+    };
+}
+
+export interface SyncSessionsResponseMessage extends WebSocketMessage {
+    type: 'sync_sessions_response';
+    data: {
+        runnerId: string;
+        projectPath: string;
+    requestId?: string;
+        sessions: {
+            sessionId: string;
+            projectPath: string;
+            firstPrompt: string;
+            created: string;
+            messageCount: number;
+            gitBranch?: string;
+            messages?: any[];
+        }[];
+    };
+}
+
+export interface SyncSessionsCompleteMessage extends WebSocketMessage {
+  type: 'sync_sessions_complete';
+  data: {
+    runnerId: string;
+    projectPath: string;
+    requestId?: string;
+    status: 'success' | 'error';
+    error?: string;
+    startedAt: string;
+    completedAt: string;
+    sessionCount: number;
+  };
+}
+
+export interface SyncStatusRequestMessage extends WebSocketMessage {
+  type: 'sync_status_request';
+  data: {
+    runnerId: string;
+    requestId: string;
+  };
+}
+
+export interface SyncStatusResponseMessage extends WebSocketMessage {
+  type: 'sync_status_response';
+  data: {
+    runnerId: string;
+    requestId: string;
+    status: {
+      state: 'idle' | 'syncing' | 'error';
+      lastSyncAt?: string;
+      lastError?: string;
+      projects: Record<string, {
+        projectPath: string;
+        state: 'idle' | 'syncing' | 'complete' | 'error';
+        lastSyncAt?: string;
+        lastError?: string;
+        sessionCount?: number;
+      }>;
+    };
+  };
+}
+
+export interface SessionControlMessage extends WebSocketMessage {
+  type: 'session_control';
+  data: {
+    runnerId: string;
+    sessionId: string;
+    action: 'set_model' | 'set_permission_mode' | 'set_max_thinking_tokens';
+    value: string | number;
+  };
+}
+
+export interface SyncSessionDiscoveredMessage extends WebSocketMessage {
+    type: 'sync_session_discovered';
+    data: {
+        runnerId: string;
+        session: {
+            sessionId: string;
+            projectPath: string;
+            firstPrompt: string;
+            created: string;
+            messageCount: number;
+            gitBranch?: string;
+            messages?: any[];
+        };
+    };
+}
+
+export interface SyncSessionUpdatedMessage extends WebSocketMessage {
+    type: 'sync_session_updated';
+    data: {
+        runnerId: string;
+        session: {
+            sessionId: string;
+            projectPath: string;
+            messageCount: number;
+        };
+        newMessages: any[]; // The new messages to post
+    };
 }
 
 export interface ApprovalRequestMessage extends WebSocketMessage {
@@ -88,6 +276,9 @@ export interface ApprovalRequestMessage extends WebSocketMessage {
     options?: string[];  // Available options for AskUserQuestion
     isMultiSelect?: boolean;  // Whether multiple options can be selected
     hasOther?: boolean;  // Whether to show "Other..." button for custom input
+    suggestions?: unknown[];  // Permission suggestions (for scoped allow)
+    blockedPath?: string;
+    decisionReason?: string;
     timestamp: string;
   };
 }
@@ -97,13 +288,36 @@ export interface ApprovalResponseMessage extends WebSocketMessage {
   data: {
     // Tool approval format
     requestId?: string;
+    sessionId?: string;
     allow?: boolean;
     message?: string;
     modifiedToolInput?: unknown;
     // AskUserQuestion format
-    sessionId?: string;
     approved?: boolean;
     optionNumber?: string;  // Comma-separated for multi-select (e.g., "1,2,3")
+  };
+}
+
+export interface PermissionDecisionMessage extends WebSocketMessage {
+  type: 'permission_decision';
+  data: {
+    requestId: string;
+    sessionId: string;
+    behavior: 'allow' | 'deny';
+    scope?: 'session' | 'localSettings' | 'userSettings' | 'projectSettings';
+    updatedPermissions?: unknown[];
+    customMessage?: string;
+  };
+}
+
+export interface PermissionDecisionAckMessage extends WebSocketMessage {
+  type: 'permission_decision_ack';
+  data: {
+    requestId: string;
+    sessionId: string;
+    success: boolean;
+    error?: string;
+    timestamp: string;
   };
 }
 
@@ -191,6 +405,22 @@ export interface UserMessage extends WebSocketMessage {
     username: string;
     content: string;
     attachments?: Attachment[];
+    timestamp: string;
+  };
+}
+
+export interface ResultWSMessage extends WebSocketMessage {
+  type: 'result';
+  data: {
+    runnerId: string;
+    sessionId: string;
+    result: string;
+    subtype: 'success' | 'error';
+    durationMs: number;
+    durationApiMs: number;
+    numTurns: number;
+    isError: boolean;
+    error?: string;
     timestamp: string;
   };
 }

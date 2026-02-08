@@ -17,7 +17,8 @@ import { handleApprovalResponse } from './approval.js';
 import { handlePermissionDecision } from './permission-decision.js';
 import { handleListTerminals, handleWatchTerminal } from './terminal.js';
 import { handleInterrupt } from './interrupt.js';
-import { handleSyncProjects, handleSyncSessions } from './sync.js';
+import { handleSyncProjects, handleSyncSessions, handleSyncStatusRequest } from './sync.js';
+import { handleSessionControl } from './session-control.js';
 
 export interface HandlerDependencies {
     config: RunnerConfig;
@@ -139,6 +140,13 @@ export async function handleWebSocketMessage(
             });
             break;
         }
+        
+        case 'session_control': {
+            await handleSessionControl(message.data as any, {
+                cliSessions: deps.cliSessions
+            });
+            break;
+        }
 
         case 'assistant_message': {
             const data = message.data as {
@@ -174,6 +182,11 @@ export async function handleWebSocketMessage(
 
         case 'sync_sessions': {
             await handleSyncSessions(message.data as any);
+            break;
+        }
+
+        case 'sync_status_request': {
+            await handleSyncStatusRequest(message.data as any);
             break;
         }
 

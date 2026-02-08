@@ -276,6 +276,11 @@ export interface PluginSession {
     /** Send a response to an AskUserQuestion request */
     sendQuestionResponse?(selectedOptions: string[]): Promise<void>;
 
+    // Session controls (optional)
+    setPermissionMode?(mode: 'default' | 'acceptEdits'): Promise<void>;
+    setModel?(model: string): Promise<void>;
+    setMaxThinkingTokens?(maxTokens: number): Promise<void>;
+
     // Lifecycle
     /** Close/destroy the session */
     close(): Promise<void>;

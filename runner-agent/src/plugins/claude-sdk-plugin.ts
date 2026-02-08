@@ -323,11 +323,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                     });
                 });
             } else if (request.subtype === 'mcp_message') {
-                this.plugin.emit('error', {
-                    sessionId: this.sessionId,
-                    error: 'MCP message received but MCP handling is not implemented in runner-agent.',
-                    fatal: false
-                });
+                console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] MCP message received (no handler).`);
             }
         });
 
@@ -794,6 +790,32 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         await this.client.sendControlResponse(perm.sdkRequestId, responseData);
         this.pendingPermissions.delete(requestId);
         this.status = 'working';
+    }
+
+    async setPermissionMode(mode: 'default' | 'acceptEdits'): Promise<void> {
+        await this.client.setPermissionMode(mode);
+        this.plugin.emit('metadata', {
+            sessionId: this.sessionId,
+            permissionMode: mode,
+            timestamp: new Date()
+        });
+    }
+
+    async setModel(model: string): Promise<void> {
+        await this.client.setModel(model);
+        this.plugin.emit('metadata', {
+            sessionId: this.sessionId,
+            model,
+            timestamp: new Date()
+        });
+    }
+
+    async setMaxThinkingTokens(maxTokens: number): Promise<void> {
+        await this.client.setMaxThinkingTokens(maxTokens);
+        this.plugin.emit('metadata', {
+            sessionId: this.sessionId,
+            timestamp: new Date()
+        });
     }
 
     async close(): Promise<void> {

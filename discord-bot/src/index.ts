@@ -31,6 +31,9 @@ import {
   handleWatch,
   handleUnwatch,
   handleInterrupt,
+  handleSetModel,
+  handleSetPermissionMode,
+  handleSetThinkingTokens,
   handleAssistantCommand,
   handleSyncProjects,
   handleResumeSession,
@@ -155,6 +158,18 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
 
       case 'interrupt':
         await handleInterrupt(interaction, userId);
+        break;
+
+      case 'set-model':
+        await handleSetModel(interaction, userId);
+        break;
+
+      case 'set-permission-mode':
+        await handleSetPermissionMode(interaction, userId);
+        break;
+
+      case 'set-thinking-tokens':
+        await handleSetThinkingTokens(interaction, userId);
         break;
 
       case 'respawn-session':
@@ -568,6 +583,52 @@ async function registerCommands(): Promise<void> {
     new SlashCommandBuilder()
       .setName('interrupt')
       .setDescription('Interrupt the current CLI execution (send Ctrl+C)')
+      .addStringOption(option =>
+        option.setName('session')
+          .setDescription('Session ID (optional - auto-detects from current thread)')
+          .setRequired(false)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('set-model')
+      .setDescription('Set model for a session (claude-sdk only)')
+      .addStringOption(option =>
+        option.setName('model')
+          .setDescription('Model name (e.g. claude-sonnet-4-5)')
+          .setRequired(true)
+      )
+      .addStringOption(option =>
+        option.setName('session')
+          .setDescription('Session ID (optional - auto-detects from current thread)')
+          .setRequired(false)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('set-permission-mode')
+      .setDescription('Set permission mode for a session (claude-sdk only)')
+      .addStringOption(option =>
+        option.setName('mode')
+          .setDescription('Permission mode')
+          .addChoices(
+            { name: 'Default', value: 'default' },
+            { name: 'Accept Edits', value: 'acceptEdits' }
+          )
+          .setRequired(true)
+      )
+      .addStringOption(option =>
+        option.setName('session')
+          .setDescription('Session ID (optional - auto-detects from current thread)')
+          .setRequired(false)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('set-thinking-tokens')
+      .setDescription('Set max thinking tokens for a session (claude-sdk only)')
+      .addIntegerOption(option =>
+        option.setName('max_tokens')
+          .setDescription('Maximum thinking tokens')
+          .setRequired(true)
+      )
       .addStringOption(option =>
         option.setName('session')
           .setDescription('Session ID (optional - auto-detects from current thread)')
