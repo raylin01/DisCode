@@ -40,6 +40,64 @@ export interface PluginOptions {
     maxThinkingTokens?: number;
     /** Thinking level: 'off' | 'low' | 'medium' | 'high' | 'auto' | 'default_on' */
     thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'auto' | 'default_on';
+    /** Resume an existing session ID */
+    resumeSessionId?: string;
+    /** Fork session on resume */
+    forkSession?: boolean;
+    /** Resume at a specific message UUID */
+    resumeSessionAt?: string;
+    /** Disable session persistence */
+    persistSession?: boolean;
+    /** Max turns */
+    maxTurns?: number;
+    /** Max budget in USD */
+    maxBudgetUsd?: number;
+    /** Initial model */
+    model?: string;
+    /** Fallback model */
+    fallbackModel?: string;
+    /** Agent name */
+    agent?: string;
+    /** Experimental betas */
+    betas?: string[];
+    /** JSON schema for input */
+    jsonSchema?: Record<string, any> | string;
+    /** Permission mode */
+    permissionMode?: 'default' | 'acceptEdits';
+    /** Allow skipping permissions dangerously */
+    allowDangerouslySkipPermissions?: boolean;
+    /** Allowed tools list */
+    allowedTools?: string[];
+    /** Disallowed tools list */
+    disallowedTools?: string[];
+    /** Tools list */
+    tools?: string[] | 'default';
+    /** MCP server config */
+    mcpServers?: Record<string, any>;
+    /** Strict MCP config */
+    strictMcpConfig?: boolean;
+    /** Setting sources */
+    settingSources?: string[];
+    /** Additional directories */
+    additionalDirectories?: string[];
+    /** Plugins to load */
+    plugins?: Array<{ type: 'local'; path: string }>;
+    /** Extra CLI args as key-value flags */
+    extraArgs?: Record<string, any>;
+    /** Optional sandbox setting */
+    sandbox?: string;
+    /** Include partial messages */
+    includePartialMessages?: boolean;
+    /** Use permission prompt tool over stdio */
+    permissionPromptTool?: boolean;
+    /** Custom permission prompt tool name */
+    permissionPromptToolName?: string;
+    /** Enable SDK file checkpointing hooks */
+    enableFileCheckpointing?: boolean;
+    /** Executable to use when cliPath points to a script */
+    executable?: string;
+    /** Extra args for the executable when cliPath points to a script */
+    executableArgs?: string[];
 }
 
 // ============================================================================

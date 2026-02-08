@@ -68,6 +68,16 @@ export interface SessionCreationState {
     folderPath?: string;
     options?: {
         approvalMode?: 'manual' | 'auto';
+        skipPermissions?: boolean;
+        thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'auto' | 'default_on';
+        maxThinkingTokens?: number;
+        maxTurns?: number;
+        maxBudgetUsd?: number;
+        model?: string;
+        fallbackModel?: string;
+        agent?: string;
+        permissionMode?: 'default' | 'acceptEdits';
+        [key: string]: any;
     };
     messageId?: string;
 }
@@ -106,3 +116,15 @@ export const multiSelectState = new Map<string, MultiSelectState>();
 // User scope preference (userId -> scope)
 export type UserScope = 'session' | 'project' | 'global';
 export const userScopePreferences = new Map<string, UserScope>();
+
+// Pending permission confirmations (requestId -> confirmation state)
+export interface PendingPermissionConfirmation {
+    requestId: string;
+    interaction: any;
+    userId: string;
+    toolName: string;
+    behavior: 'allow' | 'deny';
+    scope?: string;
+    timeout: NodeJS.Timeout;
+}
+export const pendingPermissionConfirmations = new Map<string, PendingPermissionConfirmation>();

@@ -50,6 +50,12 @@ export async function handleModalSubmit(interaction: any): Promise<void> {
         await handleFolderModal(interaction, userId);
         return;
     }
+
+    // Handle runner config modals
+    if (customId.startsWith('config_modal:')) {
+        await handleRunnerConfigModal(interaction, userId, customId);
+        return;
+    }
 }
 
 /**
@@ -127,6 +133,75 @@ async function handlePromptModal(interaction: any, userId: string, customId: str
             flags: 64
         });
     }
+}
+
+/**
+ * Handle runner config modal submission
+ */
+async function handleRunnerConfigModal(interaction: any, userId: string, customId: string): Promise<void> {
+    const parts = customId.split(':');
+    if (parts.length < 3) {
+        await interaction.reply({ content: 'Invalid configuration modal.', flags: 64 });
+        return;
+    }
+
+    const runnerId = parts[1];
+    const param = parts[2];
+
+    const runner = storage.getRunner(runnerId);
+    if (!runner) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Runner Not Found', 'This runner no longer exists.')],
+            flags: 64
+        });
+        return;
+    }
+
+    if (!storage.canUserAccessRunner(userId, runnerId)) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Access Denied', 'You do not have permission to configure this runner.')],
+            flags: 64
+        });
+        return;
+    }
+
+    if (!runner.config) runner.config = {};
+    if (!runner.config.claudeDefaults) runner.config.claudeDefaults = {};
+
+    if (param === 'setModel') {
+        const model = interaction.fields.getTextInputValue('model').trim();
+        if (!model) {
+            await interaction.reply({ content: 'Model cannot be empty.', flags: 64 });
+            return;
+        }
+        runner.config.claudeDefaults.model = model;
+    } else if (param === 'setMaxTurns') {
+        const raw = interaction.fields.getTextInputValue('maxTurns').trim();
+        const value = parseInt(raw, 10);
+        if (!Number.isFinite(value) || value <= 0) {
+            await interaction.reply({ content: 'Max turns must be a positive integer.', flags: 64 });
+            return;
+        }
+        runner.config.claudeDefaults.maxTurns = value;
+    } else if (param === 'setMaxThinking') {
+        const raw = interaction.fields.getTextInputValue('maxThinkingTokens').trim();
+        const value = parseInt(raw, 10);
+        if (!Number.isFinite(value) || value <= 0) {
+            await interaction.reply({ content: 'Max thinking tokens must be a positive integer.', flags: 64 });
+            return;
+        }
+        runner.config.claudeDefaults.maxThinkingTokens = value;
+    } else {
+        await interaction.reply({ content: 'Unknown configuration option.', flags: 64 });
+        return;
+    }
+
+    storage.updateRunner(runnerId, runner);
+
+    await interaction.reply({
+        content: '✅ Claude defaults updated.',
+        flags: 64
+    });
 }
 
 /**

@@ -7,6 +7,7 @@
 import fs from 'fs';
 import WebSocket from 'ws';
 import type { PluginManager, PluginSession } from '../plugins/index.js';
+import type { PluginOptions } from '../plugins/base.js';
 import type { SessionMetadata } from '../types.js';
 import type { WebSocketManager } from '../websocket.js';
 import type { RunnerConfig } from '../config.js';
@@ -30,6 +31,8 @@ export async function handleSessionStart(
         plugin?: 'tmux' | 'print';
         folderPath?: string;
         create?: boolean;
+        resume?: boolean;
+        options?: PluginOptions;
     },
     deps: SessionHandlerDeps
 ): Promise<void> {
@@ -100,15 +103,28 @@ export async function handleSessionStart(
             return;
         }
 
+        const defaultOptions = data.cliType === 'claude' ? config.claudeDefaults : undefined;
+        const mergedOptions: PluginOptions = {
+            ...(defaultOptions || {}),
+            ...(data.options || {})
+        };
+
+        if (mergedOptions.continueConversation === undefined) {
+            mergedOptions.continueConversation = true;
+        }
+        if (mergedOptions.skipPermissions === undefined) {
+            mergedOptions.skipPermissions = false;
+        }
+        if (data.resume && !mergedOptions.resumeSessionId) {
+            mergedOptions.resumeSessionId = data.sessionId;
+        }
+
         const session = await pluginManager.createSession({
             cliPath,
             cwd,
             sessionId: data.sessionId,
             cliType: data.cliType,
-            options: {
-                skipPermissions: false,
-                continueConversation: true
-            }
+            options: mergedOptions
         }, data.plugin);
 
         console.log(`Session ${data.sessionId} created with ${data.plugin || 'default'} plugin`);

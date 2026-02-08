@@ -11,6 +11,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import type { PluginOptions } from './plugins/base.js';
 
 export interface TmuxConfig {
     pollInterval: number;
@@ -48,6 +49,9 @@ export interface RunnerConfig {
 
     // Assistant settings
     assistant: AssistantConfig;
+
+    // Claude default session options
+    claudeDefaults?: Partial<PluginOptions>;
 }
 
 interface FileConfig {
@@ -63,6 +67,7 @@ interface FileConfig {
     cliSearchPaths?: string[];
     tmux?: Partial<TmuxConfig>;
     assistant?: Partial<AssistantConfig>;
+    claudeDefaults?: Partial<PluginOptions>;
 }
 
 export function loadConfigFile(): FileConfig {
@@ -198,6 +203,9 @@ export function loadConfig(): RunnerConfig {
             folder: process.env.DISCODE_ASSISTANT_FOLDER || fileConfig.assistant?.folder,
             plugin: (fileConfig.assistant?.plugin as 'tmux' | 'print') || 'tmux',
         },
+
+        // Claude defaults (session options)
+        claudeDefaults: fileConfig.claudeDefaults || {}
     };
 }
 

@@ -11,6 +11,7 @@ import { getConfig } from './config.js';
 import * as botState from './state.js';
 import { initCategoryManager, getCategoryManager } from './services/category-manager.js';
 import { initSessionSyncService, getSessionSyncService } from './services/session-sync.js';
+import { buildSessionStartOptions } from './utils/session-options.js';
 import {
   createWebSocketServer,
   handleButtonInteraction,
@@ -301,6 +302,10 @@ botState.client.on(Events.MessageCreate, async (message) => {
           botState.sessionStatuses.set(syncEntry.session.claudeSessionId, 'working');
 
           // Send start/resume command
+          const startOptions = buildSessionStartOptions(runner, undefined, {
+              resumeSessionId: syncEntry.session.claudeSessionId
+          });
+
           ws.send(JSON.stringify({
               type: 'session_start',
               data: {
@@ -309,7 +314,8 @@ botState.client.on(Events.MessageCreate, async (message) => {
                   cliType: 'claude',
                   plugin: 'claude-sdk',
                   folderPath: syncEntry.projectPath,
-                  resume: true 
+                  resume: true,
+                  options: startOptions
               }
           }));
 

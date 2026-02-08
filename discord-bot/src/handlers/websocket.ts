@@ -17,6 +17,7 @@ import {
     formatContentWithTables,
     createErrorEmbed,
 } from '../utils/embeds.js';
+import { buildSessionStartOptions } from '../utils/session-options.js';
 import {
     getOrCreateRunnerChannel,
 } from '../utils/channels.js';
@@ -42,7 +43,8 @@ function applyDefaultRunnerConfig(runner: RunnerInfo): void {
             threadArchiveDays: 3,
             autoSync: true,
             thinkingLevel: 'low',
-            yoloMode: false
+            yoloMode: false,
+            claudeDefaults: {}
         };
         return;
     }
@@ -50,6 +52,7 @@ function applyDefaultRunnerConfig(runner: RunnerInfo): void {
     if (runner.config.autoSync === undefined) runner.config.autoSync = true;
     if (runner.config.thinkingLevel === undefined) runner.config.thinkingLevel = 'low';
     if (runner.config.yoloMode === undefined) runner.config.yoloMode = false;
+    if (runner.config.claudeDefaults === undefined) runner.config.claudeDefaults = {};
 }
 
 function clearOfflineTimer(runnerId: string): void {
@@ -1700,6 +1703,8 @@ async function handleSpawnThread(ws: any, data: any): Promise<void> {
         storage.createSession(session);
 
         // Send session_start to runner
+        const startOptions = buildSessionStartOptions(runner);
+
         ws.send(JSON.stringify({
             type: 'session_start',
             data: {
@@ -1708,7 +1713,8 @@ async function handleSpawnThread(ws: any, data: any): Promise<void> {
                 cliType: resolvedCliType,
                 plugin: 'tmux',
                 folderPath: folder,
-                create: true
+                create: true,
+                options: startOptions
             }
         }));
 

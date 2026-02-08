@@ -25,6 +25,7 @@ export interface RunnerConfig {
   autoSync?: boolean;
   thinkingLevel?: 'high' | 'medium' | 'low';
   yoloMode?: boolean; // If true, auto-approve commands
+  claudeDefaults?: Record<string, any>;
 }
 
 export interface RunnerInfo {

@@ -127,19 +127,54 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         this.createdAt = new Date();
         this.lastActivity = new Date();
 
+        const options = config.options || {};
+        const allowDangerouslySkipPermissions =
+            options.allowDangerouslySkipPermissions ?? options.skipPermissions ?? false;
+
         // Initialize the Claude Client
         this.client = new ClaudeClient({
             cwd: config.cwd || process.cwd(),
             claudePath: config.cliPath, // Use provided CLI path
+            executable: options.executable,
+            executableArgs: options.executableArgs,
             debug: process.env.DEBUG_CLAUDE === 'true',
             sessionId: this.sessionId,
             env: {
                 ...process.env,
+                ...options.env,
                 DISCODE_SESSION_ID: this.sessionId
             },
+            includePartialMessages: options.includePartialMessages,
+            permissionPromptTool: options.permissionPromptTool,
+            permissionPromptToolName: options.permissionPromptToolName,
+            resumeSessionId: options.resumeSessionId,
+            continueConversation: options.continueConversation,
+            forkSession: options.forkSession,
+            resumeSessionAt: options.resumeSessionAt,
+            persistSession: options.persistSession,
+            maxTurns: options.maxTurns,
+            maxBudgetUsd: options.maxBudgetUsd,
+            model: options.model,
+            fallbackModel: options.fallbackModel,
+            agent: options.agent,
+            betas: options.betas,
+            jsonSchema: options.jsonSchema,
+            permissionMode: options.permissionMode,
+            allowDangerouslySkipPermissions,
+            allowedTools: options.allowedTools,
+            disallowedTools: options.disallowedTools,
+            tools: options.tools,
+            mcpServers: options.mcpServers,
+            strictMcpConfig: options.strictMcpConfig,
+            settingSources: options.settingSources,
+            additionalDirectories: options.additionalDirectories,
+            plugins: options.plugins,
+            extraArgs: options.extraArgs,
+            sandbox: options.sandbox,
+            enableFileCheckpointing: options.enableFileCheckpointing,
             thinking: {
-                maxTokens: config.options?.maxThinkingTokens,
-                level: config.options?.thinkingLevel
+                maxTokens: options.maxThinkingTokens,
+                level: options.thinkingLevel
             }
         });
 

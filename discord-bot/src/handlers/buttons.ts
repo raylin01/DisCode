@@ -7,6 +7,7 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 import * as botState from '../state.js';
 import { storage } from '../storage.js';
+import { buildSessionStartOptions } from '../utils/session-options.js';
 import { createErrorEmbed, createApprovalDecisionEmbed } from '../utils/embeds.js';
 import { handlePermissionButton, rebuildPermissionButtons, handleTellClaudeModal } from './permission-buttons.js';
 import { permissionStateStore } from '../permissions/state-store.js';
@@ -267,6 +268,7 @@ async function handleCreateFolderRetry(interaction: any, userId: string, customI
 
     const ws = botState.runnerConnections.get(runner.runnerId);
     if (ws) {
+        const startOptions = buildSessionStartOptions(runner);
         ws.send(JSON.stringify({
             type: 'session_start',
             data: {
@@ -274,7 +276,8 @@ async function handleCreateFolderRetry(interaction: any, userId: string, customI
                 runnerId: runner.runnerId,
                 cliType: session.cliType,
                 folderPath: session.folderPath,
-                create: true
+                create: true,
+                options: startOptions
             }
         }));
 
@@ -1327,23 +1330,16 @@ async function handleStartSession(interaction: any, userId: string): Promise<voi
         // Send session start to runner
         const ws = botState.runnerConnections.get(runner.runnerId);
         if (ws) {
+            const startOptions = buildSessionStartOptions(runner, state.options);
+
             const startData: any = {
                 sessionId: session.sessionId,
                 runnerId: runner.runnerId,
                 cliType: state.cliType,
                 folderPath: folderPath,
                 plugin: state.plugin, // Pass plugin type
-                options: { ...state.options }
+                options: startOptions
             };
-
-            // Map frontend options to runner options behavior
-            if (!startData.options) startData.options = {};
-
-            if (state.options?.approvalMode === 'auto') {
-                startData.options.skipPermissions = true;
-            } else {
-                startData.options.skipPermissions = false;
-            }
 
             ws.send(JSON.stringify({
                 type: 'session_start',

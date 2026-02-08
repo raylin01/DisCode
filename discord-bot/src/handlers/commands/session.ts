@@ -6,6 +6,7 @@
 
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import * as botState from '../../state.js';
+import { buildSessionStartOptions } from '../../utils/session-options.js';
 import { storage } from '../../storage.js';
 import { createErrorEmbed, createInfoEmbed, createSuccessEmbed } from '../../utils/embeds.js';
 import type { RunnerInfo, Session } from '../../../../shared/types.ts';
@@ -465,6 +466,8 @@ export async function handleRespawnSession(interaction: any, userId: string): Pr
     });
 
     // Notify runner to start session
+    const startOptions = buildSessionStartOptions(runner);
+
     ws.send(JSON.stringify({
         type: 'session_start',
         data: {
@@ -472,7 +475,8 @@ export async function handleRespawnSession(interaction: any, userId: string): Pr
             runnerId: runner.runnerId,
             cliType: lastSession.cliType,
             plugin: lastSession.plugin,  // Include plugin type from original session
-            folderPath: lastSession.folderPath
+            folderPath: lastSession.folderPath,
+            options: startOptions
         }
     }));
 

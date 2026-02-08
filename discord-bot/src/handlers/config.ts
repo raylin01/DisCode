@@ -51,12 +51,16 @@ export async function handleRunnerConfig(
         threadArchiveDays: 3,
         autoSync: true,
         thinkingLevel: 'low',
-        yoloMode: false
+        yoloMode: false,
+        claudeDefaults: {}
     };
 
     // Ensure config exists in runner object for updates
     if (!runner.config) {
         runner.config = config;
+        storage.updateRunner(runnerId, runner);
+    } else if (!runner.config.claudeDefaults) {
+        runner.config.claudeDefaults = {};
         storage.updateRunner(runnerId, runner);
     }
 
@@ -136,6 +140,7 @@ export async function handleRunnerConfig(
 
         case 'claude':
             embed.setDescription('**Claude Settings**\n\nConfigure AI behavior and capabilities.');
+            const claudeDefaults = config.claudeDefaults || {};
             
             // Thinking Level
             const thinkingRow = new ActionRowBuilder<ButtonBuilder>();
@@ -156,6 +161,49 @@ export async function handleRunnerConfig(
                 .setStyle(config.yoloMode ? ButtonStyle.Danger : ButtonStyle.Success);
             
             rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(yoloToggle));
+
+            embed.addFields(
+                { name: 'Default Model', value: claudeDefaults.model || 'Auto', inline: true },
+                { name: 'Max Turns', value: claudeDefaults.maxTurns ? String(claudeDefaults.maxTurns) : 'Default', inline: true },
+                { name: 'Max Thinking Tokens', value: claudeDefaults.maxThinkingTokens ? String(claudeDefaults.maxThinkingTokens) : 'Default', inline: true },
+                { name: 'Permission Mode', value: claudeDefaults.permissionMode || 'default', inline: true }
+            );
+
+            const claudeDefaultsRow = new ActionRowBuilder<ButtonBuilder>()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setModel`)
+                        .setLabel('Set Model')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setMaxTurns`)
+                        .setLabel('Set Max Turns')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setMaxThinking`)
+                        .setLabel('Set Max Thinking')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:action:clearClaudeDefaults`)
+                        .setLabel('Clear Defaults')
+                        .setStyle(ButtonStyle.Danger)
+                );
+
+            rows.push(claudeDefaultsRow);
+
+            const permissionModeRow = new ActionRowBuilder<ButtonBuilder>()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:set:permissionMode:default`)
+                        .setLabel('Permission: Default')
+                        .setStyle(claudeDefaults.permissionMode === 'default' || !claudeDefaults.permissionMode ? ButtonStyle.Primary : ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:set:permissionMode:acceptEdits`)
+                        .setLabel('Permission: Accept Edits')
+                        .setStyle(claudeDefaults.permissionMode === 'acceptEdits' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+                );
+
+            rows.push(permissionModeRow);
             break;
 
         case 'advanced':
@@ -178,7 +226,7 @@ export async function handleRunnerConfig(
  */
 export async function handleConfigAction(interaction: any, userId: string, customId: string): Promise<void> {
     // Parse customId: config:{runnerId}:{action}:{param}
-    // Actions: section, toggle, set, cycle
+    // Actions: section, toggle, set, cycle, modal, action
     const parts = customId.split(':');
     if (parts.length < 4) return;
     
@@ -197,6 +245,11 @@ export async function handleConfigAction(interaction: any, userId: string, custo
     // Handle Sections (Navigation)
     if (action === 'section') {
         await handleRunnerConfig(interaction as ButtonInteraction, userId, runnerId, param as ConfigSection);
+        return;
+    }
+
+    if (action === 'modal') {
+        await handleConfigModal(interaction as ButtonInteraction, runnerId, param);
         return;
     }
 
@@ -220,6 +273,16 @@ export async function handleConfigAction(interaction: any, userId: string, custo
             const level = param.split(':')[1] as 'low'|'medium'|'high';
             runner.config.thinkingLevel = level;
             updated = true;
+        } else if (param.startsWith('permissionMode')) {
+            const mode = param.split(':')[1] as 'default' | 'acceptEdits';
+            runner.config.claudeDefaults = runner.config.claudeDefaults || {};
+            runner.config.claudeDefaults.permissionMode = mode;
+            updated = true;
+        }
+    } else if (action === 'action') {
+        if (param === 'clearClaudeDefaults') {
+            runner.config.claudeDefaults = {};
+            updated = true;
         }
     }
 
@@ -236,9 +299,38 @@ export async function handleConfigAction(interaction: any, userId: string, custo
         // Determine current section to stay on
         // We can check the customId or infer likely section
         let section: ConfigSection = 'main';
-        if (param.startsWith('thinkingLevel') || param === 'yoloMode') section = 'claude';
+        if (param.startsWith('thinkingLevel') || param === 'yoloMode' || param.startsWith('permissionMode') || param === 'clearClaudeDefaults') section = 'claude';
         if (param === 'autoSync' || param === 'archiveDays') section = 'threads';
 
         await handleRunnerConfig(interaction as ButtonInteraction, userId, runnerId, section);
     }
+}
+
+async function handleConfigModal(
+    interaction: ButtonInteraction,
+    runnerId: string,
+    param: string
+): Promise<void> {
+    const modal = new ModalBuilder()
+        .setCustomId(`config_modal:${runnerId}:${param}`)
+        .setTitle('Update Claude Defaults');
+
+    const input = new TextInputBuilder()
+        .setRequired(true)
+        .setStyle(TextInputStyle.Short);
+
+    if (param === 'setModel') {
+        input.setCustomId('model').setLabel('Model (e.g., claude-sonnet-4-5)');
+    } else if (param === 'setMaxTurns') {
+        input.setCustomId('maxTurns').setLabel('Max Turns (number)');
+    } else if (param === 'setMaxThinking') {
+        input.setCustomId('maxThinkingTokens').setLabel('Max Thinking Tokens (number)');
+    } else {
+        await interaction.reply({ content: 'Unknown configuration option.', ephemeral: true });
+        return;
+    }
+
+    const row = new ActionRowBuilder<TextInputBuilder>().addComponents(input);
+    modal.addComponents(row);
+    await interaction.showModal(modal);
 }

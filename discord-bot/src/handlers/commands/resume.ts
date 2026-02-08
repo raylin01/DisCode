@@ -9,6 +9,7 @@ import { getSessionSyncService } from '../../services/session-sync.js';
 import { storage } from '../../storage.js';
 import * as botState from '../../state.js';
 import { createErrorEmbed, createInfoEmbed, createSuccessEmbed } from '../../utils/embeds.js';
+import { buildSessionStartOptions } from '../../utils/session-options.js';
 import type { Session } from '../../../../shared/types.js';
 
 export async function handleResumeSession(interaction: ChatInputCommandInteraction, userId: string): Promise<void> {
@@ -163,6 +164,10 @@ export async function handleResumeSession(interaction: ChatInputCommandInteracti
     // 3. Send Start Command to Runner
     const ws = botState.runnerConnections.get(runnerId);
     if (ws) {
+        const startOptions = buildSessionStartOptions(runner, undefined, {
+            resumeSessionId: resolvedSessionId
+        });
+
         ws.send(JSON.stringify({
             type: 'session_start',
             data: {
@@ -171,7 +176,8 @@ export async function handleResumeSession(interaction: ChatInputCommandInteracti
                 cliType: 'claude',
                 plugin: 'claude-sdk',
                 folderPath: projectPath,
-                resume: true // Explicitly flag as resume
+                resume: true, // Explicitly flag as resume
+                options: startOptions
             }
         }));
 
