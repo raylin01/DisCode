@@ -19,6 +19,7 @@ export interface WebSocketManagerConfig {
     heartbeatInterval: number;
     reconnectDelay: number;
     assistantEnabled: boolean;
+    claudeDefaults?: Record<string, any>;
 }
 
 export class WebSocketManager extends EventEmitter {
@@ -61,7 +62,8 @@ export class WebSocketManager extends EventEmitter {
                     token: this.config.token,
                     cliTypes: this.config.cliTypes,
                     defaultWorkspace: this.config.defaultWorkspace,
-                    assistantEnabled: this.config.assistantEnabled
+                    assistantEnabled: this.config.assistantEnabled,
+                    claudeDefaults: this.config.claudeDefaults
                 }
             });
 
@@ -201,5 +203,6 @@ export function createWebSocketManager(config: RunnerConfig): WebSocketManager {
         heartbeatInterval: config.heartbeatInterval,
         reconnectDelay: config.reconnectDelay,
         assistantEnabled: config.assistant.enabled,
+        claudeDefaults: config.claudeDefaults || {}
     });
 }

@@ -486,6 +486,10 @@ async function handleRegister(ws: any, data: any): Promise<void> {
         tokenInUse.cliTypes = data.cliTypes;
         tokenInUse.defaultWorkspace = data.defaultWorkspace;
         tokenInUse.assistantEnabled = data.assistantEnabled ?? tokenInUse.assistantEnabled ?? true;
+        if (data.claudeDefaults && typeof data.claudeDefaults === 'object') {
+            tokenInUse.config = tokenInUse.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {} };
+            tokenInUse.config.claudeDefaults = { ...data.claudeDefaults };
+        }
         applyDefaultRunnerConfig(tokenInUse);
 
         const categoryManager = getCategoryManager();
@@ -526,6 +530,10 @@ async function handleRegister(ws: any, data: any): Promise<void> {
         if (data.defaultWorkspace) existingRunner.defaultWorkspace = data.defaultWorkspace;
         // Update assistantEnabled from registration message
         existingRunner.assistantEnabled = data.assistantEnabled ?? true;
+        if (data.claudeDefaults && typeof data.claudeDefaults === 'object') {
+            existingRunner.config = existingRunner.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {} };
+            existingRunner.config.claudeDefaults = { ...data.claudeDefaults };
+        }
         applyDefaultRunnerConfig(existingRunner);
 
         const categoryManager = getCategoryManager();
@@ -568,7 +576,14 @@ async function handleRegister(ws: any, data: any): Promise<void> {
             authorizedUsers: [tokenInfo.userId],
             cliTypes: data.cliTypes,
             defaultWorkspace: data.defaultWorkspace,
-            assistantEnabled: data.assistantEnabled ?? true
+            assistantEnabled: data.assistantEnabled ?? true,
+            config: {
+                threadArchiveDays: 3,
+                autoSync: true,
+                thinkingLevel: 'low',
+                yoloMode: false,
+                claudeDefaults: data.claudeDefaults && typeof data.claudeDefaults === 'object' ? { ...data.claudeDefaults } : {}
+            }
         };
         applyDefaultRunnerConfig(newRunner);
 

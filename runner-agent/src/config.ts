@@ -12,6 +12,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { PluginOptions } from './plugins/base.js';
+import { normalizeClaudeOptions } from './utils/session-options.js';
 
 export interface TmuxConfig {
     pollInterval: number;
@@ -159,6 +160,11 @@ export function loadConfig(): RunnerConfig {
         tmuxConfig.discoveryEnabled = false;
     }
 
+    const normalizedDefaults = normalizeClaudeOptions(fileConfig.claudeDefaults || {});
+    if (normalizedDefaults.warnings.length > 0) {
+        console.warn(`[Config] Ignored invalid claudeDefaults: ${normalizedDefaults.warnings.join(' ')}`);
+    }
+
     return {
         // Core - env overrides file
         botWsUrl: process.env.DISCODE_BOT_URL || fileConfig.botWsUrl || 'ws://localhost:8080',
@@ -205,7 +211,7 @@ export function loadConfig(): RunnerConfig {
         },
 
         // Claude defaults (session options)
-        claudeDefaults: fileConfig.claudeDefaults || {}
+        claudeDefaults: normalizedDefaults.options
     };
 }
 
