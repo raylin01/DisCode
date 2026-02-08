@@ -56,6 +56,12 @@ export async function handleModalSubmit(interaction: any): Promise<void> {
         await handleRunnerConfigModal(interaction, userId, customId);
         return;
     }
+
+    // Handle session settings modals
+    if (customId.startsWith('session_settings_modal_submit:')) {
+        await handleSessionSettingsModalSubmit(interaction, userId, customId);
+        return;
+    }
 }
 
 /**
@@ -133,6 +139,75 @@ async function handlePromptModal(interaction: any, userId: string, customId: str
             flags: 64
         });
     }
+}
+
+async function handleSessionSettingsModalSubmit(interaction: any, userId: string, customId: string): Promise<void> {
+    const state = botState.sessionCreationState.get(userId);
+    if (!state) {
+        await interaction.reply({ content: 'Session setup expired. Please restart /create-session.', flags: 64 });
+        return;
+    }
+
+    if (!state.options) state.options = {};
+
+    const param = customId.split(':')[1];
+    const getValue = (id: string) => interaction.fields.getTextInputValue(id).trim();
+
+    if (param === 'model') {
+        const value = getValue('model');
+        if (value) state.options.model = value;
+        else delete state.options.model;
+    } else if (param === 'fallbackModel') {
+        const value = getValue('fallbackModel');
+        if (value) state.options.fallbackModel = value;
+        else delete state.options.fallbackModel;
+    } else if (param === 'maxTurns') {
+        const value = getValue('maxTurns');
+        if (!value) {
+            delete state.options.maxTurns;
+        } else {
+            const num = parseInt(value, 10);
+            if (!Number.isFinite(num) || num <= 0) {
+                await interaction.reply({ content: 'Max turns must be a positive integer.', flags: 64 });
+                return;
+            }
+            state.options.maxTurns = num;
+        }
+    } else if (param === 'maxThinkingTokens') {
+        const value = getValue('maxThinkingTokens');
+        if (!value) {
+            delete state.options.maxThinkingTokens;
+        } else {
+            const num = parseInt(value, 10);
+            if (!Number.isFinite(num) || num <= 0) {
+                await interaction.reply({ content: 'Max thinking tokens must be a positive integer.', flags: 64 });
+                return;
+            }
+            state.options.maxThinkingTokens = num;
+        }
+    } else if (param === 'maxBudgetUsd') {
+        const value = getValue('maxBudgetUsd');
+        if (!value) {
+            delete state.options.maxBudgetUsd;
+        } else {
+            const num = parseFloat(value);
+            if (!Number.isFinite(num) || num <= 0) {
+                await interaction.reply({ content: 'Max budget must be a positive number.', flags: 64 });
+                return;
+            }
+            state.options.maxBudgetUsd = num;
+        }
+    } else if (param === 'agent') {
+        const value = getValue('agent');
+        if (value) state.options.agent = value;
+        else delete state.options.agent;
+    } else {
+        await interaction.reply({ content: 'Unknown session setting.', flags: 64 });
+        return;
+    }
+
+    botState.sessionCreationState.set(userId, state);
+    await interaction.reply({ content: '✅ Session settings updated.', flags: 64 });
 }
 
 /**

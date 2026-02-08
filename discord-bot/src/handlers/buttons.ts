@@ -147,6 +147,11 @@ export async function handleButtonInteraction(interaction: any): Promise<void> {
         return;
     }
 
+    if (customId.startsWith('session_settings_modal:')) {
+        await handleSessionSettingsModal(interaction, userId, customId);
+        return;
+    }
+
     // Runner Dashboard Buttons
     if (customId.startsWith('runner_config:')) {
         const runnerId = customId.split(':')[1];
@@ -1131,10 +1136,34 @@ export async function handleSessionReview(interaction: any, userId: string): Pro
         approvalText = 'Auto-Approve (Stream Mode)';
     }
 
+    const modelText = state.options?.model || runner?.config?.claudeDefaults?.model || 'Auto';
+    const fallbackText = state.options?.fallbackModel || runner?.config?.claudeDefaults?.fallbackModel || 'None';
+    const maxTurnsText = state.options?.maxTurns || runner?.config?.claudeDefaults?.maxTurns || 'Default';
+    const maxThinkingText = state.options?.maxThinkingTokens || runner?.config?.claudeDefaults?.maxThinkingTokens || 'Default';
+    const maxBudgetText = state.options?.maxBudgetUsd || runner?.config?.claudeDefaults?.maxBudgetUsd || 'Default';
+    const agentText = state.options?.agent || runner?.config?.claudeDefaults?.agent || 'Default';
+    const permissionModeText = state.options?.permissionMode || runner?.config?.claudeDefaults?.permissionMode || 'default';
+    const partialsText = (state.options?.includePartialMessages ?? runner?.config?.claudeDefaults?.includePartialMessages) === false ? 'Disabled' : 'Enabled';
+
     const embed = new EmbedBuilder()
         .setColor(0x00FF00)
         .setTitle('Review & Start Session')
-        .setDescription(`**Runner:** \`${runner?.name}\`\n**CLI:** ${state.cliType.toUpperCase()}\n**Plugin:** ${state.plugin?.toUpperCase()}\n**Folder:** \`${state.folderPath}\`\n\n**Settings:**\nApproval Mode: \`${approvalText}\``);
+        .setDescription(
+            `**Runner:** \`${runner?.name}\`\n` +
+            `**CLI:** ${state.cliType.toUpperCase()}\n` +
+            `**Plugin:** ${state.plugin?.toUpperCase()}\n` +
+            `**Folder:** \`${state.folderPath}\`\n\n` +
+            `**Settings:**\n` +
+            `Approval Mode: \`${approvalText}\`\n` +
+            `Model: \`${modelText}\`\n` +
+            `Fallback: \`${fallbackText}\`\n` +
+            `Max Turns: \`${maxTurnsText}\`\n` +
+            `Max Thinking: \`${maxThinkingText}\`\n` +
+            `Max Budget: \`${maxBudgetText}\`\n` +
+            `Agent: \`${agentText}\`\n` +
+            `Permission Mode: \`${permissionModeText}\`\n` +
+            `Include Partials: \`${partialsText}\``
+        );
 
     const row = new ActionRowBuilder<ButtonBuilder>()
         .addComponents(
@@ -1174,11 +1203,31 @@ async function handleCustomizeSettings(interaction: any, userId: string): Promis
     if (!state) return;
 
     const currentMode = state.options?.approvalMode || 'manual';
+    const permissionMode = state.options?.permissionMode || 'default';
+    const includePartials = state.options?.includePartialMessages !== false;
+    const modelText = state.options?.model || 'Auto';
+    const fallbackText = state.options?.fallbackModel || 'None';
+    const maxTurnsText = state.options?.maxTurns || 'Default';
+    const maxThinkingText = state.options?.maxThinkingTokens || 'Default';
+    const maxBudgetText = state.options?.maxBudgetUsd || 'Default';
+    const agentText = state.options?.agent || 'Default';
 
     const embed = new EmbedBuilder()
         .setColor(0x0099FF)
         .setTitle('Customize Session Settings')
-        .setDescription('Configure how the CLI session behaves.');
+        .setDescription(
+            `Configure how the CLI session behaves.\n\n` +
+            `**Current:**\n` +
+            `Approval: \`${currentMode}\`\n` +
+            `Permission Mode: \`${permissionMode}\`\n` +
+            `Partials: \`${includePartials ? 'Enabled' : 'Disabled'}\`\n` +
+            `Model: \`${modelText}\`\n` +
+            `Fallback: \`${fallbackText}\`\n` +
+            `Max Turns: \`${maxTurnsText}\`\n` +
+            `Max Thinking: \`${maxThinkingText}\`\n` +
+            `Max Budget: \`${maxBudgetText}\`\n` +
+            `Agent: \`${agentText}\``
+        );
 
     const modeRow = new ActionRowBuilder<ButtonBuilder>()
         .addComponents(
@@ -1194,8 +1243,56 @@ async function handleCustomizeSettings(interaction: any, userId: string): Promis
                 .setEmoji('⚡')
         );
 
+    const permissionRow = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('session_settings_permission_default')
+                .setLabel('Permission: Default')
+                .setStyle(permissionMode === 'default' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('session_settings_permission_accept')
+                .setLabel('Permission: Accept Edits')
+                .setStyle(permissionMode === 'acceptEdits' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('session_settings_partials_toggle')
+                .setLabel(includePartials ? 'Disable Partials' : 'Enable Partials')
+                .setStyle(includePartials ? ButtonStyle.Secondary : ButtonStyle.Success)
+        );
+
+    const modelRow = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('session_settings_modal:model')
+                .setLabel('Set Model')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('session_settings_modal:fallbackModel')
+                .setLabel('Set Fallback')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+    const limitsRow = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('session_settings_modal:maxTurns')
+                .setLabel('Set Max Turns')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('session_settings_modal:maxThinkingTokens')
+                .setLabel('Set Max Thinking')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('session_settings_modal:maxBudgetUsd')
+                .setLabel('Set Max Budget')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
     const navRow = new ActionRowBuilder<ButtonBuilder>()
         .addComponents(
+            new ButtonBuilder()
+                .setCustomId('session_settings_modal:agent')
+                .setLabel('Set Agent')
+                .setStyle(ButtonStyle.Secondary),
             new ButtonBuilder()
                 .setCustomId('session_settings_back')
                 .setLabel('Back to Review')
@@ -1205,7 +1302,7 @@ async function handleCustomizeSettings(interaction: any, userId: string): Promis
 
     await interaction.update({
         embeds: [embed],
-        components: [modeRow, navRow]
+        components: [modeRow, permissionRow, modelRow, limitsRow, navRow]
     });
 }
 
@@ -1219,6 +1316,12 @@ async function handleSessionSettings(interaction: any, userId: string, customId:
         state.options.approvalMode = 'manual';
     } else if (customId === 'session_settings_approval_auto') {
         state.options.approvalMode = 'auto';
+    } else if (customId === 'session_settings_permission_default') {
+        state.options.permissionMode = 'default';
+    } else if (customId === 'session_settings_permission_accept') {
+        state.options.permissionMode = 'acceptEdits';
+    } else if (customId === 'session_settings_partials_toggle') {
+        state.options.includePartialMessages = state.options.includePartialMessages === false ? true : false;
     } else if (customId === 'session_settings_back') {
         await handleSessionReview(interaction, userId);
         return;
@@ -1228,6 +1331,41 @@ async function handleSessionSettings(interaction: any, userId: string, customId:
 
     // Refresh the settings UI
     await handleCustomizeSettings(interaction, userId);
+}
+
+async function handleSessionSettingsModal(interaction: any, userId: string, customId: string): Promise<void> {
+    const state = botState.sessionCreationState.get(userId);
+    if (!state) return;
+
+    const param = customId.split(':')[1];
+    const modal = new ModalBuilder()
+        .setCustomId(`session_settings_modal_submit:${param}`)
+        .setTitle('Update Session Setting');
+
+    const input = new TextInputBuilder()
+        .setRequired(false)
+        .setStyle(TextInputStyle.Short);
+
+    if (param === 'model') {
+        input.setCustomId('model').setLabel('Model (blank to clear)');
+    } else if (param === 'fallbackModel') {
+        input.setCustomId('fallbackModel').setLabel('Fallback Model (blank to clear)');
+    } else if (param === 'maxTurns') {
+        input.setCustomId('maxTurns').setLabel('Max Turns (blank to clear)');
+    } else if (param === 'maxThinkingTokens') {
+        input.setCustomId('maxThinkingTokens').setLabel('Max Thinking Tokens (blank to clear)');
+    } else if (param === 'maxBudgetUsd') {
+        input.setCustomId('maxBudgetUsd').setLabel('Max Budget USD (blank to clear)');
+    } else if (param === 'agent') {
+        input.setCustomId('agent').setLabel('Agent Name (blank to clear)');
+    } else {
+        await interaction.reply({ content: 'Unknown session setting.', ephemeral: true });
+        return;
+    }
+
+    const row = new ActionRowBuilder<TextInputBuilder>().addComponents(input);
+    modal.addComponents(row);
+    await interaction.showModal(modal);
 }
 
 async function handleStartSession(interaction: any, userId: string): Promise<void> {
