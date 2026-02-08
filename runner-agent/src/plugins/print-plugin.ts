@@ -18,6 +18,7 @@ import {
 } from './base.js';
 import { SkillManager } from '../utils/skill-manager.js';
 import { getConfig } from '../config.js';
+import { buildClaudeCliArgs } from '../utils/claude-cli-args.js';
 
 // ============================================================================
 // Constants
@@ -93,9 +94,11 @@ class PrintSession implements PluginSession {
         // Build command arguments
         // First message: -p --session-id=UUID
         // Subsequent: -p --resume UUID
-        const args = isFirstMessage
-            ? ['-p', `--session-id=${this.sessionId}`, message]
-            : ['-p', '--resume', this.sessionId, message];
+        const claudeArgs = buildClaudeCliArgs(this.config.options);
+        const sessionArgs = isFirstMessage
+            ? [`--session-id=${this.sessionId}`]
+            : ['--resume', this.sessionId];
+        const args = ['-p', ...claudeArgs, ...sessionArgs, message];
 
         this.plugin.log(`[${this.sessionId.slice(0, 8)}] ${isFirstMessage ? 'New' : 'Continue'}: "${message.slice(0, 50)}..."`);
 
@@ -107,10 +110,10 @@ class PrintSession implements PluginSession {
 
             // Spawn via shell for proper argument handling
             const escapedMsg = message.replace(/'/g, "'\\''");
-            const sessionFlag = isFirstMessage
-                ? `--session-id=${this.sessionId}`
-                : `--resume ${this.sessionId}`;
-            const cmd = `${this.config.cliPath} -p ${sessionFlag} '${escapedMsg}'`;
+            const escapedArgs = [...claudeArgs, ...sessionArgs]
+                .map((arg) => `'${String(arg).replace(/'/g, "'\\''")}'`)
+                .join(' ');
+            const cmd = `${this.config.cliPath} -p ${escapedArgs} '${escapedMsg}'`;
 
             this.currentProcess = spawn('/bin/bash', ['-lc', cmd], {
                 cwd: this.config.cwd,
