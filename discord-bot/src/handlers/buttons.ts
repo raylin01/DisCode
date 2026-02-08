@@ -1607,6 +1607,8 @@ async function handleStartSession(interaction: any, userId: string): Promise<voi
         const ws = botState.runnerConnections.get(runner.runnerId);
         if (ws) {
             const startOptions = buildSessionStartOptions(runner, state.options, undefined, state.cliType);
+            session.options = startOptions;
+            storage.updateSession(session.sessionId, session);
 
             const startData: any = {
                 sessionId: session.sessionId,

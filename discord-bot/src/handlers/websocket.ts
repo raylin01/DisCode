@@ -44,7 +44,8 @@ function applyDefaultRunnerConfig(runner: RunnerInfo): void {
             autoSync: true,
             thinkingLevel: 'low',
             yoloMode: false,
-            claudeDefaults: {}
+            claudeDefaults: {},
+            presets: {}
         };
         return;
     }
@@ -53,6 +54,7 @@ function applyDefaultRunnerConfig(runner: RunnerInfo): void {
     if (runner.config.thinkingLevel === undefined) runner.config.thinkingLevel = 'low';
     if (runner.config.yoloMode === undefined) runner.config.yoloMode = false;
     if (runner.config.claudeDefaults === undefined) runner.config.claudeDefaults = {};
+    if (runner.config.presets === undefined) runner.config.presets = {};
 }
 
 function clearOfflineTimer(runnerId: string): void {
@@ -1426,6 +1428,7 @@ async function handleSessionReady(data: any): Promise<void> {
                 }
             }
         }
+        await upsertSessionSettingsSummary(sessionId);
     } catch (error) {
         console.error(`[handleSessionReady] Failed to notify thread:`, error);
     }
@@ -1471,6 +1474,46 @@ async function handleRunnerStatusUpdate(data: any): Promise<void> {
 
 
 
+}
+
+async function upsertSessionSettingsSummary(sessionId: string): Promise<void> {
+    const session = storage.getSession(sessionId);
+    if (!session) return;
+    const runner = storage.getRunner(session.runnerId);
+    const thread = await botState.client.channels.fetch(session.threadId).catch(() => null);
+    if (!thread || !thread.isThread()) return;
+
+    const options = session.options || {};
+    const defaults = runner?.config?.claudeDefaults || {};
+    const resolve = (key: string, fallback: any = 'Default') =>
+        options[key] !== undefined ? options[key] : (defaults as any)[key] ?? fallback;
+
+    const embed = new EmbedBuilder()
+        .setColor(0x2f3136)
+        .setTitle('⚙️ Session Settings')
+        .addFields(
+            { name: 'Model', value: String(resolve('model', 'Auto')), inline: true },
+            { name: 'Fallback', value: String(resolve('fallbackModel', 'None')), inline: true },
+            { name: 'Max Turns', value: String(resolve('maxTurns', 'Default')), inline: true },
+            { name: 'Max Thinking', value: String(resolve('maxThinkingTokens', 'Default')), inline: true },
+            { name: 'Max Budget', value: String(resolve('maxBudgetUsd', 'Default')), inline: true },
+            { name: 'Permission Mode', value: String(resolve('permissionMode', 'default')), inline: true },
+            { name: 'Include Partials', value: resolve('includePartialMessages') === false ? 'Disabled' : 'Enabled', inline: true }
+        )
+        .setFooter({ text: `Session ${session.sessionId.slice(0, 8)}` });
+
+    if (session.settingsMessageId) {
+        const existing = await thread.messages.fetch(session.settingsMessageId).catch(() => null);
+        if (existing) {
+            await existing.edit({ embeds: [embed] });
+            return;
+        }
+    }
+
+    const message = await thread.send({ embeds: [embed] });
+    await message.pin().catch(() => {});
+    session.settingsMessageId = message.id;
+    storage.updateSession(session.sessionId, session);
 }
 
 
@@ -1764,6 +1807,8 @@ async function handleSpawnThread(ws: any, data: any): Promise<void> {
 
         console.log(`[SpawnThread] Created thread ${thread.id}: ${threadName}`);
 
+        const startOptions = buildSessionStartOptions(runner, undefined, undefined, resolvedCliType);
+
         // Create session record
         const session: Session = {
             sessionId,
@@ -1775,14 +1820,13 @@ async function handleSpawnThread(ws: any, data: any): Promise<void> {
             cliType: resolvedCliType,
             plugin: 'tmux',  // Assistant mode always uses tmux plugin
             folderPath: folder,
-            creatorId: runner.ownerId
+            creatorId: runner.ownerId,
+            options: startOptions
         };
 
         storage.createSession(session);
 
         // Send session_start to runner
-        const startOptions = buildSessionStartOptions(runner, undefined, undefined, resolvedCliType);
-
         ws.send(JSON.stringify({
             type: 'session_start',
             data: {

@@ -470,6 +470,8 @@ export async function handleRespawnSession(interaction: any, userId: string): Pr
 
     // Notify runner to start session
     const startOptions = buildSessionStartOptions(runner, undefined, undefined, lastSession.cliType);
+    newSession.options = startOptions;
+    storage.updateSession(newSessionId, newSession);
 
     ws.send(JSON.stringify({
         type: 'session_start',

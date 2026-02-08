@@ -53,7 +53,8 @@ export async function handleRunnerConfig(
         autoSync: true,
         thinkingLevel: 'low',
         yoloMode: false,
-        claudeDefaults: {}
+        claudeDefaults: {},
+        presets: {}
     };
 
     // Ensure config exists in runner object for updates
@@ -62,6 +63,9 @@ export async function handleRunnerConfig(
         storage.updateRunner(runnerId, runner);
     } else if (!runner.config.claudeDefaults) {
         runner.config.claudeDefaults = {};
+        storage.updateRunner(runnerId, runner);
+    } else if (!runner.config.presets) {
+        runner.config.presets = {};
         storage.updateRunner(runnerId, runner);
     }
 
@@ -177,7 +181,8 @@ export async function handleRunnerConfig(
                 { name: 'Tools', value: claudeDefaults.tools ? (Array.isArray(claudeDefaults.tools) ? claudeDefaults.tools.join(', ') : 'default') : 'default', inline: true },
                 { name: 'Betas', value: claudeDefaults.betas?.length ? claudeDefaults.betas.join(', ') : 'None', inline: true },
                 { name: 'Setting Sources', value: claudeDefaults.settingSources?.length ? claudeDefaults.settingSources.join(', ') : 'Default', inline: true },
-                { name: 'Add Dirs', value: claudeDefaults.additionalDirectories?.length ? claudeDefaults.additionalDirectories.join(', ') : 'None', inline: true }
+                { name: 'Add Dirs', value: claudeDefaults.additionalDirectories?.length ? claudeDefaults.additionalDirectories.join(', ') : 'None', inline: true },
+                { name: 'Presets', value: Object.keys(config.presets || {}).length ? Object.keys(config.presets || {}).join(', ') : 'None', inline: false }
             );
 
             const claudeDefaultsRow = new ActionRowBuilder<ButtonBuilder>()
@@ -288,7 +293,23 @@ export async function handleRunnerConfig(
                         .setStyle(ButtonStyle.Secondary)
                 );
 
-            rows.push(claudeDefaultsRowThree, claudeDefaultsRowFour, claudeDefaultsRowFive, claudeDefaultsRowSix);
+            const presetRow = new ActionRowBuilder<ButtonBuilder>()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:savePreset`)
+                        .setLabel('Save Preset')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:applyPreset`)
+                        .setLabel('Apply Preset')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:deletePreset`)
+                        .setLabel('Delete Preset')
+                        .setStyle(ButtonStyle.Danger)
+                );
+
+            rows.push(claudeDefaultsRowThree, claudeDefaultsRowFour, claudeDefaultsRowFive, claudeDefaultsRowSix, presetRow);
 
             const permissionModeRow = new ActionRowBuilder<ButtonBuilder>()
                 .addComponents(
@@ -465,6 +486,12 @@ async function handleConfigModal(
         input.setCustomId('extraArgs').setLabel('Extra Args (JSON object)');
     } else if (param === 'setSandbox') {
         input.setCustomId('sandbox').setLabel('Sandbox (string)');
+    } else if (param === 'savePreset') {
+        input.setCustomId('presetName').setLabel('Preset Name');
+    } else if (param === 'applyPreset') {
+        input.setCustomId('presetName').setLabel('Preset Name to Apply');
+    } else if (param === 'deletePreset') {
+        input.setCustomId('presetName').setLabel('Preset Name to Delete');
     } else {
         await interaction.reply({ content: 'Unknown configuration option.', ephemeral: true });
         return;

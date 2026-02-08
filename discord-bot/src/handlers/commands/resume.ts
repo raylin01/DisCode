@@ -170,6 +170,8 @@ export async function handleResumeSession(interaction: ChatInputCommandInteracti
             { resumeSessionId: resolvedSessionId },
             'claude'
         );
+        sessionObj.options = startOptions;
+        storage.updateSession(sessionObj.sessionId, sessionObj);
 
         ws.send(JSON.stringify({
             type: 'session_start',

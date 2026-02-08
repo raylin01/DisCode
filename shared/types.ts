@@ -26,6 +26,7 @@ export interface RunnerConfig {
   thinkingLevel?: 'high' | 'medium' | 'low';
   yoloMode?: boolean; // If true, auto-approve commands
   claudeDefaults?: Record<string, any>;
+  presets?: Record<string, any>;
 }
 
 export interface RunnerInfo {
@@ -75,6 +76,8 @@ export interface Session {
   folderPath?: string; // Optional custom working folder
   interactionToken?: string; // Token to update the ephemeral "Initializing" message
   creatorId?: string; // ID of the user who created the session
+  options?: Record<string, any>; // Session-specific options
+  settingsMessageId?: string; // Pinned settings summary message ID
 }
 
 export interface Attachment {

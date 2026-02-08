@@ -308,6 +308,8 @@ botState.client.on(Events.MessageCreate, async (message) => {
               { resumeSessionId: syncEntry.session.claudeSessionId },
               'claude'
           );
+          sessionObj.options = startOptions;
+          storage.updateSession(sessionObj.sessionId, sessionObj);
 
           ws.send(JSON.stringify({
               type: 'session_start',

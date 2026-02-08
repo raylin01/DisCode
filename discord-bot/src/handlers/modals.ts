@@ -442,6 +442,38 @@ async function handleRunnerConfigModal(interaction: any, userId: string, customI
         } else {
             runner.config.claudeDefaults.sandbox = raw;
         }
+    } else if (param === 'savePreset') {
+        const name = interaction.fields.getTextInputValue('presetName').trim();
+        if (!name) {
+            await interaction.reply({ content: 'Preset name cannot be empty.', flags: 64 });
+            return;
+        }
+        runner.config.presets = runner.config.presets || {};
+        runner.config.presets[name] = { ...(runner.config.claudeDefaults || {}) };
+    } else if (param === 'applyPreset') {
+        const name = interaction.fields.getTextInputValue('presetName').trim();
+        if (!name) {
+            await interaction.reply({ content: 'Preset name cannot be empty.', flags: 64 });
+            return;
+        }
+        const preset = runner.config.presets?.[name];
+        if (!preset) {
+            await interaction.reply({ content: `Preset '${name}' not found.`, flags: 64 });
+            return;
+        }
+        runner.config.claudeDefaults = { ...preset };
+    } else if (param === 'deletePreset') {
+        const name = interaction.fields.getTextInputValue('presetName').trim();
+        if (!name) {
+            await interaction.reply({ content: 'Preset name cannot be empty.', flags: 64 });
+            return;
+        }
+        if (runner.config.presets?.[name]) {
+            delete runner.config.presets[name];
+        } else {
+            await interaction.reply({ content: `Preset '${name}' not found.`, flags: 64 });
+            return;
+        }
     } else {
         await interaction.reply({ content: 'Unknown configuration option.', flags: 64 });
         return;
