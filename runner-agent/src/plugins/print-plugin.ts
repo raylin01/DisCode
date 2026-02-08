@@ -19,6 +19,7 @@ import {
 import { SkillManager } from '../utils/skill-manager.js';
 import { getConfig } from '../config.js';
 import { buildClaudeCliArgs } from '../utils/claude-cli-args.js';
+import { resolveClaudeCommand, shellEscape } from '../utils/claude-cli-command.js';
 
 // ============================================================================
 // Constants
@@ -110,10 +111,11 @@ class PrintSession implements PluginSession {
 
             // Spawn via shell for proper argument handling
             const escapedMsg = message.replace(/'/g, "'\\''");
-            const escapedArgs = [...claudeArgs, ...sessionArgs]
-                .map((arg) => `'${String(arg).replace(/'/g, "'\\''")}'`)
+            const resolved = resolveClaudeCommand(this.config.cliPath, this.config.options);
+            const escapedArgs = [...resolved.args, '-p', ...claudeArgs, ...sessionArgs]
+                .map((arg) => shellEscape(String(arg)))
                 .join(' ');
-            const cmd = `${this.config.cliPath} -p ${escapedArgs} '${escapedMsg}'`;
+            const cmd = `${shellEscape(resolved.command)} ${escapedArgs} '${escapedMsg}'`;
 
             this.currentProcess = spawn('/bin/bash', ['-lc', cmd], {
                 cwd: this.config.cwd,

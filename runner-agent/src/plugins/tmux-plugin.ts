@@ -38,6 +38,7 @@ import { getParser, type CliParser } from './parsers/index.js';
 import { SkillManager } from '../utils/skill-manager.js';
 import { getConfig } from '../config.js';
 import { buildClaudeCliArgs } from '../utils/claude-cli-args.js';
+import { resolveClaudeCommand } from '../utils/claude-cli-command.js';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -777,9 +778,11 @@ export class TmuxPlugin extends BasePlugin {
 
         if (config.cliType === 'claude') {
             const claudeArgs = buildClaudeCliArgs(config.options);
-            cliCmd = claudeArgs.length > 0
-                ? `${config.cliPath} ${claudeArgs.join(' ')}`
-                : config.cliPath;
+            const resolved = resolveClaudeCommand(config.cliPath, config.options);
+            const allArgs = [...resolved.args, ...claudeArgs];
+            cliCmd = allArgs.length > 0
+                ? `${resolved.command} ${allArgs.join(' ')}`
+                : resolved.command;
         } else if (config.cliType === 'gemini') {
             // Gemini-specific args
             if (config.options?.skipPermissions !== false) {
