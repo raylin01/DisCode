@@ -164,9 +164,12 @@ export async function handleResumeSession(interaction: ChatInputCommandInteracti
     // 3. Send Start Command to Runner
     const ws = botState.runnerConnections.get(runnerId);
     if (ws) {
-        const startOptions = buildSessionStartOptions(runner, undefined, {
-            resumeSessionId: resolvedSessionId
-        });
+        const startOptions = buildSessionStartOptions(
+            runner,
+            undefined,
+            { resumeSessionId: resolvedSessionId },
+            'claude'
+        );
 
         ws.send(JSON.stringify({
             type: 'session_start',

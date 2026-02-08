@@ -273,7 +273,7 @@ async function handleCreateFolderRetry(interaction: any, userId: string, customI
 
     const ws = botState.runnerConnections.get(runner.runnerId);
     if (ws) {
-        const startOptions = buildSessionStartOptions(runner);
+        const startOptions = buildSessionStartOptions(runner, undefined, undefined, session.cliType);
         ws.send(JSON.stringify({
             type: 'session_start',
             data: {
@@ -1468,7 +1468,7 @@ async function handleStartSession(interaction: any, userId: string): Promise<voi
         // Send session start to runner
         const ws = botState.runnerConnections.get(runner.runnerId);
         if (ws) {
-            const startOptions = buildSessionStartOptions(runner, state.options);
+            const startOptions = buildSessionStartOptions(runner, state.options, undefined, state.cliType);
 
             const startData: any = {
                 sessionId: session.sessionId,

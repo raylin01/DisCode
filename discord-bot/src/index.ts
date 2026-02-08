@@ -302,9 +302,12 @@ botState.client.on(Events.MessageCreate, async (message) => {
           botState.sessionStatuses.set(syncEntry.session.claudeSessionId, 'working');
 
           // Send start/resume command
-          const startOptions = buildSessionStartOptions(runner, undefined, {
-              resumeSessionId: syncEntry.session.claudeSessionId
-          });
+          const startOptions = buildSessionStartOptions(
+              runner,
+              undefined,
+              { resumeSessionId: syncEntry.session.claudeSessionId },
+              'claude'
+          );
 
           ws.send(JSON.stringify({
               type: 'session_start',

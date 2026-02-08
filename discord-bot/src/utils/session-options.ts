@@ -10,10 +10,11 @@ export interface SessionStartOptions {
 export function buildSessionStartOptions(
     runner: RunnerInfo | undefined,
     stateOptions?: SessionStartOptions,
-    overrides?: Record<string, any>
+    overrides?: Record<string, any>,
+    cliType?: 'claude' | 'gemini' | 'terminal' | 'generic'
 ): Record<string, any> {
     const options: Record<string, any> = {
-        ...(runner?.config?.claudeDefaults || {}),
+        ...(cliType === 'claude' ? (runner?.config?.claudeDefaults || {}) : {}),
         ...(stateOptions || {}),
         ...(overrides || {})
     };

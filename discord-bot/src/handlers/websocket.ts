@@ -1718,7 +1718,7 @@ async function handleSpawnThread(ws: any, data: any): Promise<void> {
         storage.createSession(session);
 
         // Send session_start to runner
-        const startOptions = buildSessionStartOptions(runner);
+        const startOptions = buildSessionStartOptions(runner, undefined, undefined, resolvedCliType);
 
         ws.send(JSON.stringify({
             type: 'session_start',
