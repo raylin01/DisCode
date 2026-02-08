@@ -128,3 +128,6 @@ export interface PendingPermissionConfirmation {
     timeout: NodeJS.Timeout;
 }
 export const pendingPermissionConfirmations = new Map<string, PendingPermissionConfirmation>();
+
+// Pending runner config updates (requestId -> timeout)
+export const pendingRunnerConfigUpdates = new Map<string, NodeJS.Timeout>();

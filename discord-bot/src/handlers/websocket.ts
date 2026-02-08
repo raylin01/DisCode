@@ -419,7 +419,17 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
             break;
 
         case 'runner_config_updated': {
-            const data = message.data as { runnerId: string; claudeDefaults?: Record<string, any> };
+            const data = message.data as { runnerId: string; claudeDefaults?: Record<string, any>; requestId?: string; warnings?: string[] };
+            if (data?.requestId) {
+                const timeout = botState.pendingRunnerConfigUpdates.get(data.requestId);
+                if (timeout) {
+                    clearTimeout(timeout);
+                    botState.pendingRunnerConfigUpdates.delete(data.requestId);
+                }
+                if (data.warnings?.length) {
+                    console.warn(`[RunnerConfig] Update warnings: ${data.warnings.join(' ')}`);
+                }
+            }
             if (data?.runnerId && data.claudeDefaults) {
                 const runner = storage.getRunner(data.runnerId);
                 if (runner) {
@@ -627,6 +637,36 @@ async function handleRegister(ws: any, data: any): Promise<void> {
         type: 'registered',
         data: { runnerId: data.runnerId, cliTypes: data.cliTypes }
     }));
+
+    // Attempt to reattach active sessions after runner reconnect
+    try {
+        const wsConn = botState.runnerConnections.get(data.runnerId);
+        if (wsConn) {
+            const activeSessions = storage.getRunnerSessions(data.runnerId).filter(s => s.status === 'active');
+            for (const session of activeSessions) {
+                const startOptions = buildSessionStartOptions(
+                    storage.getRunner(data.runnerId),
+                    undefined,
+                    session.cliType === 'claude' ? { resumeSessionId: session.sessionId } : undefined,
+                    session.cliType
+                );
+                wsConn.send(JSON.stringify({
+                    type: 'session_start',
+                    data: {
+                        sessionId: session.sessionId,
+                        runnerId: data.runnerId,
+                        cliType: session.cliType,
+                        plugin: session.plugin,
+                        folderPath: session.folderPath,
+                        resume: session.cliType === 'claude',
+                        options: startOptions
+                    }
+                }));
+            }
+        }
+    } catch (error) {
+        console.warn('[WebSocket] Failed to reattach active sessions:', error);
+    }
 }
 
 /**

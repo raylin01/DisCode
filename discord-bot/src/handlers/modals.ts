@@ -452,11 +452,18 @@ async function handleRunnerConfigModal(interaction: any, userId: string, customI
     if (runner.config?.claudeDefaults) {
         const ws = botState.runnerConnections.get(runnerId);
         if (ws) {
+            const requestId = `runner_config_${runnerId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            const timeout = setTimeout(() => {
+                botState.pendingRunnerConfigUpdates.delete(requestId);
+                console.warn(`[RunnerConfig] No ack for config update ${requestId}`);
+            }, 10000);
+            botState.pendingRunnerConfigUpdates.set(requestId, timeout);
             ws.send(JSON.stringify({
                 type: 'runner_config_update',
                 data: {
                     runnerId,
-                    claudeDefaults: runner.config.claudeDefaults
+                    claudeDefaults: runner.config.claudeDefaults,
+                    requestId
                 }
             }));
         }

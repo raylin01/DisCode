@@ -481,11 +481,18 @@ function sendRunnerConfigUpdate(runnerId: string, claudeDefaults: Record<string,
         console.warn(`[RunnerConfig] Runner ${runnerId} not connected; cannot update defaults.`);
         return;
     }
+    const requestId = `runner_config_${runnerId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const timeout = setTimeout(() => {
+        botState.pendingRunnerConfigUpdates.delete(requestId);
+        console.warn(`[RunnerConfig] No ack for config update ${requestId}`);
+    }, 10000);
+    botState.pendingRunnerConfigUpdates.set(requestId, timeout);
     ws.send(JSON.stringify({
         type: 'runner_config_update',
         data: {
             runnerId,
-            claudeDefaults
+            claudeDefaults,
+            requestId
         }
     }));
 }

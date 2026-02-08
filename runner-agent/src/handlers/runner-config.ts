@@ -12,6 +12,7 @@ import type { WebSocketManager } from '../websocket.js';
 export interface RunnerConfigUpdateData {
     runnerId: string;
     claudeDefaults?: Record<string, any>;
+    requestId?: string;
 }
 
 export async function handleRunnerConfigUpdate(
@@ -41,7 +42,8 @@ export async function handleRunnerConfigUpdate(
         data: {
             runnerId: deps.wsManager.runnerId,
             claudeDefaults: normalized.options,
-            warnings: normalized.warnings
+            warnings: normalized.warnings,
+            requestId: data.requestId
         }
     });
 }

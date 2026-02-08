@@ -73,9 +73,15 @@ export class SessionSyncService extends EventEmitter {
     private ownedSessions = new Set<string>(); // Sessions created/controlled by Discord
     private runnerSyncStatus = new Map<string, RunnerSyncStatus>();
     private pendingSyncStatusRequests = new Map<string, { resolve: (status: RunnerSyncStatus | null) => void; timeout: NodeJS.Timeout }>();
+    private pendingProjectSyncRequests = new Map<string, { runnerId: string; attempts: number; timeout: NodeJS.Timeout }>();
+    private pendingSessionSyncRequests = new Map<string, { runnerId: string; projectPath: string; attempts: number; timeout: NodeJS.Timeout }>();
+    private messageDedup = new Map<string, Set<string>>();
+    private readonly maxDedupEntries = 5000;
     private threadSendQueues = new Map<string, Promise<void>>();
     private readonly threadSendDelayMs = parseInt(process.env.DISCODE_THREAD_SEND_DELAY_MS || '350');
     private readonly maxSyncMessages = parseInt(process.env.DISCODE_SYNC_MAX_MESSAGES || '200');
+    private readonly syncRetryDelayMs = parseInt(process.env.DISCODE_SYNC_RETRY_MS || '15000');
+    private readonly maxSyncRetries = parseInt(process.env.DISCODE_SYNC_MAX_RETRIES || '2');
 
     constructor(client: Client) {
         super();
@@ -154,6 +160,13 @@ export class SessionSyncService extends EventEmitter {
         status.state = data.status === 'error' ? 'error' : 'idle';
         status.lastError = data.error;
         status.lastSyncAt = data.completedAt ? new Date(data.completedAt) : new Date();
+        if (data.requestId) {
+            const pending = this.pendingProjectSyncRequests.get(data.requestId);
+            if (pending) {
+                clearTimeout(pending.timeout);
+                this.pendingProjectSyncRequests.delete(data.requestId);
+            }
+        }
     }
 
     handleSyncSessionsComplete(data: any): void {
@@ -169,6 +182,13 @@ export class SessionSyncService extends EventEmitter {
         projectStatus.sessionCount = data.sessionCount;
 
         status.projects.set(data.projectPath, projectStatus);
+        if (data.requestId) {
+            const pending = this.pendingSessionSyncRequests.get(data.requestId);
+            if (pending) {
+                clearTimeout(pending.timeout);
+                this.pendingSessionSyncRequests.delete(data.requestId);
+            }
+        }
     }
 
     /**
@@ -293,6 +313,8 @@ export class SessionSyncService extends EventEmitter {
             type: 'sync_projects',
             data: { runnerId, requestId }
         }));
+        const timeout = setTimeout(() => this.retrySyncProjects(requestId), this.syncRetryDelayMs);
+        this.pendingProjectSyncRequests.set(requestId, { runnerId, attempts: 1, timeout });
         return requestId;
     }
 
@@ -301,6 +323,12 @@ export class SessionSyncService extends EventEmitter {
      */
     async handleProjectSyncResponse(runnerId: string, projects: { path: string; lastModified: string; sessionCount: number }[]): Promise<void> {
         console.log(`[SessionSync] Received ${projects.length} projects from runner ${runnerId}`);
+        for (const [requestId, pending] of this.pendingProjectSyncRequests.entries()) {
+            if (pending.runnerId === runnerId) {
+                clearTimeout(pending.timeout);
+                this.pendingProjectSyncRequests.delete(requestId);
+            }
+        }
         
         const state = this.runnerStates.get(runnerId);
         if (!state) {
@@ -327,6 +355,8 @@ export class SessionSyncService extends EventEmitter {
             type: 'sync_sessions',
             data: { runnerId, projectPath, requestId }
         }));
+        const timeout = setTimeout(() => this.retrySyncSessions(requestId), this.syncRetryDelayMs);
+        this.pendingSessionSyncRequests.set(requestId, { runnerId, projectPath, attempts: 1, timeout });
         return requestId;
     }
 
@@ -339,6 +369,12 @@ export class SessionSyncService extends EventEmitter {
         sessions: any[]
     ): Promise<void> {
         console.log(`[SessionSync] Received ${sessions.length} sessions for ${projectPath}`);
+        for (const [requestId, pending] of this.pendingSessionSyncRequests.entries()) {
+            if (pending.runnerId === runnerId && pending.projectPath === projectPath) {
+                clearTimeout(pending.timeout);
+                this.pendingSessionSyncRequests.delete(requestId);
+            }
+        }
         
         const projectState = await this.ensureProjectState(runnerId, projectPath);
         if (!projectState) return;
@@ -398,7 +434,7 @@ export class SessionSyncService extends EventEmitter {
                  if (existingSync) {
                       const currentCount = existingSync.messageCount || 0;
                       if (messages.length > currentCount) {
-                          const trulyNew = messages.slice(currentCount);
+                          const trulyNew = this.filterNewMessages(session.sessionId, messages.slice(currentCount));
                           console.log(`[SessionSync] Handing off ${trulyNew.length} messages to syncNewMessages`);
                           await this.syncNewMessages(runnerId, projectPath, session, existingSync, trulyNew);
                       }
@@ -539,8 +575,9 @@ export class SessionSyncService extends EventEmitter {
 
             if (thread) {
                 if (messages && messages.length > 0) {
-                    console.log(`[SessionSync] createSessionThread: Posting ${messages.length} initial messages to thread ${thread.id}`);
-                    await this.postSessionMessages(runnerId, thread, messages);
+                    const uniqueMessages = this.filterNewMessages(session.sessionId, messages);
+                    console.log(`[SessionSync] createSessionThread: Posting ${uniqueMessages.length} initial messages to thread ${thread.id}`);
+                    await this.postSessionMessages(runnerId, thread, uniqueMessages);
                 } else {
                     console.log(`[SessionSync] createSessionThread: No messages to post (messages arg is ${messages ? 'empty' : 'null'})`);
                 }
@@ -630,7 +667,7 @@ export class SessionSyncService extends EventEmitter {
             console.log(`[SessionSync] Existing Sync found. Current: ${currentCount}, New Total: ${allMessages.length}`);
 
             if (allMessages.length > currentCount) {
-                const trulyNewMessages = allMessages.slice(currentCount);
+                const trulyNewMessages = this.filterNewMessages(data.session.sessionId, allMessages.slice(currentCount));
                 console.log(`[SessionSync] Syncing ${trulyNewMessages.length} truly new messages`);
                 await this.syncNewMessages(runnerId, data.session.projectPath, data.session, existingSync, trulyNewMessages);
             }
@@ -659,15 +696,18 @@ export class SessionSyncService extends EventEmitter {
         }
 
         try {
+            const uniqueMessages = this.filterNewMessages(session.sessionId, newMessages);
+            if (uniqueMessages.length === 0) return;
+
             const thread = await this.client.channels.fetch(existingSync.threadId) as ThreadChannel;
             if (!thread) {
                  console.log(`[SessionSync] Thread ${existingSync.threadId} not found`);
                  return;
             }
 
-            if (newMessages.length > 0) {
-                console.log(`[SessionSync] Posting ${newMessages.length} messages to thread ${thread.id}`);
-                await this.postSessionMessages(runnerId, thread, newMessages);
+            if (uniqueMessages.length > 0) {
+                console.log(`[SessionSync] Posting ${uniqueMessages.length} messages to thread ${thread.id}`);
+                await this.postSessionMessages(runnerId, thread, uniqueMessages);
                 
                 existingSync.lastSyncedAt = new Date();
                 existingSync.messageCount = session.messageCount;
@@ -694,6 +734,87 @@ export class SessionSyncService extends EventEmitter {
         } catch (error) {
             console.error('[SessionSync] Error syncing new messages:', error);
         }
+    }
+
+    private filterNewMessages(sessionId: string, messages: any[]): any[] {
+        if (!messages || messages.length === 0) return [];
+        const key = sessionId;
+        let set = this.messageDedup.get(key);
+        if (!set) {
+            set = new Set<string>();
+            this.messageDedup.set(key, set);
+        }
+        const result: any[] = [];
+        for (const [index, msg] of messages.entries()) {
+            const id = this.getMessageId(msg, index);
+            if (!id) {
+                result.push(msg);
+                continue;
+            }
+            if (!set.has(id)) {
+                set.add(id);
+                result.push(msg);
+            }
+        }
+        if (set.size > this.maxDedupEntries) {
+            const trimmed = new Set<string>(Array.from(set).slice(-this.maxDedupEntries));
+            this.messageDedup.set(key, trimmed);
+        }
+        return result;
+    }
+
+    private getMessageId(message: any, index: number): string | null {
+        if (!message) return null;
+        return (
+            message.uuid ||
+            message.id ||
+            message.message?.id ||
+            message.tool_use_id ||
+            message.toolUseId ||
+            `${index}:${JSON.stringify(message).slice(0, 120)}`
+        );
+    }
+
+    private retrySyncProjects(requestId: string): void {
+        const pending = this.pendingProjectSyncRequests.get(requestId);
+        if (!pending) return;
+        if (pending.attempts >= this.maxSyncRetries) {
+            this.pendingProjectSyncRequests.delete(requestId);
+            console.warn(`[SessionSync] sync_projects timed out after ${pending.attempts} attempts`);
+            return;
+        }
+        const ws = botState.runnerConnections.get(pending.runnerId);
+        if (!ws) {
+            this.pendingProjectSyncRequests.delete(requestId);
+            return;
+        }
+        pending.attempts += 1;
+        ws.send(JSON.stringify({
+            type: 'sync_projects',
+            data: { runnerId: pending.runnerId, requestId }
+        }));
+        pending.timeout = setTimeout(() => this.retrySyncProjects(requestId), this.syncRetryDelayMs);
+    }
+
+    private retrySyncSessions(requestId: string): void {
+        const pending = this.pendingSessionSyncRequests.get(requestId);
+        if (!pending) return;
+        if (pending.attempts >= this.maxSyncRetries) {
+            this.pendingSessionSyncRequests.delete(requestId);
+            console.warn(`[SessionSync] sync_sessions timed out after ${pending.attempts} attempts`);
+            return;
+        }
+        const ws = botState.runnerConnections.get(pending.runnerId);
+        if (!ws) {
+            this.pendingSessionSyncRequests.delete(requestId);
+            return;
+        }
+        pending.attempts += 1;
+        ws.send(JSON.stringify({
+            type: 'sync_sessions',
+            data: { runnerId: pending.runnerId, projectPath: pending.projectPath, requestId }
+        }));
+        pending.timeout = setTimeout(() => this.retrySyncSessions(requestId), this.syncRetryDelayMs);
     }
 
     /**
