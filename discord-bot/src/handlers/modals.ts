@@ -480,6 +480,13 @@ async function handleRunnerConfigModal(interaction: any, userId: string, customI
     }
 
     storage.updateRunner(runnerId, runner);
+    storage.logAudit({
+        timestamp: new Date().toISOString(),
+        type: 'runner_config_update',
+        runnerId,
+        userId,
+        details: { section: 'claude_defaults' }
+    });
 
     if (runner.config?.claudeDefaults) {
         const ws = botState.runnerConnections.get(runnerId);

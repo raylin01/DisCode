@@ -24,6 +24,8 @@ import {
   handleShareRunner,
   handleUnshareRunner,
   handleRunnerStatus,
+  handleRunnerHealth,
+  handleRunnerLogs,
   handleActionItems,
   handleStatus,
   handleEndSession,
@@ -132,6 +134,14 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
 
       case 'runner-status':
         await handleRunnerStatus(interaction, userId);
+        break;
+
+      case 'runner-health':
+        await handleRunnerHealth(interaction, userId);
+        break;
+
+      case 'runner-logs':
+        await handleRunnerLogs(interaction, userId);
         break;
 
       case 'action-items':
@@ -531,6 +541,24 @@ async function registerCommands(): Promise<void> {
     new SlashCommandBuilder()
       .setName('runner-status')
       .setDescription('Show detailed status of a runner')
+      .addStringOption(option =>
+        option.setName('runner')
+          .setDescription('Runner ID')
+          .setRequired(true)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('runner-health')
+      .setDescription('Get health info for a runner')
+      .addStringOption(option =>
+        option.setName('runner')
+          .setDescription('Runner ID')
+          .setRequired(true)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('runner-logs')
+      .setDescription('Fetch recent runner logs (requires DISCODE_RUNNER_LOG_PATH)')
       .addStringOption(option =>
         option.setName('runner')
           .setDescription('Runner ID')

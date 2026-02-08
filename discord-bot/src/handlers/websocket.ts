@@ -449,6 +449,32 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
             break;
         }
 
+        case 'runner_health_response': {
+            const data = message.data as { requestId?: string; info?: any };
+            if (data?.requestId) {
+                const pending = botState.pendingRunnerHealthRequests.get(data.requestId);
+                if (pending) {
+                    clearTimeout(pending.timeout);
+                    botState.pendingRunnerHealthRequests.delete(data.requestId);
+                    pending.resolve(data.info || null);
+                }
+            }
+            break;
+        }
+
+        case 'runner_logs_response': {
+            const data = message.data as { requestId?: string; content?: string; error?: string; logPath?: string };
+            if (data?.requestId) {
+                const pending = botState.pendingRunnerLogsRequests.get(data.requestId);
+                if (pending) {
+                    clearTimeout(pending.timeout);
+                    botState.pendingRunnerLogsRequests.delete(data.requestId);
+                    pending.resolve(data);
+                }
+            }
+            break;
+        }
+
         case 'sync_session_discovered':
             await handleSyncSessionDiscovered(message.data);
             break;

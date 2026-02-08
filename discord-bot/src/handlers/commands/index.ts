@@ -15,6 +15,8 @@ export {
     handleShareRunner,
     handleUnshareRunner,
     handleRunnerStatus,
+    handleRunnerHealth,
+    handleRunnerLogs,
     handleActionItems,
 } from './runner.js';
 

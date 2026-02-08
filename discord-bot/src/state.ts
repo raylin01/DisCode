@@ -131,3 +131,6 @@ export const pendingPermissionConfirmations = new Map<string, PendingPermissionC
 
 // Pending runner config updates (requestId -> timeout)
 export const pendingRunnerConfigUpdates = new Map<string, NodeJS.Timeout>();
+
+export const pendingRunnerHealthRequests = new Map<string, { resolve: (data: any | null) => void; timeout: NodeJS.Timeout }>();
+export const pendingRunnerLogsRequests = new Map<string, { resolve: (data: any | null) => void; timeout: NodeJS.Timeout }>();

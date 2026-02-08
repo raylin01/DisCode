@@ -16,6 +16,44 @@ import { permissionStateStore, type PermissionRequest } from '../permissions/sta
 import { buildAlwaysButtonText } from '../permissions/ui-state.js';
 
 /**
+ * Create a "Processing..." embed
+ */
+export function createProcessingEmbed(toolName: string): EmbedBuilder {
+    return new EmbedBuilder()
+        .setTitle(`⏳ Processing Permission: ${toolName}`)
+        .setDescription('Sending decision to runner...')
+        .setColor('Yellow')
+        .setTimestamp();
+}
+
+/**
+ * Create a success embed for confirmed approval
+ */
+export function createConfirmedSuccessEmbed(toolName: string, username: string, scope?: string): EmbedBuilder {
+    const description = scope
+        ? `✅ **Permission approved by ${username}**\n\n**Scope:** ${scope}`
+        : `✅ **Permission approved by ${username}**`;
+
+    return new EmbedBuilder()
+        .setTitle(`Permission Granted: ${toolName}`)
+        .setDescription(description)
+        .setColor('Green')
+        .setTimestamp();
+}
+
+/**
+ * Create a timeout embed
+ */
+export function createTimeoutEmbed(): EmbedBuilder {
+    return new EmbedBuilder()
+        .setTitle('⚠️ No Confirmation Received')
+        .setDescription('The runner did not confirm. It may have still processed your request.')
+        .setColor('Orange')
+        .setTimestamp();
+}
+
+
+/**
  * Main permission button dispatcher
  * Routes to appropriate handler based on button action
  */
@@ -86,36 +124,63 @@ async function handlePermApprove(interaction: any, userId: string, requestId: st
         return;
     }
 
+    // Update UI to "Processing..." FIRST
+    await interaction.editReply({
+        embeds: [createProcessingEmbed(request.toolName)],
+        components: []
+    }).catch((err: any) => console.error('[Permission] Failed to show processing:', err));
+
     // Send approval decision to runner-agent
     const ws = botState.runnerConnections.get(runner.runnerId);
-    if (ws) {
-        ws.send(JSON.stringify({
-            type: 'permission_decision',
-            data: {
-                requestId,
-                sessionId: request.sessionId,
-                behavior: 'allow'
-            }
-        }));
+    if (!ws) {
+        await interaction.editReply({
+            embeds: [createErrorEmbed('Offline', 'Runner is offline')],
+            components: []
+        });
+        return;
     }
 
-    // Update UI to show approved
-    const resultButton = new ButtonBuilder()
-        .setCustomId(`result_${requestId}`)
-        .setLabel('✅ Approved')
-        .setStyle(ButtonStyle.Success)
-        .setDisabled(true);
-
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(resultButton);
-    const embed = createApprovalDecisionEmbed(true, request.toolName, interaction.user.username, undefined, request.toolInput);
-
-    await interaction.editReply({
-        embeds: [embed],
-        components: [row]
+    ws.send(JSON.stringify({
+        type: 'permission_decision',
+        data: {
+            requestId,
+            sessionId: request.sessionId,
+            behavior: 'allow'
+        }
+    }));
+    storage.logAudit({
+        timestamp: new Date().toISOString(),
+        type: 'permission_decision',
+        runnerId: request.runnerId,
+        sessionId: request.sessionId,
+        userId,
+        details: { tool: request.toolName, behavior: 'allow' }
     });
 
-    // Mark as completed
-    permissionStateStore.complete(requestId);
+    // Set up timeout for confirmation (10 seconds)
+    const timeout = setTimeout(async () => {
+        const pending = botState.pendingPermissionConfirmations.get(requestId);
+        if (!pending) return;
+
+        console.log(`[Permission] Timeout waiting for confirmation for ${requestId}`);
+
+        await interaction.editReply({
+            embeds: [createTimeoutEmbed()],
+            components: []
+        }).catch((err: any) => console.error('[Permission] Failed to show timeout:', err));
+
+        botState.pendingPermissionConfirmations.delete(requestId);
+    }, 10000);
+
+    // Store pending confirmation
+    botState.pendingPermissionConfirmations.set(requestId, {
+        requestId,
+        interaction,
+        userId,
+        toolName: request.toolName,
+        behavior: 'allow',
+        timeout
+    });
 }
 
 /**
@@ -148,41 +213,67 @@ async function handlePermAlways(interaction: any, userId: string, requestId: str
         return;
     }
 
+    // Update UI to "Processing..." FIRST
+    await interaction.editReply({
+        embeds: [createProcessingEmbed(request.toolName)],
+        components: []
+    }).catch((err: any) => console.error('[Permission] Failed to show processing:', err));
+
     // Send approval with scope to runner-agent
     const ws = botState.runnerConnections.get(runner.runnerId);
-    if (ws) {
-        ws.send(JSON.stringify({
-            type: 'permission_decision',
-            data: {
-                requestId,
-                sessionId: request.sessionId,
-                behavior: 'allow',
-                scope,
-                updatedPermissions: request.suggestions
-            }
-        }));
+    if (!ws) {
+        await interaction.editReply({
+            embeds: [createErrorEmbed('Offline', 'Runner is offline')],
+            components: []
+        });
+        return;
     }
 
-    // Update UI to show approved with scope
-    const scopeLabel = uiState.scopeLabel;
-    const resultButton = new ButtonBuilder()
-        .setCustomId(`result_${requestId}`)
-        .setLabel(`✅ Always (${scopeLabel})`)
-        .setStyle(ButtonStyle.Success)
-        .setDisabled(true);
-
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(resultButton);
-    const embed = createApprovalDecisionEmbed(true, request.toolName, interaction.user.username, undefined, request.toolInput);
-
-    embed.setDescription(`${embed.data.description || ''}\n\n**Scope:** ${scopeLabel}`);
-
-    await interaction.editReply({
-        embeds: [embed],
-        components: [row]
+    ws.send(JSON.stringify({
+        type: 'permission_decision',
+        data: {
+            requestId,
+            sessionId: request.sessionId,
+            behavior: 'allow',
+            scope,
+            updatedPermissions: request.suggestions
+        }
+    }));
+    storage.logAudit({
+        timestamp: new Date().toISOString(),
+        type: 'permission_decision',
+        runnerId: request.runnerId,
+        sessionId: request.sessionId,
+        userId,
+        details: { tool: request.toolName, behavior: 'allow_always', scope }
     });
 
-    // Mark as completed
-    permissionStateStore.complete(requestId);
+    // Set up timeout for confirmation (10 seconds)
+    const timeout = setTimeout(async () => {
+        const pending = botState.pendingPermissionConfirmations.get(requestId);
+        if (!pending) return;
+
+        console.log(`[Permission] Timeout waiting for confirmation for ${requestId}`);
+
+        // No confirmation received
+        await interaction.editReply({
+            embeds: [createTimeoutEmbed()],
+            components: []
+        }).catch((err: any) => console.error('[Permission] Failed to show timeout:', err));
+
+        botState.pendingPermissionConfirmations.delete(requestId);
+    }, 10000);
+
+    // Store pending confirmation
+    botState.pendingPermissionConfirmations.set(requestId, {
+        requestId,
+        interaction,
+        userId,
+        toolName: request.toolName,
+        behavior: 'allow',
+        scope: uiState.scopeLabel,
+        timeout
+    });
 }
 
 /**
@@ -213,36 +304,63 @@ async function handlePermDeny(interaction: any, userId: string, requestId: strin
         return;
     }
 
+    // Update UI to "Processing..." FIRST
+    await interaction.editReply({
+        embeds: [createProcessingEmbed(request.toolName)],
+        components: []
+    }).catch((err: any) => console.error('[Permission] Failed to show processing:', err));
+
     // Send denial to runner-agent
     const ws = botState.runnerConnections.get(runner.runnerId);
-    if (ws) {
-        ws.send(JSON.stringify({
-            type: 'permission_decision',
-            data: {
-                requestId,
-                sessionId: request.sessionId,
-                behavior: 'deny'
-            }
-        }));
+    if (!ws) {
+        await interaction.editReply({
+            embeds: [createErrorEmbed('Offline', 'Runner is offline')],
+            components: []
+        });
+        return;
     }
 
-    // Update UI to show denied
-    const resultButton = new ButtonBuilder()
-        .setCustomId(`result_${requestId}`)
-        .setLabel('❌ Denied')
-        .setStyle(ButtonStyle.Danger)
-        .setDisabled(true);
-
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(resultButton);
-    const embed = createApprovalDecisionEmbed(false, request.toolName, interaction.user.username, undefined, request.toolInput);
-
-    await interaction.editReply({
-        embeds: [embed],
-        components: [row]
+    ws.send(JSON.stringify({
+        type: 'permission_decision',
+        data: {
+            requestId,
+            sessionId: request.sessionId,
+            behavior: 'deny'
+        }
+    }));
+    storage.logAudit({
+        timestamp: new Date().toISOString(),
+        type: 'permission_decision',
+        runnerId: request.runnerId,
+        sessionId: request.sessionId,
+        userId,
+        details: { tool: request.toolName, behavior: 'deny' }
     });
 
-    // Mark as completed
-    permissionStateStore.complete(requestId);
+    // Set up timeout for confirmation (10 seconds)
+    const timeout = setTimeout(async () => {
+        const pending = botState.pendingPermissionConfirmations.get(requestId);
+        if (!pending) return;
+
+        console.log(`[Permission] Timeout waiting for confirmation for ${requestId}`);
+
+        await interaction.editReply({
+            embeds: [createTimeoutEmbed()],
+            components: []
+        }).catch((err: any) => console.error('[Permission] Failed to show timeout:', err));
+
+        botState.pendingPermissionConfirmations.delete(requestId);
+    }, 10000);
+
+    // Store pending confirmation
+    botState.pendingPermissionConfirmations.set(requestId, {
+        requestId,
+        interaction,
+        userId,
+        toolName: request.toolName,
+        behavior: 'deny',
+        timeout
+    });
 }
 
 /**

@@ -424,6 +424,13 @@ export async function handleConfigAction(interaction: any, userId: string, custo
 
     if (updated) {
         storage.updateRunner(runnerId, runner);
+        storage.logAudit({
+            timestamp: new Date().toISOString(),
+            type: 'runner_config_update',
+            runnerId,
+            userId,
+            details: { section: 'claude_defaults' }
+        });
 
         if (runner.config?.claudeDefaults) {
             sendRunnerConfigUpdate(runnerId, runner.config.claudeDefaults);

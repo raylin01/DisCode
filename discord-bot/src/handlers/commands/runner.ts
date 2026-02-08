@@ -8,6 +8,7 @@ import { EmbedBuilder } from 'discord.js';
 import * as botState from '../../state.js';
 import { storage } from '../../storage.js';
 import { createInfoEmbed, createErrorEmbed } from '../../utils/embeds.js';
+import { getSessionSyncService } from '../../services/session-sync.js';
 import { updateRunnerChannelPermissions } from '../../utils/channels.js';
 
 /**
@@ -181,6 +182,124 @@ export async function handleListAccess(interaction: any, userId: string): Promis
     });
 }
 
+export async function handleRunnerHealth(interaction: any, userId: string): Promise<void> {
+    const runnerId = interaction.options.getString('runner', true);
+    const runner = storage.getRunner(runnerId);
+    if (!runner || !storage.canUserAccessRunner(userId, runnerId)) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Access Denied', 'You do not have access to this runner.')],
+            flags: 64
+        });
+        return;
+    }
+
+    const ws = botState.runnerConnections.get(runnerId);
+    if (!ws) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Runner Offline', 'Runner is not connected.')],
+            flags: 64
+        });
+        return;
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    const requestId = `runner_health_${runnerId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const data = await new Promise<any | null>((resolve) => {
+        const timeout = setTimeout(() => {
+            botState.pendingRunnerHealthRequests.delete(requestId);
+            resolve(null);
+        }, 8000);
+        botState.pendingRunnerHealthRequests.set(requestId, { resolve, timeout });
+        ws.send(JSON.stringify({
+            type: 'runner_health_request',
+            data: { runnerId, requestId }
+        }));
+    });
+
+    if (!data) {
+        await interaction.editReply({
+            embeds: [createErrorEmbed('Timeout', 'Runner did not respond in time.')]
+        });
+        return;
+    }
+
+    const embed = new EmbedBuilder()
+        .setColor(0x0099FF)
+        .setTitle(`Runner Health: ${runner.name}`)
+        .addFields(
+            { name: 'Host', value: data.hostname || 'Unknown', inline: true },
+            { name: 'Platform', value: `${data.platform || 'unknown'} (${data.arch || 'unknown'})`, inline: true },
+            { name: 'CPU', value: `${data.cpuCount || 0} cores`, inline: true },
+            { name: 'Load Avg', value: Array.isArray(data.loadAvg) ? data.loadAvg.map((n: number) => n.toFixed(2)).join(', ') : 'N/A', inline: true },
+            { name: 'Memory', value: data.totalMem ? `${Math.round((data.totalMem - data.freeMem) / 1e6)}MB / ${Math.round(data.totalMem / 1e6)}MB` : 'N/A', inline: true },
+            { name: 'Uptime', value: data.uptimeSec ? `${Math.round(data.uptimeSec)}s` : 'N/A', inline: true },
+            { name: 'CLI Paths', value: `Claude: ${data.cliPaths?.claude || 'N/A'}\nGemini: ${data.cliPaths?.gemini || 'N/A'}`, inline: false }
+        )
+        .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+}
+
+export async function handleRunnerLogs(interaction: any, userId: string): Promise<void> {
+    const runnerId = interaction.options.getString('runner', true);
+    const runner = storage.getRunner(runnerId);
+    if (!runner || !storage.canUserAccessRunner(userId, runnerId)) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Access Denied', 'You do not have access to this runner.')],
+            flags: 64
+        });
+        return;
+    }
+
+    const ws = botState.runnerConnections.get(runnerId);
+    if (!ws) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Runner Offline', 'Runner is not connected.')],
+            flags: 64
+        });
+        return;
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    const requestId = `runner_logs_${runnerId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const data = await new Promise<any | null>((resolve) => {
+        const timeout = setTimeout(() => {
+            botState.pendingRunnerLogsRequests.delete(requestId);
+            resolve(null);
+        }, 8000);
+        botState.pendingRunnerLogsRequests.set(requestId, { resolve, timeout });
+        ws.send(JSON.stringify({
+            type: 'runner_logs_request',
+            data: { runnerId, requestId, maxBytes: 20000 }
+        }));
+    });
+
+    if (!data) {
+        await interaction.editReply({
+            embeds: [createErrorEmbed('Timeout', 'Runner did not respond in time.')]
+        });
+        return;
+    }
+
+    if (data.error) {
+        await interaction.editReply({
+            embeds: [createErrorEmbed('Logs Error', data.error)]
+        });
+        return;
+    }
+
+    const content = data.content ? data.content.slice(-1900) : 'No log content.';
+    const embed = new EmbedBuilder()
+        .setColor(0x0099FF)
+        .setTitle(`Runner Logs: ${runner.name}`)
+        .setDescription(`\`\`\`\n${content}\n\`\`\``)
+        .setFooter({ text: data.logPath ? `Source: ${data.logPath}` : 'Source: unknown' });
+
+    await interaction.editReply({ embeds: [embed] });
+}
+
 /**
  * Handle /share-runner command
  */
@@ -295,6 +414,12 @@ export async function handleRunnerStatus(interaction: any, userId: string): Prom
     const sessions = storage.getRunnerSessions(runnerId);
     const activeSessions = sessions.filter(s => s.status === 'active');
 
+    let syncStatus: any = null;
+    const sessionSync = getSessionSyncService();
+    if (runner.status === 'online' && sessionSync) {
+        syncStatus = await sessionSync.requestSyncStatus(runnerId, 3000);
+    }
+
     const embed = new EmbedBuilder()
         .setColor(runner.status === 'online' ? 0x00FF00 : 0xFF0000)
         .setTitle(`Runner: ${runner.name}`)
@@ -305,6 +430,15 @@ export async function handleRunnerStatus(interaction: any, userId: string): Prom
             { name: 'Runner ID', value: `\`${runnerId}\``, inline: false }
         )
         .setTimestamp();
+
+    if (syncStatus) {
+        const lastSync = syncStatus.lastSyncAt ? syncStatus.lastSyncAt.toLocaleString() : 'N/A';
+        embed.addFields({
+            name: 'Sync Status',
+            value: `${syncStatus.state.toUpperCase()} (Last: ${lastSync})`,
+            inline: false
+        });
+    }
 
     if (runner.lastHeartbeat) {
         embed.setFooter({ text: `Last heartbeat: ${new Date(runner.lastHeartbeat).toLocaleString()}` });

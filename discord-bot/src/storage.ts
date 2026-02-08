@@ -11,6 +11,7 @@ interface StorageData {
   users: Record<string, UserData>;
   runners: Record<string, RunnerInfo>;
   sessions: Record<string, Session>;
+  audit: AuditEntry[];
 }
 
 interface UserData {
@@ -18,10 +19,20 @@ interface UserData {
   runners: string[]; // runner IDs owned by this user
 }
 
+export interface AuditEntry {
+  timestamp: string;
+  type: string;
+  runnerId?: string;
+  sessionId?: string;
+  userId?: string;
+  details?: Record<string, any>;
+}
+
 const STORAGE_PATH = process.env.DISCODE_STORAGE_PATH || './data';
 const USERS_FILE = path.join(STORAGE_PATH, 'users.yaml');
 const RUNNERS_FILE = path.join(STORAGE_PATH, 'runners.yaml');
 const SESSIONS_FILE = path.join(STORAGE_PATH, 'sessions.yaml');
+const AUDIT_FILE = path.join(STORAGE_PATH, 'audit.yaml');
 
 class Storage {
   private _data: StorageData;
@@ -30,7 +41,8 @@ class Storage {
     this._data = {
       users: {},
       runners: {},
-      sessions: {}
+      sessions: {},
+      audit: []
     };
     this.ensureDirectories();
     this.load();
@@ -77,6 +89,11 @@ class Storage {
         const sessionsData = fs.readFileSync(SESSIONS_FILE, 'utf-8');
         this._data.sessions = yaml.load(sessionsData) as Record<string, Session>;
       }
+
+      if (fs.existsSync(AUDIT_FILE)) {
+        const auditData = fs.readFileSync(AUDIT_FILE, 'utf-8');
+        this._data.audit = (yaml.load(auditData) as AuditEntry[]) || [];
+      }
     } catch (error) {
       console.error('Error loading storage:', error);
       // Start with empty data if files don't exist or are invalid
@@ -96,6 +113,11 @@ class Storage {
   private saveSessions(): void {
     const yamlStr = yaml.dump(this._data.sessions);
     fs.writeFileSync(SESSIONS_FILE, yamlStr, 'utf-8');
+  }
+
+  private saveAudit(): void {
+    const yamlStr = yaml.dump(this._data.audit);
+    fs.writeFileSync(AUDIT_FILE, yamlStr, 'utf-8');
   }
 
   // Token operations
@@ -198,6 +220,14 @@ class Storage {
 
   getRunner(runnerId: string): RunnerInfo | null {
     return this._data.runners[runnerId] || null;
+  }
+
+  logAudit(entry: AuditEntry): void {
+    this._data.audit.push(entry);
+    if (this._data.audit.length > 10000) {
+      this._data.audit = this._data.audit.slice(-10000);
+    }
+    this.saveAudit();
   }
 
   getUserRunners(userId: string): RunnerInfo[] {
