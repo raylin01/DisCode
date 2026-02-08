@@ -134,6 +134,8 @@ export class AssistantManager extends EventEmitter {
         });
 
         try {
+            const baseOptions = this.cliType === 'claude' ? (this.deps.config.claudeDefaults || {}) : {};
+
             // Create the session via PluginManager
             this.session = await this.deps.pluginManager.createSession({
                 cliPath: this.deps.cliPaths[this.cliType]!,
@@ -141,6 +143,7 @@ export class AssistantManager extends EventEmitter {
                 sessionId: this.sessionId,
                 cliType: this.cliType,
                 options: {
+                    ...baseOptions,
                     skipPermissions: false,
                     continueConversation: true,
                     // Exclude Discord integration skills (channel updates) for assistant

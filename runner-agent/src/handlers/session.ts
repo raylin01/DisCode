@@ -12,6 +12,7 @@ import type { SessionMetadata } from '../types.js';
 import type { WebSocketManager } from '../websocket.js';
 import type { RunnerConfig } from '../config.js';
 import { expandPath, findCliPath, validateOrCreateFolder } from '../utils.js';
+import { normalizeClaudeOptions } from '../utils/session-options.js';
 import type { CliPaths } from '../types.js';
 
 export interface SessionHandlerDeps {
@@ -119,12 +120,30 @@ export async function handleSessionStart(
             mergedOptions.resumeSessionId = data.sessionId;
         }
 
+        const normalized = data.cliType === 'claude'
+            ? normalizeClaudeOptions(mergedOptions)
+            : { options: mergedOptions, warnings: [] };
+
+        if (normalized.warnings.length > 0) {
+            console.warn(`[SessionStart] Option warnings for ${data.sessionId}: ${normalized.warnings.join(' ')}`);
+            wsManager.send({
+                type: 'output',
+                data: {
+                    runnerId: wsManager.runnerId,
+                    sessionId: data.sessionId,
+                    content: `⚠️ Some session options were ignored: ${normalized.warnings.join(' ')}`,
+                    outputType: 'info',
+                    timestamp: new Date().toISOString()
+                }
+            });
+        }
+
         const session = await pluginManager.createSession({
             cliPath,
             cwd,
             sessionId: data.sessionId,
             cliType: data.cliType,
-            options: mergedOptions
+            options: normalized.options
         }, data.plugin);
 
         console.log(`Session ${data.sessionId} created with ${data.plugin || 'default'} plugin`);
