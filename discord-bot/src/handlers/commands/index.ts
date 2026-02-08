@@ -47,6 +47,7 @@ export { handleAssistantCommand } from './assistant.js';
 
 // Sync Projects command
 export { handleSyncProjects } from './sync-projects.js';
+export { handleSyncSession } from './sync-session.js';
 
 // Session control commands
 export {
@@ -54,4 +55,3 @@ export {
     handleSetPermissionMode,
     handleSetThinkingTokens
 } from './session-control.js';
-

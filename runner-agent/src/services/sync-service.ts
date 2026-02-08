@@ -158,6 +158,27 @@ export class RunnerSyncService extends EventEmitter {
         }
     }
 
+    async handleSyncSessionMessages(sessionId: string, projectPath: string, requestId?: string): Promise<void> {
+        try {
+            const details = await getSessionDetailsAsync(sessionId, projectPath);
+            const message: SyncSessionUpdatedMessage = {
+                type: 'sync_session_updated',
+                data: {
+                    runnerId: this.wsManager.runnerId,
+                    session: {
+                        sessionId,
+                        projectPath,
+                        messageCount: details?.messageCount || 0
+                    },
+                    newMessages: details?.messages || []
+                }
+            };
+            this.wsManager.send(message);
+        } catch (error) {
+            console.error(`[SyncService] Error syncing session messages for ${sessionId}:`, error);
+        }
+    }
+
     private async runSyncProjects(requestId?: string): Promise<void> {
         const startedAt = new Date();
         this.syncStatus.state = 'syncing';

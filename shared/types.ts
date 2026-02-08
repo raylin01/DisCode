@@ -101,7 +101,7 @@ export interface ApprovalResponse {
 
 // WebSocket messages
 export interface WebSocketMessage {
-  type: 'approval_request' | 'approval_response' | 'heartbeat' | 'register' | 'session_start' | 'session_ready' | 'session_end' | 'output' | 'user_message' | 'list_terminals' | 'terminal_list' | 'watch_terminal' | 'session_discovered' | 'sync_session_discovered' | 'sync_session_updated' | 'status' | 'action_item' | 'metadata' | 'discord_action' | 'assistant_message' | 'assistant_output' | 'spawn_thread' | 'tool_execution' | 'tool_result' | 'result' | 'sync_projects' | 'sync_projects_response' | 'sync_projects_progress' | 'sync_projects_complete' | 'sync_sessions' | 'sync_sessions_response' | 'sync_sessions_complete' | 'sync_status_request' | 'sync_status_response' | 'permission_decision' | 'permission_decision_ack' | 'session_control';
+  type: 'approval_request' | 'approval_response' | 'heartbeat' | 'register' | 'session_start' | 'session_ready' | 'session_end' | 'output' | 'user_message' | 'list_terminals' | 'terminal_list' | 'watch_terminal' | 'session_discovered' | 'sync_session_discovered' | 'sync_session_updated' | 'status' | 'action_item' | 'metadata' | 'discord_action' | 'assistant_message' | 'assistant_output' | 'spawn_thread' | 'tool_execution' | 'tool_result' | 'result' | 'sync_projects' | 'sync_projects_response' | 'sync_projects_progress' | 'sync_projects_complete' | 'sync_sessions' | 'sync_sessions_response' | 'sync_sessions_complete' | 'sync_status_request' | 'sync_status_response' | 'permission_decision' | 'permission_decision_ack' | 'session_control' | 'sync_session_messages';
   data: unknown;
 }
 
@@ -195,6 +195,16 @@ export interface SyncSessionsCompleteMessage extends WebSocketMessage {
     startedAt: string;
     completedAt: string;
     sessionCount: number;
+  };
+}
+
+export interface SyncSessionMessagesMessage extends WebSocketMessage {
+  type: 'sync_session_messages';
+  data: {
+    runnerId: string;
+    sessionId: string;
+    projectPath: string;
+    requestId?: string;
   };
 }
 

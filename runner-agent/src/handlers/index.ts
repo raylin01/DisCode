@@ -17,7 +17,7 @@ import { handleApprovalResponse } from './approval.js';
 import { handlePermissionDecision } from './permission-decision.js';
 import { handleListTerminals, handleWatchTerminal } from './terminal.js';
 import { handleInterrupt } from './interrupt.js';
-import { handleSyncProjects, handleSyncSessions, handleSyncStatusRequest } from './sync.js';
+import { handleSyncProjects, handleSyncSessions, handleSyncStatusRequest, handleSyncSessionMessages } from './sync.js';
 import { handleSessionControl } from './session-control.js';
 
 export interface HandlerDependencies {
@@ -182,6 +182,11 @@ export async function handleWebSocketMessage(
 
         case 'sync_sessions': {
             await handleSyncSessions(message.data as any);
+            break;
+        }
+
+        case 'sync_session_messages': {
+            await handleSyncSessionMessages(message.data as any);
             break;
         }
 

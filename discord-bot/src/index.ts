@@ -36,6 +36,7 @@ import {
   handleSetThinkingTokens,
   handleAssistantCommand,
   handleSyncProjects,
+  handleSyncSession,
   handleResumeSession,
   handleRegisterProject,
   handleDeleteProject,
@@ -182,6 +183,10 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
 
       case 'sync-projects':
         await handleSyncProjects(interaction, userId);
+        break;
+
+      case 'sync-session':
+        await handleSyncSession(interaction, userId);
         break;
 
       case 'register-project':
@@ -659,6 +664,25 @@ async function registerCommands(): Promise<void> {
       .addStringOption(option =>
         option.setName('runner')
           .setDescription('Runner ID to sync (optional)')
+          .setRequired(false)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('sync-session')
+      .setDescription('Sync full message history for a session')
+      .addStringOption(option =>
+        option.setName('session')
+          .setDescription('Session ID (optional - auto-detects from current thread)')
+          .setRequired(false)
+      )
+      .addStringOption(option =>
+        option.setName('project')
+          .setDescription('Project path (required if not in thread)')
+          .setRequired(false)
+      )
+      .addStringOption(option =>
+        option.setName('runner')
+          .setDescription('Runner ID (required if not in thread)')
           .setRequired(false)
       ),
 
