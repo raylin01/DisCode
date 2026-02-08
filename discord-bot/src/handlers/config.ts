@@ -256,7 +256,39 @@ export async function handleRunnerConfig(
                         .setStyle(ButtonStyle.Secondary)
                 );
 
-            rows.push(claudeDefaultsRowThree, claudeDefaultsRowFour);
+            const claudeDefaultsRowFive = new ActionRowBuilder<ButtonBuilder>()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setJsonSchema`)
+                        .setLabel('Set JSON Schema')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setMcpServers`)
+                        .setLabel('Set MCP Servers')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:toggle:strictMcpConfig`)
+                        .setLabel(claudeDefaults.strictMcpConfig ? 'Strict MCP: ON' : 'Strict MCP: OFF')
+                        .setStyle(claudeDefaults.strictMcpConfig ? ButtonStyle.Success : ButtonStyle.Secondary)
+                );
+
+            const claudeDefaultsRowSix = new ActionRowBuilder<ButtonBuilder>()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setPlugins`)
+                        .setLabel('Set Plugins')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setExtraArgs`)
+                        .setLabel('Set Extra Args')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setSandbox`)
+                        .setLabel('Set Sandbox')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+
+            rows.push(claudeDefaultsRowThree, claudeDefaultsRowFour, claudeDefaultsRowFive, claudeDefaultsRowSix);
 
             const permissionModeRow = new ActionRowBuilder<ButtonBuilder>()
                 .addComponents(
@@ -335,6 +367,10 @@ export async function handleConfigAction(interaction: any, userId: string, custo
             const current = runner.config.claudeDefaults.includePartialMessages;
             runner.config.claudeDefaults.includePartialMessages = current === false ? true : false;
             updated = true;
+        } else if (param === 'strictMcpConfig') {
+            runner.config.claudeDefaults = runner.config.claudeDefaults || {};
+            runner.config.claudeDefaults.strictMcpConfig = !runner.config.claudeDefaults.strictMcpConfig;
+            updated = true;
         }
     } else if (action === 'set') {
         if (param === 'archiveDays') {
@@ -375,7 +411,7 @@ export async function handleConfigAction(interaction: any, userId: string, custo
         // Determine current section to stay on
         // We can check the customId or infer likely section
         let section: ConfigSection = 'main';
-        if (param.startsWith('thinkingLevel') || param === 'yoloMode' || param.startsWith('permissionMode') || param === 'clearClaudeDefaults' || param === 'includePartialMessages') section = 'claude';
+        if (param.startsWith('thinkingLevel') || param === 'yoloMode' || param.startsWith('permissionMode') || param === 'clearClaudeDefaults' || param === 'includePartialMessages' || param === 'strictMcpConfig') section = 'claude';
         if (param === 'autoSync' || param === 'archiveDays') section = 'threads';
 
         await handleRunnerConfig(interaction as ButtonInteraction, userId, runnerId, section);
@@ -419,6 +455,16 @@ async function handleConfigModal(
         input.setCustomId('settingSources').setLabel('Setting Sources (comma-separated)');
     } else if (param === 'setAdditionalDirs') {
         input.setCustomId('additionalDirectories').setLabel('Additional Dirs (comma-separated)');
+    } else if (param === 'setJsonSchema') {
+        input.setCustomId('jsonSchema').setLabel('JSON Schema (JSON string)');
+    } else if (param === 'setMcpServers') {
+        input.setCustomId('mcpServers').setLabel('MCP Servers (JSON)');
+    } else if (param === 'setPlugins') {
+        input.setCustomId('plugins').setLabel('Plugins (JSON array)');
+    } else if (param === 'setExtraArgs') {
+        input.setCustomId('extraArgs').setLabel('Extra Args (JSON object)');
+    } else if (param === 'setSandbox') {
+        input.setCustomId('sandbox').setLabel('Sandbox (string)');
     } else {
         await interaction.reply({ content: 'Unknown configuration option.', ephemeral: true });
         return;

@@ -1243,6 +1243,12 @@ async function handleCustomizeSettings(interaction: any, userId: string): Promis
     const betasText = state.options?.betas?.length ? state.options.betas.join(', ') : 'None';
     const settingSourcesText = state.options?.settingSources?.length ? state.options.settingSources.join(', ') : 'Default';
     const additionalDirsText = state.options?.additionalDirectories?.length ? state.options.additionalDirectories.join(', ') : 'None';
+    const jsonSchemaText = state.options?.jsonSchema ? 'Set' : 'Default';
+    const mcpServersText = state.options?.mcpServers ? 'Set' : 'Default';
+    const strictMcpText = state.options?.strictMcpConfig ? 'On' : 'Off';
+    const pluginsText = state.options?.plugins ? 'Set' : 'None';
+    const extraArgsText = state.options?.extraArgs ? 'Set' : 'None';
+    const sandboxText = state.options?.sandbox ? state.options.sandbox : 'Default';
 
     const embed = new EmbedBuilder()
         .setColor(0x0099FF)
@@ -1264,7 +1270,13 @@ async function handleCustomizeSettings(interaction: any, userId: string): Promis
             `Tools List: \`${toolsListText}\`\n` +
             `Betas: \`${betasText}\`\n` +
             `Setting Sources: \`${settingSourcesText}\`\n` +
-            `Add Dirs: \`${additionalDirsText}\``
+            `Add Dirs: \`${additionalDirsText}\`\n` +
+            `JSON Schema: \`${jsonSchemaText}\`\n` +
+            `MCP Servers: \`${mcpServersText}\`\n` +
+            `Strict MCP: \`${strictMcpText}\`\n` +
+            `Plugins: \`${pluginsText}\`\n` +
+            `Extra Args: \`${extraArgsText}\`\n` +
+            `Sandbox: \`${sandboxText}\``
         );
 
     const modeRow = new ActionRowBuilder<ButtonBuilder>()
@@ -1357,6 +1369,38 @@ async function handleCustomizeSettings(interaction: any, userId: string): Promis
                 .setStyle(ButtonStyle.Secondary)
         );
 
+    const advancedRow = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('session_settings_modal:jsonSchema')
+                .setLabel('JSON Schema')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('session_settings_modal:mcpServers')
+                .setLabel('MCP Servers')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('session_settings_toggle:strictMcpConfig')
+                .setLabel(state.options?.strictMcpConfig ? 'Strict MCP: ON' : 'Strict MCP: OFF')
+                .setStyle(state.options?.strictMcpConfig ? ButtonStyle.Success : ButtonStyle.Secondary)
+        );
+
+    const advancedRowTwo = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('session_settings_modal:plugins')
+                .setLabel('Plugins')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('session_settings_modal:extraArgs')
+                .setLabel('Extra Args')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('session_settings_modal:sandbox')
+                .setLabel('Sandbox')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
     const navRow = new ActionRowBuilder<ButtonBuilder>()
         .addComponents(
             new ButtonBuilder()
@@ -1372,7 +1416,7 @@ async function handleCustomizeSettings(interaction: any, userId: string): Promis
 
     await interaction.update({
         embeds: [embed],
-        components: [modeRow, permissionRow, modelRow, limitsRow, toolsRow, miscRow, navRow]
+        components: [modeRow, permissionRow, modelRow, limitsRow, toolsRow, miscRow, advancedRow, advancedRowTwo, navRow]
     });
 }
 
@@ -1392,6 +1436,8 @@ async function handleSessionSettings(interaction: any, userId: string, customId:
         state.options.permissionMode = 'acceptEdits';
     } else if (customId === 'session_settings_partials_toggle') {
         state.options.includePartialMessages = state.options.includePartialMessages === false ? true : false;
+    } else if (customId === 'session_settings_toggle:strictMcpConfig') {
+        state.options.strictMcpConfig = !state.options.strictMcpConfig;
     } else if (customId === 'session_settings_back') {
         await handleSessionReview(interaction, userId);
         return;
@@ -1440,6 +1486,16 @@ async function handleSessionSettingsModal(interaction: any, userId: string, cust
         input.setCustomId('settingSources').setLabel('Setting Sources (comma-separated)');
     } else if (param === 'additionalDirectories') {
         input.setCustomId('additionalDirectories').setLabel('Additional Dirs (comma-separated)');
+    } else if (param === 'jsonSchema') {
+        input.setCustomId('jsonSchema').setLabel('JSON Schema (JSON)');
+    } else if (param === 'mcpServers') {
+        input.setCustomId('mcpServers').setLabel('MCP Servers (JSON)');
+    } else if (param === 'plugins') {
+        input.setCustomId('plugins').setLabel('Plugins (JSON array)');
+    } else if (param === 'extraArgs') {
+        input.setCustomId('extraArgs').setLabel('Extra Args (JSON object)');
+    } else if (param === 'sandbox') {
+        input.setCustomId('sandbox').setLabel('Sandbox (string)');
     } else {
         await interaction.reply({ content: 'Unknown session setting.', ephemeral: true });
         return;

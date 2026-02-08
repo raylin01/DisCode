@@ -223,6 +223,61 @@ async function handleSessionSettingsModalSubmit(interaction: any, userId: string
     } else if (param === 'additionalDirectories') {
         const value = getValue('additionalDirectories');
         state.options.additionalDirectories = value ? value.split(',').map(s => s.trim()).filter(Boolean) : [];
+    } else if (param === 'jsonSchema') {
+        const value = getValue('jsonSchema');
+        if (!value) {
+            delete state.options.jsonSchema;
+        } else {
+            try {
+                state.options.jsonSchema = JSON.parse(value);
+            } catch (err) {
+                await interaction.reply({ content: 'Invalid JSON schema.', flags: 64 });
+                return;
+            }
+        }
+    } else if (param === 'mcpServers') {
+        const value = getValue('mcpServers');
+        if (!value) {
+            delete state.options.mcpServers;
+        } else {
+            try {
+                state.options.mcpServers = JSON.parse(value);
+            } catch (err) {
+                await interaction.reply({ content: 'Invalid MCP servers JSON.', flags: 64 });
+                return;
+            }
+        }
+    } else if (param === 'plugins') {
+        const value = getValue('plugins');
+        if (!value) {
+            delete state.options.plugins;
+        } else {
+            try {
+                state.options.plugins = JSON.parse(value);
+            } catch (err) {
+                await interaction.reply({ content: 'Invalid plugins JSON.', flags: 64 });
+                return;
+            }
+        }
+    } else if (param === 'extraArgs') {
+        const value = getValue('extraArgs');
+        if (!value) {
+            delete state.options.extraArgs;
+        } else {
+            try {
+                state.options.extraArgs = JSON.parse(value);
+            } catch (err) {
+                await interaction.reply({ content: 'Invalid extraArgs JSON.', flags: 64 });
+                return;
+            }
+        }
+    } else if (param === 'sandbox') {
+        const value = getValue('sandbox');
+        if (!value) {
+            delete state.options.sandbox;
+        } else {
+            state.options.sandbox = value;
+        }
     } else {
         await interaction.reply({ content: 'Unknown session setting.', flags: 64 });
         return;
@@ -332,6 +387,61 @@ async function handleRunnerConfigModal(interaction: any, userId: string, customI
     } else if (param === 'setAdditionalDirs') {
         const raw = interaction.fields.getTextInputValue('additionalDirectories').trim();
         runner.config.claudeDefaults.additionalDirectories = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    } else if (param === 'setJsonSchema') {
+        const raw = interaction.fields.getTextInputValue('jsonSchema').trim();
+        if (!raw) {
+            delete runner.config.claudeDefaults.jsonSchema;
+        } else {
+            try {
+                runner.config.claudeDefaults.jsonSchema = JSON.parse(raw);
+            } catch (err) {
+                await interaction.reply({ content: 'Invalid JSON schema. Must be valid JSON.', flags: 64 });
+                return;
+            }
+        }
+    } else if (param === 'setMcpServers') {
+        const raw = interaction.fields.getTextInputValue('mcpServers').trim();
+        if (!raw) {
+            delete runner.config.claudeDefaults.mcpServers;
+        } else {
+            try {
+                runner.config.claudeDefaults.mcpServers = JSON.parse(raw);
+            } catch (err) {
+                await interaction.reply({ content: 'Invalid MCP servers JSON.', flags: 64 });
+                return;
+            }
+        }
+    } else if (param === 'setPlugins') {
+        const raw = interaction.fields.getTextInputValue('plugins').trim();
+        if (!raw) {
+            delete runner.config.claudeDefaults.plugins;
+        } else {
+            try {
+                runner.config.claudeDefaults.plugins = JSON.parse(raw);
+            } catch (err) {
+                await interaction.reply({ content: 'Invalid plugins JSON.', flags: 64 });
+                return;
+            }
+        }
+    } else if (param === 'setExtraArgs') {
+        const raw = interaction.fields.getTextInputValue('extraArgs').trim();
+        if (!raw) {
+            delete runner.config.claudeDefaults.extraArgs;
+        } else {
+            try {
+                runner.config.claudeDefaults.extraArgs = JSON.parse(raw);
+            } catch (err) {
+                await interaction.reply({ content: 'Invalid extraArgs JSON.', flags: 64 });
+                return;
+            }
+        }
+    } else if (param === 'setSandbox') {
+        const raw = interaction.fields.getTextInputValue('sandbox').trim();
+        if (!raw) {
+            delete runner.config.claudeDefaults.sandbox;
+        } else {
+            runner.config.claudeDefaults.sandbox = raw;
+        }
     } else {
         await interaction.reply({ content: 'Unknown configuration option.', flags: 64 });
         return;
