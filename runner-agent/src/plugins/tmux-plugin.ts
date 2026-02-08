@@ -775,11 +775,124 @@ export class TmuxPlugin extends BasePlugin {
         let cliCmd: string;
 
         if (config.cliType === 'claude') {
-            // Claude-specific args
-            if (config.options?.skipPermissions !== false) {
-                args.push('--permission-mode=bypassPermissions');
-                args.push('--dangerously-skip-permissions');
+            const options = config.options || {};
+
+            if (options.continueConversation) {
+                args.push('--continue');
             }
+            if (options.resumeSessionId) {
+                args.push('--resume', options.resumeSessionId);
+            }
+            if (options.forkSession) {
+                args.push('--fork-session');
+            }
+            if (options.resumeSessionAt) {
+                args.push('--resume-session-at', options.resumeSessionAt);
+            }
+            if (options.persistSession === false) {
+                args.push('--no-session-persistence');
+            }
+            if (options.maxTurns) {
+                args.push('--max-turns', String(options.maxTurns));
+            }
+            if (options.maxBudgetUsd) {
+                args.push('--max-budget-usd', String(options.maxBudgetUsd));
+            }
+            if (options.model) {
+                args.push('--model', options.model);
+            }
+            if (options.fallbackModel) {
+                args.push('--fallback-model', options.fallbackModel);
+            }
+            if (options.agent) {
+                args.push('--agent', options.agent);
+            }
+            if (options.betas && options.betas.length > 0) {
+                args.push('--betas', options.betas.join(','));
+            }
+            if (options.jsonSchema) {
+                const schemaValue = typeof options.jsonSchema === 'string'
+                    ? options.jsonSchema
+                    : JSON.stringify(options.jsonSchema);
+                args.push('--json-schema', schemaValue);
+            }
+            if (options.allowedTools && options.allowedTools.length > 0) {
+                args.push('--allowedTools', options.allowedTools.join(','));
+            }
+            if (options.disallowedTools && options.disallowedTools.length > 0) {
+                args.push('--disallowedTools', options.disallowedTools.join(','));
+            }
+            if (options.tools !== undefined) {
+                if (Array.isArray(options.tools)) {
+                    args.push('--tools', options.tools.length === 0 ? '' : options.tools.join(','));
+                } else {
+                    args.push('--tools', 'default');
+                }
+            }
+            if (options.mcpServers && Object.keys(options.mcpServers).length > 0) {
+                args.push('--mcp-config', JSON.stringify({ mcpServers: options.mcpServers }));
+            }
+            if (options.settingSources && options.settingSources.length > 0) {
+                args.push('--setting-sources', options.settingSources.join(','));
+            }
+            if (options.strictMcpConfig) {
+                args.push('--strict-mcp-config');
+            }
+            if (options.permissionMode) {
+                args.push('--permission-mode', options.permissionMode);
+            }
+            if (options.allowDangerouslySkipPermissions || options.skipPermissions) {
+                args.push('--allow-dangerously-skip-permissions');
+            }
+            if (options.includePartialMessages !== false) {
+                args.push('--include-partial-messages');
+            }
+            if (options.permissionPromptToolName) {
+                args.push('--permission-prompt-tool', options.permissionPromptToolName);
+            } else if (options.permissionPromptTool) {
+                args.push('--permission-prompt-tool', 'stdio');
+            }
+            if (options.additionalDirectories && options.additionalDirectories.length > 0) {
+                for (const dir of options.additionalDirectories) {
+                    args.push('--add-dir', dir);
+                }
+            }
+            if (options.plugins && options.plugins.length > 0) {
+                for (const plugin of options.plugins) {
+                    if (plugin.type !== 'local') {
+                        throw new Error(`Unsupported plugin type: ${plugin.type}`);
+                    }
+                    args.push('--plugin-dir', plugin.path);
+                }
+            }
+
+            const extraArgs = { ...(options.extraArgs || {}) } as Record<string, any>;
+            if (options.sandbox) {
+                let settingsObj: Record<string, any> = { sandbox: options.sandbox };
+                if (extraArgs.settings) {
+                    if (typeof extraArgs.settings === 'string') {
+                        try {
+                            settingsObj = { ...JSON.parse(extraArgs.settings), sandbox: options.sandbox };
+                        } catch (err) {
+                            throw new Error('Failed to parse extraArgs.settings JSON while applying sandbox.');
+                        }
+                    } else if (typeof extraArgs.settings === 'object') {
+                        settingsObj = { ...extraArgs.settings, sandbox: options.sandbox };
+                    } else {
+                        throw new Error('extraArgs.settings must be a string or object when sandbox is set.');
+                    }
+                }
+                extraArgs.settings = JSON.stringify(settingsObj);
+            }
+            for (const [key, value] of Object.entries(extraArgs)) {
+                if (value === null) {
+                    args.push(`--${key}`);
+                } else {
+                    const val = typeof value === 'string' ? value : JSON.stringify(value);
+                    args.push(`--${key}`, val);
+                }
+            }
+
             cliCmd = args.length > 0
                 ? `${config.cliPath} ${args.join(' ')}`
                 : config.cliPath;
