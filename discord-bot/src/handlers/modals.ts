@@ -295,6 +295,19 @@ async function handleRunnerConfigModal(interaction: any, userId: string, customI
 
     storage.updateRunner(runnerId, runner);
 
+    if (runner.config?.claudeDefaults) {
+        const ws = botState.runnerConnections.get(runnerId);
+        if (ws) {
+            ws.send(JSON.stringify({
+                type: 'runner_config_update',
+                data: {
+                    runnerId,
+                    claudeDefaults: runner.config.claudeDefaults
+                }
+            }));
+        }
+    }
+
     await interaction.reply({
         content: '✅ Claude defaults updated.',
         flags: 64

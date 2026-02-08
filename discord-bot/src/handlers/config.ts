@@ -19,6 +19,7 @@ import {
 } from 'discord.js';
 import { storage } from '../storage.js';
 import { createErrorEmbed } from '../utils/embeds.js';
+import * as botState from '../state.js';
 import type { RunnerConfig } from '../../../shared/types.js';
 
 type ConfigSection = 'main' | 'projects' | 'threads' | 'claude' | 'advanced';
@@ -326,6 +327,10 @@ export async function handleConfigAction(interaction: any, userId: string, custo
 
     if (updated) {
         storage.updateRunner(runnerId, runner);
+
+        if (runner.config?.claudeDefaults) {
+            sendRunnerConfigUpdate(runnerId, runner.config.claudeDefaults);
+        }
         
         // Determine current section to stay on
         // We can check the customId or infer likely section
@@ -370,4 +375,19 @@ async function handleConfigModal(
     const row = new ActionRowBuilder<TextInputBuilder>().addComponents(input);
     modal.addComponents(row);
     await interaction.showModal(modal);
+}
+
+function sendRunnerConfigUpdate(runnerId: string, claudeDefaults: Record<string, any>): void {
+    const ws = botState.runnerConnections.get(runnerId);
+    if (!ws) {
+        console.warn(`[RunnerConfig] Runner ${runnerId} not connected; cannot update defaults.`);
+        return;
+    }
+    ws.send(JSON.stringify({
+        type: 'runner_config_update',
+        data: {
+            runnerId,
+            claudeDefaults
+        }
+    }));
 }

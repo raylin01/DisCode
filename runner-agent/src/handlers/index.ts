@@ -19,6 +19,7 @@ import { handleListTerminals, handleWatchTerminal } from './terminal.js';
 import { handleInterrupt } from './interrupt.js';
 import { handleSyncProjects, handleSyncSessions, handleSyncStatusRequest, handleSyncSessionMessages } from './sync.js';
 import { handleSessionControl } from './session-control.js';
+import { handleRunnerConfigUpdate } from './runner-config.js';
 
 export interface HandlerDependencies {
     config: RunnerConfig;
@@ -192,6 +193,14 @@ export async function handleWebSocketMessage(
 
         case 'sync_status_request': {
             await handleSyncStatusRequest(message.data as any);
+            break;
+        }
+
+        case 'runner_config_update': {
+            await handleRunnerConfigUpdate(message.data as any, {
+                config: deps.config,
+                wsManager: deps.wsManager
+            });
             break;
         }
 

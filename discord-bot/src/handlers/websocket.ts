@@ -418,6 +418,25 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
             await handleSyncSessionsComplete(message.data);
             break;
 
+        case 'runner_config_updated': {
+            const data = message.data as { runnerId: string; claudeDefaults?: Record<string, any> };
+            if (data?.runnerId && data.claudeDefaults) {
+                const runner = storage.getRunner(data.runnerId);
+                if (runner) {
+                    runner.config = runner.config || {
+                        threadArchiveDays: 3,
+                        autoSync: true,
+                        thinkingLevel: 'low',
+                        yoloMode: false,
+                        claudeDefaults: {}
+                    };
+                    runner.config.claudeDefaults = { ...data.claudeDefaults };
+                    storage.updateRunner(data.runnerId, runner);
+                }
+            }
+            break;
+        }
+
         case 'sync_session_discovered':
             await handleSyncSessionDiscovered(message.data);
             break;

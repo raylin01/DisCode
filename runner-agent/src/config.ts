@@ -72,7 +72,7 @@ interface FileConfig {
 }
 
 export function loadConfigFile(): FileConfig {
-    const configPath = process.env.DISCODE_CONFIG_PATH || './config.json';
+    const configPath = getConfigPath();
 
     try {
         if (fs.existsSync(configPath)) {
@@ -86,6 +86,36 @@ export function loadConfigFile(): FileConfig {
     }
 
     return {};
+}
+
+export function getConfigPath(): string {
+    return process.env.DISCODE_CONFIG_PATH || './config.json';
+}
+
+export function saveConfigFile(update: Partial<FileConfig>): void {
+    const configPath = getConfigPath();
+    let existing: FileConfig = {};
+    try {
+        if (fs.existsSync(configPath)) {
+            const content = fs.readFileSync(configPath, 'utf-8');
+            existing = JSON.parse(content);
+        }
+    } catch (error) {
+        console.warn(`Warning: Could not read config file ${configPath} for update:`, error);
+    }
+
+    const merged: FileConfig = {
+        ...existing,
+        ...update
+    };
+
+    try {
+        fs.writeFileSync(configPath, JSON.stringify(merged, null, 2));
+        console.log(`Saved config updates to ${configPath}`);
+    } catch (error) {
+        console.error(`Failed to write config file ${configPath}:`, error);
+        throw error;
+    }
 }
 
 export function parseCliTypes(input: string | string[] | undefined): ('claude' | 'gemini')[] {
