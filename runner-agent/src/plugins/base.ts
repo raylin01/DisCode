@@ -134,6 +134,12 @@ export interface MetadataEvent {
     cumulativeTokens?: number;
     /** Current mode (bypassPermissions, etc.) */
     mode?: string;
+    /** Permission mode (default, acceptEdits, etc.) */
+    permissionMode?: string;
+    /** Current model */
+    model?: string;
+    /** MCP server status list */
+    mcpServers?: Array<{ name: string; status: string }>;
     /** Current activity (Thinking, Working, Wrangling, etc.) */
     activity?: string;
     timestamp: Date;

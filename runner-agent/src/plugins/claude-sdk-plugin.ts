@@ -155,6 +155,17 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             // Notify generic plugin listeners
         });
 
+        // System init (model, permission mode, MCP servers)
+        this.client.on('system', (message) => {
+            this.plugin.emit('metadata', {
+                sessionId: this.sessionId,
+                model: message.model,
+                permissionMode: message.permissionMode,
+                mcpServers: message.mcp_servers,
+                timestamp: new Date()
+            });
+        });
+
         // Text Streaming (accumulated mode with throttling)
         this.client.on('text_accumulated', (accumulatedText) => {
             if (this.currentOutputType !== 'stdout') {
@@ -311,6 +322,30 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                         fatal: false
                     });
                 });
+            } else if (request.subtype === 'mcp_message') {
+                this.plugin.emit('error', {
+                    sessionId: this.sessionId,
+                    error: 'MCP message received but MCP handling is not implemented in runner-agent.',
+                    fatal: false
+                });
+            }
+        });
+
+        this.client.on('control_cancel_request', (req) => {
+            // Clear pending permissions matching this SDK request ID
+            for (const [approvalId, pending] of this.pendingPermissions.entries()) {
+                if (pending.sdkRequestId === req.request_id) {
+                    this.pendingPermissions.delete(approvalId);
+                    break;
+                }
+            }
+
+            if (this.pendingQuestion?.baseRequestId === req.request_id) {
+                this.pendingQuestion = null;
+            }
+
+            if (this.status === 'waiting') {
+                this.status = 'idle';
             }
         });
 

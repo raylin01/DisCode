@@ -81,7 +81,10 @@ export function wirePluginEvents(
                     tokens: data.tokens,
                     cumulativeTokens: data.cumulativeTokens,
                     activity: data.activity,
-                    mode: data.mode
+                    mode: data.mode,
+                    permissionMode: data.permissionMode,
+                    model: data.model,
+                    mcpServers: data.mcpServers
                 }
             });
         }

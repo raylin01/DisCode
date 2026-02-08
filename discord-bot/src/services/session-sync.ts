@@ -47,6 +47,22 @@ export interface ProjectSyncState {
     lastSync: Date;
 }
 
+export interface ProjectSyncStatus {
+    projectPath: string;
+    state: 'idle' | 'syncing' | 'complete' | 'error';
+    lastSyncAt?: Date;
+    lastError?: string;
+    sessionCount?: number;
+}
+
+export interface RunnerSyncStatus {
+    runnerId: string;
+    state: 'idle' | 'syncing' | 'error';
+    lastSyncAt?: Date;
+    lastError?: string;
+    projects: Map<string, ProjectSyncStatus>;
+}
+
 // ============================================================================
 // Session Sync Service
 // ============================================================================
@@ -55,10 +71,104 @@ export class SessionSyncService extends EventEmitter {
     private client: Client;
     private runnerStates = new Map<string, RunnerSyncState>();
     private ownedSessions = new Set<string>(); // Sessions created/controlled by Discord
+    private runnerSyncStatus = new Map<string, RunnerSyncStatus>();
+    private pendingSyncStatusRequests = new Map<string, { resolve: (status: RunnerSyncStatus | null) => void; timeout: NodeJS.Timeout }>();
+    private threadSendQueues = new Map<string, Promise<void>>();
+    private readonly threadSendDelayMs = parseInt(process.env.DISCODE_THREAD_SEND_DELAY_MS || '350');
+    private readonly maxSyncMessages = parseInt(process.env.DISCODE_SYNC_MAX_MESSAGES || '200');
 
     constructor(client: Client) {
         super();
         this.client = client;
+    }
+
+    private ensureRunnerSyncStatus(runnerId: string): RunnerSyncStatus {
+        const existing = this.runnerSyncStatus.get(runnerId);
+        if (existing) return existing;
+
+        const created: RunnerSyncStatus = {
+            runnerId,
+            state: 'idle',
+            projects: new Map()
+        };
+        this.runnerSyncStatus.set(runnerId, created);
+        return created;
+    }
+
+    requestSyncStatus(runnerId: string, timeoutMs: number = 5000): Promise<RunnerSyncStatus | null> {
+        const ws = botState.runnerConnections.get(runnerId);
+        if (!ws) {
+            return Promise.resolve(null);
+        }
+
+        const requestId = `sync_status_${runnerId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+        return new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+                this.pendingSyncStatusRequests.delete(requestId);
+                resolve(null);
+            }, timeoutMs);
+
+            this.pendingSyncStatusRequests.set(requestId, { resolve, timeout });
+
+            ws.send(JSON.stringify({
+                type: 'sync_status_request',
+                data: { runnerId, requestId }
+            }));
+        });
+    }
+
+    handleSyncStatusResponse(data: any): void {
+        const status = this.ensureRunnerSyncStatus(data.runnerId);
+        status.state = data.status.state;
+        status.lastSyncAt = data.status.lastSyncAt ? new Date(data.status.lastSyncAt) : undefined;
+        status.lastError = data.status.lastError;
+        status.projects.clear();
+
+        for (const [projectPath, proj] of Object.entries(data.status.projects || {})) {
+            status.projects.set(projectPath, {
+                projectPath,
+                state: proj.state,
+                lastSyncAt: proj.lastSyncAt ? new Date(proj.lastSyncAt) : undefined,
+                lastError: proj.lastError,
+                sessionCount: proj.sessionCount
+            });
+        }
+
+        const pending = this.pendingSyncStatusRequests.get(data.requestId);
+        if (pending) {
+            clearTimeout(pending.timeout);
+            this.pendingSyncStatusRequests.delete(data.requestId);
+            pending.resolve(status);
+        }
+    }
+
+    handleSyncProjectsProgress(data: any): void {
+        const status = this.ensureRunnerSyncStatus(data.runnerId);
+        status.state = 'syncing';
+        status.lastError = undefined;
+    }
+
+    handleSyncProjectsComplete(data: any): void {
+        const status = this.ensureRunnerSyncStatus(data.runnerId);
+        status.state = data.status === 'error' ? 'error' : 'idle';
+        status.lastError = data.error;
+        status.lastSyncAt = data.completedAt ? new Date(data.completedAt) : new Date();
+    }
+
+    handleSyncSessionsComplete(data: any): void {
+        const status = this.ensureRunnerSyncStatus(data.runnerId);
+        const projectStatus = status.projects.get(data.projectPath) || {
+            projectPath: data.projectPath,
+            state: 'idle'
+        } as ProjectSyncStatus;
+
+        projectStatus.state = data.status === 'error' ? 'error' : 'complete';
+        projectStatus.lastError = data.error;
+        projectStatus.lastSyncAt = data.completedAt ? new Date(data.completedAt) : new Date();
+        projectStatus.sessionCount = data.sessionCount;
+
+        status.projects.set(data.projectPath, projectStatus);
     }
 
     /**
@@ -121,6 +231,41 @@ export class SessionSyncService extends EventEmitter {
         }
     }
 
+    private async ensureProjectState(runnerId: string, projectPath: string): Promise<ProjectSyncState | null> {
+        let state = this.runnerStates.get(runnerId);
+        if (!state) {
+            await this.startSyncingRunner(runnerId);
+            state = this.runnerStates.get(runnerId);
+        }
+
+        if (!state) return null;
+
+        const existing = state.projects.get(projectPath);
+        if (existing && existing.channelId) {
+            return existing;
+        }
+
+        const categoryManager = getCategoryManager();
+        if (!categoryManager) return null;
+
+        const channelId = await categoryManager.ensureProjectChannel(runnerId, projectPath);
+        if (!channelId) return null;
+
+        const projectState: ProjectSyncState = {
+            projectPath,
+            channelId,
+            sessions: existing?.sessions || new Map(),
+            lastSync: new Date()
+        };
+
+        state.projects.set(projectPath, projectState);
+        return projectState;
+    }
+
+    async ensureProjectStateForRunner(runnerId: string, projectPath: string): Promise<ProjectSyncState | null> {
+        return this.ensureProjectState(runnerId, projectPath);
+    }
+
     /**
      * Stop syncing for a runner
      */
@@ -135,18 +280,20 @@ export class SessionSyncService extends EventEmitter {
     /**
      * Request a project sync from the runner (via WebSocket)
      */
-    async syncProjects(runnerId: string): Promise<void> {
+    async syncProjects(runnerId: string): Promise<string | null> {
         const ws = botState.runnerConnections.get(runnerId);
         if (!ws) {
             console.error(`[SessionSync] Runner offline: ${runnerId}`);
-            return;
+            return null;
         }
 
         console.log(`[SessionSync] Requesting project sync from runner ${runnerId}`);
+        const requestId = `sync_projects_${runnerId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         ws.send(JSON.stringify({
             type: 'sync_projects',
-            data: { runnerId }
+            data: { runnerId, requestId }
         }));
+        return requestId;
     }
 
     /**
@@ -159,29 +306,8 @@ export class SessionSyncService extends EventEmitter {
         if (!state) {
             await this.startSyncingRunner(runnerId);
         }
-
-        const categoryManager = getCategoryManager();
-        if (!categoryManager) return;
-
         for (const project of projects) {
-            // Create project channel if needed
-            await categoryManager.createProjectChannel(runnerId, project.path);
-
-            const currentState = this.runnerStates.get(runnerId);
-            if (!currentState) continue;
-
-            // Initialize project sync state if missing
-            if (!currentState.projects.has(project.path)) {
-                const runnerCategory = categoryManager.getRunnerCategory(runnerId);
-                const projectChannel = runnerCategory?.projects.get(project.path);
-
-                currentState.projects.set(project.path, {
-                    projectPath: project.path,
-                    channelId: projectChannel?.channelId || '',
-                    sessions: new Map(),
-                    lastSync: new Date()
-                });
-            }
+            await this.ensureProjectState(runnerId, project.path);
 
             // Sync existing sessions (remote request)
             await this.syncProjectSessions(runnerId, project.path);
@@ -191,15 +317,17 @@ export class SessionSyncService extends EventEmitter {
     /**
      * Request sessions for a specific project from the runner
      */
-    async syncProjectSessions(runnerId: string, projectPath: string): Promise<void> {
+    async syncProjectSessions(runnerId: string, projectPath: string): Promise<string | null> {
         const ws = botState.runnerConnections.get(runnerId);
-        if (!ws) return;
+        if (!ws) return null;
 
         console.log(`[SessionSync] Requesting sessions for ${projectPath} from runner ${runnerId}`);
+        const requestId = `sync_sessions_${runnerId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         ws.send(JSON.stringify({
             type: 'sync_sessions',
-            data: { runnerId, projectPath }
+            data: { runnerId, projectPath, requestId }
         }));
+        return requestId;
     }
 
     /**
@@ -212,10 +340,7 @@ export class SessionSyncService extends EventEmitter {
     ): Promise<void> {
         console.log(`[SessionSync] Received ${sessions.length} sessions for ${projectPath}`);
         
-        const state = this.runnerStates.get(runnerId);
-        if (!state) return;
-
-        const projectState = state.projects.get(projectPath);
+        const projectState = await this.ensureProjectState(runnerId, projectPath);
         if (!projectState) return;
 
         for (const session of sessions) {
@@ -271,11 +396,6 @@ export class SessionSyncService extends EventEmitter {
                  const existingSync = projectState?.sessions.get(session.sessionId);
                  
                  if (existingSync) {
-                      // We have the full history in 'messages'. 
-                      // syncNewMessages expects 'newMessages' (truly new).
-                      // But existingSync might start with 0 messages (from metadata sync).
-                      // We should calculate the diff or just pass it if we trust logic.
-                      
                       const currentCount = existingSync.messageCount || 0;
                       if (messages.length > currentCount) {
                           const trulyNew = messages.slice(currentCount);
@@ -291,38 +411,50 @@ export class SessionSyncService extends EventEmitter {
 
         const task = (async () => {
             const state = this.runnerStates.get(runnerId);
-            if (!state) return;
+            if (!state) {
+                console.error(`[SessionSync] No runner state for ${runnerId}`);
+                return;
+            }
 
             const projectState = state.projects.get(projectPath);
-            if (!projectState || !projectState.channelId) return;
+            if (!projectState || !projectState.channelId) {
+                console.error(`[SessionSync] No project state/channelId for ${projectPath}`);
+                return;
+            }
 
             let channel: TextChannel | null = null;
             try {
                 channel = await this.client.channels.fetch(projectState.channelId) as TextChannel;
-                if (!channel) throw new Error('Channel not found');
+                if (!channel) throw new Error('Channel is null');
             } catch (error: any) {
-                // Check for Unknown Channel (10003) or 404
-                if (error.code === 10003 || error.status === 404 || error.message === 'Unknown Channel') {
-                     console.log(`[SessionSync] Channel ${projectState.channelId} missing. Recreating...`);
+                console.error(`[SessionSync] Error fetching channel ${projectState.channelId}:`, error);
+                
+                // Attempt recovery for missing channel
+                if (error.code === 10003 || error.status === 404 || error.message === 'Unknown Channel' || error.message === 'Channel is null') {
+                     console.log(`[SessionSync] Channel ${projectState.channelId} missing/invalid. Attempting recreation...`);
                      
                      const cm = getCategoryManager();
                      if (cm) {
                         const newChannelId = await cm.ensureProjectChannel(runnerId, projectPath);
                         if (newChannelId) {
                             try {
+                                 console.log(`[SessionSync] Recreated channel: ${newChannelId}`);
                                  projectState.channelId = newChannelId; // Update local state
                                  channel = await this.client.channels.fetch(newChannelId) as TextChannel;
                             } catch (retryErr) {
                                  console.error(`[SessionSync] Failed to fetch recreated channel:`, retryErr);
                             }
+                        } else {
+                            console.error(`[SessionSync] Failed to recreate project channel for ${projectPath}`);
                         }
                      }
-                } else {
-                     console.error(`[SessionSync] Error fetching channel ${projectState.channelId}:`, error);
                 }
             }
 
-            if (!channel) return;
+            if (!channel) {
+                console.error(`[SessionSync] Aborting thread creation: Channel not available for ${projectPath}`);
+                return;
+            }
 
             const runner = storage.getRunner(runnerId);
             let thread: ThreadChannel | null = null;
@@ -333,13 +465,12 @@ export class SessionSyncService extends EventEmitter {
                     thread = await channel.threads.fetch(threadId) as ThreadChannel;
                     if (thread) {
                         console.log(`[SessionSync] Found existing thread ${threadId} for session ${session.sessionId}`);
-                        // Unarchive if needed
                         if (thread.archived) {
                             await thread.setArchived(false, 'Session re-synced from VS Code');
                         }
                     }
                 } catch (e) {
-                    console.log(`[SessionSync] Could not fetch existing thread ${threadId}, creating new one`);
+                    console.log(`[SessionSync] Could not fetch existing thread ${threadId}, creating new one. Error: ${e}`);
                 }
             }
 
@@ -355,6 +486,7 @@ export class SessionSyncService extends EventEmitter {
                 }
 
                 try {
+                    console.log(`[SessionSync] Creating new thread '${threadName}' in channel ${channel.id}`);
                     thread = await channel.threads.create({
                         name: threadName,
                         autoArchiveDuration: archiveDuration as any, 
@@ -365,6 +497,7 @@ export class SessionSyncService extends EventEmitter {
                      return;
                 }
                     
+                if (thread) {
                     const embed = new EmbedBuilder()
                         .setTitle('📋 Session Synced from VS Code')
                         .setDescription(`This session was created in VS Code and synced to Discord.`)
@@ -376,7 +509,11 @@ export class SessionSyncService extends EventEmitter {
                         .setColor(0x5865F2)
                         .setTimestamp(new Date(session.created));
 
-                    await thread.send({ embeds: [embed] });
+                    try {
+                        await thread.send({ embeds: [embed] });
+                    } catch (e) {
+                        console.error(`[SessionSync] Failed to send initial embed to thread ${thread.id}:`, e);
+                    }
 
                     // Update storage immediately
                     const currentRunner = storage.getRunner(runnerId);
@@ -397,8 +534,10 @@ export class SessionSyncService extends EventEmitter {
                             }
                         });
                     }
-                } // End if (!thread)
+                }
+            } // End if (!thread)
 
+            if (thread) {
                 if (messages && messages.length > 0) {
                     console.log(`[SessionSync] createSessionThread: Posting ${messages.length} initial messages to thread ${thread.id}`);
                     await this.postSessionMessages(runnerId, thread, messages);
@@ -414,17 +553,22 @@ export class SessionSyncService extends EventEmitter {
                     firstPrompt: session.firstPrompt,
                     status: 'idle',
                     lastSyncedAt: new Date(),
-                    messageCount: messages ? messages.length : 0
+                    messageCount: session.messageCount ?? (messages ? messages.length : 0)
                 };
 
                 projectState.sessions.set(session.sessionId, syncedSession);
                 console.log(`[SessionSync] Synced thread ${thread.id} for session: ${session.sessionId}`);
+            } else {
+                console.error(`[SessionSync] Thread creation failed or returned null for session ${session.sessionId}`);
+            }
         })(); // End task
 
         this.sessionCreationLocks.set(session.sessionId, task);
         
         try {
             await task;
+        } catch (e) {
+            console.error(`[SessionSync] Unhandled error in createSessionThread task for ${session.sessionId}:`, e);
         } finally {
             this.sessionCreationLocks.delete(session.sessionId);
         }
@@ -436,6 +580,7 @@ export class SessionSyncService extends EventEmitter {
     async handleSessionDiscovered(runnerId: string, session: any): Promise<void> {
         console.log(`[SessionSync] Session discovered on runner ${runnerId}: ${session.sessionId}`);
         if (this.ownedSessions.has(session.sessionId)) return;
+        await this.ensureProjectState(runnerId, session.projectPath);
         await this.syncSessionToDiscord(runnerId, session.projectPath, session, session.messages);
         this.emit('session_new', { runnerId, entry: session });
     }
@@ -465,7 +610,7 @@ export class SessionSyncService extends EventEmitter {
             return;
         }
 
-        const projectState = state.projects.get(data.session.projectPath);
+        const projectState = await this.ensureProjectState(runnerId, data.session.projectPath);
         if (!projectState) {
             console.log(`[SessionSync] Project state not found for path: '${data.session.projectPath}'. Available logs: ${state.projects.size}`);
             return;
@@ -562,9 +707,20 @@ export class SessionSyncService extends EventEmitter {
         const runner = storage.getRunner(runnerId);
         if (!runner) return;
 
-        console.log(`[SessionSync] Posting ${messages.length} messages...`);
+        if (!messages || messages.length === 0) return;
 
-        for (const msg of messages) {
+        let effectiveMessages = messages;
+        if (this.maxSyncMessages > 0 && messages.length > this.maxSyncMessages) {
+            const skipped = messages.length - this.maxSyncMessages;
+            effectiveMessages = messages.slice(-this.maxSyncMessages);
+            await this.sendThreadMessage(thread, {
+                content: `⚠️ Sync truncated: showing last ${this.maxSyncMessages} of ${messages.length} messages (skipped ${skipped}).`
+            });
+        }
+
+        console.log(`[SessionSync] Posting ${effectiveMessages.length} messages...`);
+
+        for (const msg of effectiveMessages) {
             // Support both old 'message.content' and new direct struct
             const msgObj = msg.message || msg;
             
@@ -580,7 +736,7 @@ export class SessionSyncService extends EventEmitter {
                 if (content.trim()) {
                     const chunks = content.match(/[\s\S]{1,1900}/g) || [content];
                     for (const chunk of chunks) {
-                        await thread.send({ content: `**${roleLabel}:** ${chunk}` });
+                        await this.sendThreadMessage(thread, { content: `**${roleLabel}:** ${chunk}` });
                     }
                 }
                 continue;
@@ -592,7 +748,7 @@ export class SessionSyncService extends EventEmitter {
                         if (block.text?.trim()) {
                             const chunks = block.text.match(/[\s\S]{1,1900}/g) || [block.text];
                             for (const chunk of chunks) {
-                                await thread.send({ content: `**${roleLabel}:**\n${chunk}` });
+                                await this.sendThreadMessage(thread, { content: `**${roleLabel}:**\n${chunk}` });
                             }
                         }
                     } else if (block.type === 'thinking') {
@@ -600,12 +756,12 @@ export class SessionSyncService extends EventEmitter {
                          if (block.thinking?.trim()) {
                             const chunks = block.thinking.match(/[\s\S]{1,1900}/g) || [block.thinking];
                             for (const chunk of chunks) {
-                                await thread.send({ content: `> **Thinking:**\n> ${chunk.replace(/\n/g, '\n> ')}` });
+                                await this.sendThreadMessage(thread, { content: `> **Thinking:**\n> ${chunk.replace(/\n/g, '\n> ')}` });
                             }
                         }
                     } else if (block.type === 'tool_use') {
                         const embed = createToolUseEmbed(runner, block.name, block.input);
-                        await thread.send({ embeds: [embed] });
+                        await this.sendThreadMessage(thread, { embeds: [embed] });
                     } else if (block.type === 'tool_result') {
                         // Keep tool result as embed but ensure it's clean
                         let resultText = '';
@@ -623,12 +779,36 @@ export class SessionSyncService extends EventEmitter {
                                 block.is_error ? 'error' : 'tool_result',
                                 parts[i] + (i < parts.length - 1 ? '\n...(continued)' : '')
                             );
-                            await thread.send({ embeds: [embed] });
+                            await this.sendThreadMessage(thread, { embeds: [embed] });
                         }
                     }
                 }
             }
         }
+    }
+
+    private async sendThreadMessage(thread: ThreadChannel, payload: any): Promise<void> {
+        await this.enqueueThreadSend(thread.id, async () => {
+            await thread.send(payload);
+            if (this.threadSendDelayMs > 0) {
+                await new Promise(resolve => setTimeout(resolve, this.threadSendDelayMs));
+            }
+        });
+    }
+
+    private enqueueThreadSend(threadId: string, task: () => Promise<void>): Promise<void> {
+        const prev = this.threadSendQueues.get(threadId) || Promise.resolve();
+        const next = prev
+            .then(task)
+            .catch((err) => console.error('[SessionSync] Thread send error:', err))
+            .finally(() => {
+                if (this.threadSendQueues.get(threadId) === next) {
+                    this.threadSendQueues.delete(threadId);
+                }
+            });
+
+        this.threadSendQueues.set(threadId, next);
+        return next;
     }
 
     private generateThreadName(prompt: string): string {

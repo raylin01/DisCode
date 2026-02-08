@@ -325,6 +325,14 @@ export async function notifyRunnerOnline(runner: RunnerInfo, wasReclaimed: boole
  * Main WebSocket message handler
  */
 async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promise<void> {
+    const data: any = (message as any).data;
+    const messageRunnerId = data?.runnerId;
+    const wsRunnerId = (ws as any).runnerId;
+    if (message.type !== 'register' && messageRunnerId && wsRunnerId && wsRunnerId !== messageRunnerId) {
+        console.warn(`[WebSocket] Runner mismatch: ws=${wsRunnerId} message=${messageRunnerId} type=${message.type}`);
+        return;
+    }
+
     switch (message.type) {
         case 'register':
             await handleRegister(ws, message.data);
