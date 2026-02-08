@@ -201,6 +201,28 @@ async function handleSessionSettingsModalSubmit(interaction: any, userId: string
         const value = getValue('agent');
         if (value) state.options.agent = value;
         else delete state.options.agent;
+    } else if (param === 'allowedTools') {
+        const value = getValue('allowedTools');
+        state.options.allowedTools = value ? value.split(',').map(s => s.trim()).filter(Boolean) : [];
+    } else if (param === 'disallowedTools') {
+        const value = getValue('disallowedTools');
+        state.options.disallowedTools = value ? value.split(',').map(s => s.trim()).filter(Boolean) : [];
+    } else if (param === 'toolsList') {
+        const value = getValue('toolsList');
+        if (!value || value === 'default') {
+            state.options.tools = 'default';
+        } else {
+            state.options.tools = value.split(',').map(s => s.trim()).filter(Boolean);
+        }
+    } else if (param === 'betas') {
+        const value = getValue('betas');
+        state.options.betas = value ? value.split(',').map(s => s.trim()).filter(Boolean) : [];
+    } else if (param === 'settingSources') {
+        const value = getValue('settingSources');
+        state.options.settingSources = value ? value.split(',').map(s => s.trim()).filter(Boolean) : [];
+    } else if (param === 'additionalDirectories') {
+        const value = getValue('additionalDirectories');
+        state.options.additionalDirectories = value ? value.split(',').map(s => s.trim()).filter(Boolean) : [];
     } else {
         await interaction.reply({ content: 'Unknown session setting.', flags: 64 });
         return;

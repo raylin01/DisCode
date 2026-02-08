@@ -1144,6 +1144,24 @@ export async function handleSessionReview(interaction: any, userId: string): Pro
     const agentText = state.options?.agent || runner?.config?.claudeDefaults?.agent || 'Default';
     const permissionModeText = state.options?.permissionMode || runner?.config?.claudeDefaults?.permissionMode || 'default';
     const partialsText = (state.options?.includePartialMessages ?? runner?.config?.claudeDefaults?.includePartialMessages) === false ? 'Disabled' : 'Enabled';
+    const allowedToolsText = state.options?.allowedTools?.length
+        ? state.options.allowedTools.join(', ')
+        : (runner?.config?.claudeDefaults?.allowedTools?.length ? runner.config.claudeDefaults.allowedTools.join(', ') : 'Any');
+    const disallowedToolsText = state.options?.disallowedTools?.length
+        ? state.options.disallowedTools.join(', ')
+        : (runner?.config?.claudeDefaults?.disallowedTools?.length ? runner.config.claudeDefaults.disallowedTools.join(', ') : 'None');
+    const toolsListText = state.options?.tools
+        ? (Array.isArray(state.options.tools) ? state.options.tools.join(', ') : 'default')
+        : (runner?.config?.claudeDefaults?.tools ? (Array.isArray(runner.config.claudeDefaults.tools) ? runner.config.claudeDefaults.tools.join(', ') : 'default') : 'default');
+    const betasText = state.options?.betas?.length
+        ? state.options.betas.join(', ')
+        : (runner?.config?.claudeDefaults?.betas?.length ? runner.config.claudeDefaults.betas.join(', ') : 'None');
+    const settingSourcesText = state.options?.settingSources?.length
+        ? state.options.settingSources.join(', ')
+        : (runner?.config?.claudeDefaults?.settingSources?.length ? runner.config.claudeDefaults.settingSources.join(', ') : 'Default');
+    const additionalDirsText = state.options?.additionalDirectories?.length
+        ? state.options.additionalDirectories.join(', ')
+        : (runner?.config?.claudeDefaults?.additionalDirectories?.length ? runner.config.claudeDefaults.additionalDirectories.join(', ') : 'None');
 
     const embed = new EmbedBuilder()
         .setColor(0x00FF00)
@@ -1162,7 +1180,13 @@ export async function handleSessionReview(interaction: any, userId: string): Pro
             `Max Budget: \`${maxBudgetText}\`\n` +
             `Agent: \`${agentText}\`\n` +
             `Permission Mode: \`${permissionModeText}\`\n` +
-            `Include Partials: \`${partialsText}\``
+            `Include Partials: \`${partialsText}\`\n` +
+            `Allowed Tools: \`${allowedToolsText}\`\n` +
+            `Disallowed Tools: \`${disallowedToolsText}\`\n` +
+            `Tools List: \`${toolsListText}\`\n` +
+            `Betas: \`${betasText}\`\n` +
+            `Setting Sources: \`${settingSourcesText}\`\n` +
+            `Add Dirs: \`${additionalDirsText}\``
         );
 
     const row = new ActionRowBuilder<ButtonBuilder>()
@@ -1211,6 +1235,14 @@ async function handleCustomizeSettings(interaction: any, userId: string): Promis
     const maxThinkingText = state.options?.maxThinkingTokens || 'Default';
     const maxBudgetText = state.options?.maxBudgetUsd || 'Default';
     const agentText = state.options?.agent || 'Default';
+    const allowedToolsText = state.options?.allowedTools?.length ? state.options.allowedTools.join(', ') : 'Any';
+    const disallowedToolsText = state.options?.disallowedTools?.length ? state.options.disallowedTools.join(', ') : 'None';
+    const toolsListText = state.options?.tools
+        ? (Array.isArray(state.options.tools) ? state.options.tools.join(', ') : 'default')
+        : 'default';
+    const betasText = state.options?.betas?.length ? state.options.betas.join(', ') : 'None';
+    const settingSourcesText = state.options?.settingSources?.length ? state.options.settingSources.join(', ') : 'Default';
+    const additionalDirsText = state.options?.additionalDirectories?.length ? state.options.additionalDirectories.join(', ') : 'None';
 
     const embed = new EmbedBuilder()
         .setColor(0x0099FF)
@@ -1226,7 +1258,13 @@ async function handleCustomizeSettings(interaction: any, userId: string): Promis
             `Max Turns: \`${maxTurnsText}\`\n` +
             `Max Thinking: \`${maxThinkingText}\`\n` +
             `Max Budget: \`${maxBudgetText}\`\n` +
-            `Agent: \`${agentText}\``
+            `Agent: \`${agentText}\`\n` +
+            `Allowed Tools: \`${allowedToolsText}\`\n` +
+            `Disallowed Tools: \`${disallowedToolsText}\`\n` +
+            `Tools List: \`${toolsListText}\`\n` +
+            `Betas: \`${betasText}\`\n` +
+            `Setting Sources: \`${settingSourcesText}\`\n` +
+            `Add Dirs: \`${additionalDirsText}\``
         );
 
     const modeRow = new ActionRowBuilder<ButtonBuilder>()
@@ -1287,6 +1325,38 @@ async function handleCustomizeSettings(interaction: any, userId: string): Promis
                 .setStyle(ButtonStyle.Secondary)
         );
 
+    const toolsRow = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('session_settings_modal:allowedTools')
+                .setLabel('Allowed Tools')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('session_settings_modal:disallowedTools')
+                .setLabel('Disallowed Tools')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('session_settings_modal:toolsList')
+                .setLabel('Tools List')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+    const miscRow = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('session_settings_modal:betas')
+                .setLabel('Betas')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('session_settings_modal:settingSources')
+                .setLabel('Setting Sources')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('session_settings_modal:additionalDirectories')
+                .setLabel('Add Dirs')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
     const navRow = new ActionRowBuilder<ButtonBuilder>()
         .addComponents(
             new ButtonBuilder()
@@ -1302,7 +1372,7 @@ async function handleCustomizeSettings(interaction: any, userId: string): Promis
 
     await interaction.update({
         embeds: [embed],
-        components: [modeRow, permissionRow, modelRow, limitsRow, navRow]
+        components: [modeRow, permissionRow, modelRow, limitsRow, toolsRow, miscRow, navRow]
     });
 }
 
@@ -1358,6 +1428,18 @@ async function handleSessionSettingsModal(interaction: any, userId: string, cust
         input.setCustomId('maxBudgetUsd').setLabel('Max Budget USD (blank to clear)');
     } else if (param === 'agent') {
         input.setCustomId('agent').setLabel('Agent Name (blank to clear)');
+    } else if (param === 'allowedTools') {
+        input.setCustomId('allowedTools').setLabel('Allowed Tools (comma-separated)');
+    } else if (param === 'disallowedTools') {
+        input.setCustomId('disallowedTools').setLabel('Disallowed Tools (comma-separated)');
+    } else if (param === 'toolsList') {
+        input.setCustomId('toolsList').setLabel('Tools List (comma-separated or "default")');
+    } else if (param === 'betas') {
+        input.setCustomId('betas').setLabel('Betas (comma-separated)');
+    } else if (param === 'settingSources') {
+        input.setCustomId('settingSources').setLabel('Setting Sources (comma-separated)');
+    } else if (param === 'additionalDirectories') {
+        input.setCustomId('additionalDirectories').setLabel('Additional Dirs (comma-separated)');
     } else {
         await interaction.reply({ content: 'Unknown session setting.', ephemeral: true });
         return;
