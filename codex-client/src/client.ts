@@ -8,6 +8,26 @@ import {
   InitializeParams,
   ThreadStartParams,
   ThreadStartResponse,
+  ThreadResumeParams,
+  ThreadResumeResponse,
+  ThreadForkParams,
+  ThreadForkResponse,
+  ThreadArchiveParams,
+  ThreadArchiveResponse,
+  ThreadUnarchiveParams,
+  ThreadUnarchiveResponse,
+  ThreadSetNameParams,
+  ThreadSetNameResponse,
+  ThreadCompactStartParams,
+  ThreadCompactStartResponse,
+  ThreadRollbackParams,
+  ThreadRollbackResponse,
+  ThreadListParams,
+  ThreadListResponse,
+  ThreadLoadedListParams,
+  ThreadLoadedListResponse,
+  ThreadReadParams,
+  ThreadReadResponse,
   TurnStartParams,
   TurnStartResponse,
   TurnInterruptParams,
@@ -189,6 +209,56 @@ export class CodexClient extends EventEmitter {
   async startThread(params: ThreadStartParams): Promise<ThreadStartResponse> {
     await this.start();
     return this.sendRequest<ThreadStartResponse>('thread/start', params);
+  }
+
+  async resumeThread(params: ThreadResumeParams): Promise<ThreadResumeResponse> {
+    await this.start();
+    return this.sendRequest<ThreadResumeResponse>('thread/resume', params);
+  }
+
+  async forkThread(params: ThreadForkParams): Promise<ThreadForkResponse> {
+    await this.start();
+    return this.sendRequest<ThreadForkResponse>('thread/fork', params);
+  }
+
+  async archiveThread(params: ThreadArchiveParams): Promise<ThreadArchiveResponse> {
+    await this.start();
+    return this.sendRequest<ThreadArchiveResponse>('thread/archive', params);
+  }
+
+  async unarchiveThread(params: ThreadUnarchiveParams): Promise<ThreadUnarchiveResponse> {
+    await this.start();
+    return this.sendRequest<ThreadUnarchiveResponse>('thread/unarchive', params);
+  }
+
+  async setThreadName(params: ThreadSetNameParams): Promise<ThreadSetNameResponse> {
+    await this.start();
+    return this.sendRequest<ThreadSetNameResponse>('thread/name/set', params);
+  }
+
+  async compactThread(params: ThreadCompactStartParams): Promise<ThreadCompactStartResponse> {
+    await this.start();
+    return this.sendRequest<ThreadCompactStartResponse>('thread/compact/start', params);
+  }
+
+  async rollbackThread(params: ThreadRollbackParams): Promise<ThreadRollbackResponse> {
+    await this.start();
+    return this.sendRequest<ThreadRollbackResponse>('thread/rollback', params);
+  }
+
+  async listThreads(params: ThreadListParams = {}): Promise<ThreadListResponse> {
+    await this.start();
+    return this.sendRequest<ThreadListResponse>('thread/list', params);
+  }
+
+  async listLoadedThreads(params: ThreadLoadedListParams = {}): Promise<ThreadLoadedListResponse> {
+    await this.start();
+    return this.sendRequest<ThreadLoadedListResponse>('thread/loaded/list', params);
+  }
+
+  async readThread(params: ThreadReadParams): Promise<ThreadReadResponse> {
+    await this.start();
+    return this.sendRequest<ThreadReadResponse>('thread/read', params);
   }
 
   async startTurn(params: TurnStartParams): Promise<TurnStartResponse> {

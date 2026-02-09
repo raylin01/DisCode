@@ -16,6 +16,7 @@ import {
   CodexClient,
   AskForApproval,
   SandboxMode,
+  SandboxPolicy,
   ThreadStartParams,
   TurnStartParams,
   CodexServerNotification,
@@ -141,7 +142,7 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
         input: [{ type: 'text', text: next.message, text_elements: [] }],
         cwd: null,
         approvalPolicy: (options.approvalPolicy as AskForApproval | undefined) ?? null,
-        sandboxPolicy: (options.sandbox as SandboxMode | undefined) ?? null,
+        sandboxPolicy: this.toSandboxPolicy(options.sandboxPolicy ?? options.sandbox ?? null),
         model: (options.model as string | undefined) ?? null,
         effort: (options.reasoningEffort as any) ?? null,
         summary: (options.reasoningSummary as any) ?? null,
@@ -168,6 +169,30 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
       next.reject(error);
     } finally {
       this.sending = false;
+    }
+  }
+
+  private toSandboxPolicy(value: unknown): SandboxPolicy | null {
+    if (!value) return null;
+    if (typeof value === 'object' && value && 'type' in value) {
+      return value as SandboxPolicy;
+    }
+    if (typeof value !== 'string') return null;
+    switch (value) {
+      case 'read-only':
+        return { type: 'readOnly' };
+      case 'workspace-write':
+        return {
+          type: 'workspaceWrite',
+          writableRoots: [],
+          networkAccess: true,
+          excludeTmpdirEnvVar: false,
+          excludeSlashTmp: false
+        };
+      case 'danger-full-access':
+        return { type: 'dangerFullAccess' };
+      default:
+        return null;
     }
   }
 

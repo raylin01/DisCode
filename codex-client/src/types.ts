@@ -2,6 +2,12 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | { [key:
 
 export type AskForApproval = 'untrusted' | 'on-failure' | 'on-request' | 'never';
 export type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
+export type NetworkAccess = 'restricted' | 'enabled';
+export type SandboxPolicy =
+  | { type: 'dangerFullAccess' }
+  | { type: 'readOnly' }
+  | { type: 'externalSandbox'; networkAccess: NetworkAccess }
+  | { type: 'workspaceWrite'; writableRoots: string[]; networkAccess: boolean; excludeTmpdirEnvVar: boolean; excludeSlashTmp: boolean };
 export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 export type ReasoningSummary = 'auto' | 'concise' | 'detailed' | 'none';
 
@@ -30,7 +36,32 @@ export interface Thread {
   modelProvider?: string;
   createdAt?: number;
   updatedAt?: number;
+  path?: string | null;
+  cliVersion?: string;
+  source?: SessionSource;
+  gitInfo?: GitInfo | null;
+  turns?: Turn[];
   [key: string]: any;
+}
+
+export type SubAgentSource =
+  | 'review'
+  | 'compact'
+  | { thread_spawn: { parent_thread_id: string; depth: number } }
+  | { other: string };
+
+export type SessionSource =
+  | 'cli'
+  | 'vscode'
+  | 'exec'
+  | 'appServer'
+  | { subAgent: SubAgentSource }
+  | 'unknown';
+
+export interface GitInfo {
+  sha: string | null;
+  branch: string | null;
+  originUrl: string | null;
 }
 
 export interface Turn {
@@ -72,7 +103,7 @@ export interface TurnStartParams {
   input: Array<UserInput>;
   cwd?: string | null;
   approvalPolicy?: AskForApproval | null;
-  sandboxPolicy?: SandboxMode | null;
+  sandboxPolicy?: SandboxPolicy | null;
   model?: string | null;
   effort?: ReasoningEffort | null;
   summary?: ReasoningSummary | null;
@@ -159,6 +190,136 @@ export interface ToolRequestUserInputResponse {
   answers: Record<string, ToolRequestUserInputAnswer>;
 }
 
+export type ThreadSortKey = 'created_at' | 'updated_at';
+export type ThreadSourceKind =
+  | 'cli'
+  | 'vscode'
+  | 'exec'
+  | 'appServer'
+  | 'subAgent'
+  | 'subAgentReview'
+  | 'subAgentCompact'
+  | 'subAgentThreadSpawn'
+  | 'subAgentOther'
+  | 'unknown';
+
+export interface ThreadListParams {
+  cursor?: string | null;
+  limit?: number | null;
+  sortKey?: ThreadSortKey | null;
+  modelProviders?: string[] | null;
+  sourceKinds?: ThreadSourceKind[] | null;
+  archived?: boolean | null;
+}
+
+export interface ThreadListResponse {
+  data: Thread[];
+  nextCursor: string | null;
+}
+
+export interface ThreadLoadedListParams {
+  cursor?: string | null;
+  limit?: number | null;
+}
+
+export interface ThreadLoadedListResponse {
+  data: string[];
+  nextCursor: string | null;
+}
+
+export interface ThreadReadParams {
+  threadId: string;
+  includeTurns: boolean;
+}
+
+export interface ThreadReadResponse {
+  thread: Thread;
+}
+
+export interface ThreadResumeParams {
+  threadId: string;
+  history?: any[] | null;
+  path?: string | null;
+  model?: string | null;
+  modelProvider?: string | null;
+  cwd?: string | null;
+  approvalPolicy?: AskForApproval | null;
+  sandbox?: SandboxMode | null;
+  config?: Record<string, JsonValue> | null;
+  baseInstructions?: string | null;
+  developerInstructions?: string | null;
+  personality?: Record<string, any> | null;
+}
+
+export interface ThreadResumeResponse {
+  thread: Thread;
+  model: string;
+  modelProvider: string;
+  cwd: string;
+  approvalPolicy: AskForApproval;
+  sandbox: SandboxPolicy;
+  reasoningEffort: ReasoningEffort | null;
+}
+
+export interface ThreadForkParams {
+  threadId: string;
+  path?: string | null;
+  model?: string | null;
+  modelProvider?: string | null;
+  cwd?: string | null;
+  approvalPolicy?: AskForApproval | null;
+  sandbox?: SandboxMode | null;
+  config?: Record<string, JsonValue> | null;
+  baseInstructions?: string | null;
+  developerInstructions?: string | null;
+}
+
+export interface ThreadForkResponse {
+  thread: Thread;
+  model: string;
+  modelProvider: string;
+  cwd: string;
+  approvalPolicy: AskForApproval;
+  sandbox: SandboxPolicy;
+  reasoningEffort: ReasoningEffort | null;
+}
+
+export interface ThreadArchiveParams {
+  threadId: string;
+}
+
+export type ThreadArchiveResponse = Record<string, never>;
+
+export interface ThreadUnarchiveParams {
+  threadId: string;
+}
+
+export interface ThreadUnarchiveResponse {
+  thread: Thread;
+}
+
+export interface ThreadSetNameParams {
+  threadId: string;
+  name: string;
+}
+
+export type ThreadSetNameResponse = Record<string, never>;
+
+export interface ThreadCompactStartParams {
+  threadId: string;
+}
+
+export type ThreadCompactStartResponse = Record<string, never>;
+
+export interface ThreadRollbackParams {
+  threadId: string;
+  numTurns: number;
+}
+
+export interface ThreadRollbackResponse {
+  thread: Thread;
+}
+
 export interface DynamicToolCallParams {
   threadId: string;
   turnId: string;
@@ -185,14 +346,25 @@ export type CodexServerRequest =
 
 export type CodexServerNotification =
   | { method: 'thread/started'; params: { thread: Thread } }
+  | { method: 'thread/name/updated'; params: { threadId: string; name: string } }
+  | { method: 'thread/tokenUsage/updated'; params: { threadId: string; tokenUsage: any } }
+  | { method: 'thread/compacted'; params: { threadId: string } }
   | { method: 'turn/started'; params: { threadId: string; turn: Turn } }
   | { method: 'turn/completed'; params: { threadId: string; turn: Turn } }
+  | { method: 'turn/diff/updated'; params: { threadId: string; turnId: string; diff: any } }
+  | { method: 'turn/plan/updated'; params: { threadId: string; turnId: string; plan: string; explanation?: string | null } }
   | { method: 'item/started'; params: { threadId: string; turnId: string; item: any } }
   | { method: 'item/completed'; params: { threadId: string; turnId: string; item: any } }
   | { method: 'item/agentMessage/delta'; params: { threadId: string; turnId: string; itemId: string; delta: string } }
+  | { method: 'item/plan/delta'; params: { threadId: string; turnId: string; itemId: string; delta: string } }
   | { method: 'item/commandExecution/outputDelta'; params: { threadId: string; turnId: string; itemId: string; delta: string } }
+  | { method: 'item/commandExecution/terminalInteraction'; params: any }
+  | { method: 'item/fileChange/outputDelta'; params: { threadId: string; turnId: string; itemId: string; delta: string } }
+  | { method: 'item/mcpToolCall/progress'; params: { threadId: string; turnId: string; itemId: string; message: string } }
   | { method: 'item/reasoning/textDelta'; params: { threadId: string; turnId: string; itemId: string; delta: string } }
   | { method: 'item/reasoning/summaryTextDelta'; params: { threadId: string; turnId: string; itemId: string; delta: string } }
+  | { method: 'item/reasoning/summaryPartAdded'; params: any }
+  | { method: 'error'; params: { error: any; willRetry?: boolean; threadId?: string; turnId?: string } }
   | { method: string; params?: any };
 
 export interface CodexRpcResponse<T = any> {
