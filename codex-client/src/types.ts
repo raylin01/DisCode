@@ -11,6 +11,8 @@ export type SandboxPolicy =
 export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 export type ReasoningSummary = 'auto' | 'concise' | 'detailed' | 'none';
 export type InputModality = 'text' | 'image';
+export type MergeStrategy = 'replace' | 'upsert';
+export type SkillScope = 'user' | 'repo' | 'system' | 'admin';
 
 export interface ReasoningEffortOption {
   reasoningEffort: ReasoningEffort;
@@ -225,6 +227,149 @@ export interface SetDefaultModelParams {
 }
 
 export type SetDefaultModelResponse = Record<string, never>;
+
+export interface AppInfo {
+  id: string;
+  name: string;
+  description: string | null;
+  logoUrl: string | null;
+  logoUrlDark: string | null;
+  distributionChannel: string | null;
+  installUrl: string | null;
+  isAccessible: boolean;
+}
+
+export interface AppsListParams {
+  cursor?: string | null;
+  limit?: number | null;
+}
+
+export interface AppsListResponse {
+  data: AppInfo[];
+  nextCursor: string | null;
+}
+
+export interface SkillsListParams {
+  cwds?: string[];
+  forceReload?: boolean;
+}
+
+export interface SkillInterface {
+  displayName?: string;
+  shortDescription?: string;
+  iconSmall?: string;
+  iconLarge?: string;
+  brandColor?: string;
+  defaultPrompt?: string;
+}
+
+export interface SkillToolDependency {
+  type: string;
+  value: string;
+  description?: string;
+  transport?: string;
+  command?: string;
+  url?: string;
+}
+
+export interface SkillDependencies {
+  tools: SkillToolDependency[];
+}
+
+export interface SkillMetadata {
+  name: string;
+  description: string;
+  shortDescription?: string;
+  interface?: SkillInterface;
+  dependencies?: SkillDependencies;
+  path: string;
+  scope: SkillScope;
+  enabled: boolean;
+}
+
+export interface SkillErrorInfo {
+  path: string;
+  message: string;
+}
+
+export interface SkillsListEntry {
+  cwd: string;
+  skills: SkillMetadata[];
+  errors: SkillErrorInfo[];
+}
+
+export interface SkillsListResponse {
+  data: SkillsListEntry[];
+}
+
+export type SkillsRemoteReadParams = Record<string, never>;
+
+export interface RemoteSkillSummary {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface SkillsRemoteReadResponse {
+  data: RemoteSkillSummary[];
+}
+
+export interface SkillsRemoteWriteParams {
+  hazelnutId: string;
+  isPreload: boolean;
+}
+
+export interface SkillsRemoteWriteResponse {
+  id: string;
+  name: string;
+  path: string;
+}
+
+export interface SkillsConfigWriteParams {
+  path: string;
+  enabled: boolean;
+}
+
+export interface SkillsConfigWriteResponse {
+  effectiveEnabled: boolean;
+}
+
+export interface ConfigReadParams {
+  includeLayers: boolean;
+  cwd?: string | null;
+}
+
+export interface ConfigReadResponse {
+  config: Record<string, JsonValue>;
+  origins?: Record<string, any>;
+  layers?: any[] | null;
+}
+
+export interface ConfigEdit {
+  keyPath: string;
+  value: JsonValue;
+  mergeStrategy: MergeStrategy;
+}
+
+export interface ConfigBatchWriteParams {
+  edits: ConfigEdit[];
+  filePath?: string | null;
+  expectedVersion?: string | null;
+}
+
+export interface ConfigValueWriteParams {
+  keyPath: string;
+  value: JsonValue;
+  mergeStrategy: MergeStrategy;
+  filePath?: string | null;
+  expectedVersion?: string | null;
+}
+
+export interface ConfigRequirements {
+  allowedApprovalPolicies: AskForApproval[] | null;
+  allowedSandboxModes: SandboxMode[] | null;
+  enforceResidency: string | null;
+}
 
 export type ThreadSortKey = 'created_at' | 'updated_at';
 export type ThreadSourceKind =

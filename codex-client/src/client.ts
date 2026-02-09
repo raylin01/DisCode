@@ -32,6 +32,21 @@ import {
   ModelListResponse,
   SetDefaultModelParams,
   SetDefaultModelResponse,
+  AppsListParams,
+  AppsListResponse,
+  SkillsListParams,
+  SkillsListResponse,
+  SkillsRemoteReadParams,
+  SkillsRemoteReadResponse,
+  SkillsRemoteWriteParams,
+  SkillsRemoteWriteResponse,
+  SkillsConfigWriteParams,
+  SkillsConfigWriteResponse,
+  ConfigReadParams,
+  ConfigReadResponse,
+  ConfigValueWriteParams,
+  ConfigBatchWriteParams,
+  ConfigRequirements,
   TurnStartParams,
   TurnStartResponse,
   TurnInterruptParams,
@@ -273,6 +288,51 @@ export class CodexClient extends EventEmitter {
   async setDefaultModel(params: SetDefaultModelParams): Promise<SetDefaultModelResponse> {
     await this.start();
     return this.sendRequest<SetDefaultModelResponse>('setDefaultModel', params);
+  }
+
+  async listApps(params: AppsListParams = {}): Promise<AppsListResponse> {
+    await this.start();
+    return this.sendRequest<AppsListResponse>('app/list', params);
+  }
+
+  async listSkills(params: SkillsListParams = {}): Promise<SkillsListResponse> {
+    await this.start();
+    return this.sendRequest<SkillsListResponse>('skills/list', params);
+  }
+
+  async readRemoteSkills(params: SkillsRemoteReadParams = {}): Promise<SkillsRemoteReadResponse> {
+    await this.start();
+    return this.sendRequest<SkillsRemoteReadResponse>('skills/remote/read', params);
+  }
+
+  async writeRemoteSkill(params: SkillsRemoteWriteParams): Promise<SkillsRemoteWriteResponse> {
+    await this.start();
+    return this.sendRequest<SkillsRemoteWriteResponse>('skills/remote/write', params);
+  }
+
+  async writeSkillConfig(params: SkillsConfigWriteParams): Promise<SkillsConfigWriteResponse> {
+    await this.start();
+    return this.sendRequest<SkillsConfigWriteResponse>('skills/config/write', params);
+  }
+
+  async readConfig(params: ConfigReadParams): Promise<ConfigReadResponse> {
+    await this.start();
+    return this.sendRequest<ConfigReadResponse>('config/read', params);
+  }
+
+  async writeConfigValue(params: ConfigValueWriteParams): Promise<any> {
+    await this.start();
+    return this.sendRequest<any>('config/value/write', params);
+  }
+
+  async batchWriteConfig(params: ConfigBatchWriteParams): Promise<any> {
+    await this.start();
+    return this.sendRequest<any>('config/batchWrite', params);
+  }
+
+  async readConfigRequirements(): Promise<ConfigRequirements> {
+    await this.start();
+    return this.sendRequest<ConfigRequirements>('configRequirements/read', undefined);
   }
 
   async startTurn(params: TurnStartParams): Promise<TurnStartResponse> {
