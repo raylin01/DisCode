@@ -536,7 +536,8 @@ async function registerCommands(): Promise<void> {
           .setDescription('CLI type')
           .addChoices(
             { name: 'Claude Code', value: 'claude' },
-            { name: 'Gemini CLI', value: 'gemini' }
+            { name: 'Gemini CLI', value: 'gemini' },
+            { name: 'Codex CLI', value: 'codex' }
           )
           .setRequired(false)
       ),

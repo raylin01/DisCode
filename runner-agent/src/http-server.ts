@@ -15,7 +15,7 @@ export interface HttpServerConfig {
     port: number;
     runnerId: string;
     runnerName: string;
-    cliTypes: ('claude' | 'gemini')[];
+    cliTypes: ('claude' | 'gemini' | 'codex')[];
     approvalTimeout: number;
 }
 

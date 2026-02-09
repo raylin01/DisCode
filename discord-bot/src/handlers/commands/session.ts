@@ -58,9 +58,24 @@ export async function handleCreateSession(interaction: any, userId: string): Pro
             botState.sessionCreationState.set(userId, state);
 
             // Directly show plugin selection
-            // Row 1: Plugin buttons
-            const pluginButtonRow = new ActionRowBuilder<ButtonBuilder>()
-                .addComponents(
+            const pluginButtons: ButtonBuilder[] = [];
+            if (cliType === 'claude') {
+                pluginButtons.push(
+                    new ButtonBuilder()
+                        .setCustomId('session_plugin_claude-sdk')
+                        .setLabel('Claude SDK')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('session_plugin_tmux')
+                        .setLabel('Interactive (Tmux)')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('session_plugin_print')
+                        .setLabel('Basic (Print)')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            } else if (cliType === 'gemini') {
+                pluginButtons.push(
                     new ButtonBuilder()
                         .setCustomId('session_plugin_tmux')
                         .setLabel('Interactive (Tmux)')
@@ -70,10 +85,21 @@ export async function handleCreateSession(interaction: any, userId: string): Pro
                         .setLabel('Basic (Print)')
                         .setStyle(ButtonStyle.Secondary),
                     new ButtonBuilder()
-                        .setCustomId('session_plugin_claude-sdk')
-                        .setLabel('Claude SDK')
+                        .setCustomId('session_plugin_stream')
+                        .setLabel('Streaming')
                         .setStyle(ButtonStyle.Primary)
                 );
+            } else if (cliType === 'codex') {
+                pluginButtons.push(
+                    new ButtonBuilder()
+                        .setCustomId('session_plugin_codex-sdk')
+                        .setLabel('Codex SDK')
+                        .setStyle(ButtonStyle.Primary)
+                );
+            }
+
+            const pluginButtonRow = new ActionRowBuilder<ButtonBuilder>()
+                .addComponents(...pluginButtons);
 
             // Row 2: Navigation buttons
             const navButtonRow = new ActionRowBuilder<ButtonBuilder>()

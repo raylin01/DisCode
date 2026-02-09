@@ -26,7 +26,8 @@ const config = getConfig();
 // CLI paths (will be detected on startup)
 const cliPaths: CliPaths = {
   claude: null,
-  gemini: null
+  gemini: null,
+  codex: null
 };
 
 // State stores

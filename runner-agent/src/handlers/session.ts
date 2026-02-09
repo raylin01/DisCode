@@ -28,8 +28,8 @@ export async function handleSessionStart(
     data: {
         sessionId: string;
         runnerId: string;
-        cliType: 'claude' | 'gemini' | 'terminal' | 'generic';
-        plugin?: 'tmux' | 'print';
+        cliType: 'claude' | 'gemini' | 'codex' | 'terminal' | 'generic';
+        plugin?: 'tmux' | 'print' | 'claude-sdk' | 'codex-sdk';
         folderPath?: string;
         create?: boolean;
         resume?: boolean;
@@ -104,7 +104,11 @@ export async function handleSessionStart(
             return;
         }
 
-        const defaultOptions = data.cliType === 'claude' ? config.claudeDefaults : undefined;
+        const defaultOptions = data.cliType === 'claude'
+            ? config.claudeDefaults
+            : data.cliType === 'codex'
+            ? config.codexDefaults
+            : undefined;
         const mergedOptions: PluginOptions = {
             ...(defaultOptions || {}),
             ...(data.options || {})

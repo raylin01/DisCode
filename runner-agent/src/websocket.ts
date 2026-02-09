@@ -14,12 +14,13 @@ export interface WebSocketManagerConfig {
     botWsUrl: string;
     token: string;
     runnerName: string;
-    cliTypes: ('claude' | 'gemini')[];
+    cliTypes: ('claude' | 'gemini' | 'codex')[];
     defaultWorkspace?: string;
     heartbeatInterval: number;
     reconnectDelay: number;
     assistantEnabled: boolean;
     claudeDefaults?: Record<string, any>;
+    codexDefaults?: Record<string, any>;
 }
 
 export class WebSocketManager extends EventEmitter {
@@ -63,7 +64,8 @@ export class WebSocketManager extends EventEmitter {
                     cliTypes: this.config.cliTypes,
                     defaultWorkspace: this.config.defaultWorkspace,
                     assistantEnabled: this.config.assistantEnabled,
-                    claudeDefaults: this.config.claudeDefaults
+                    claudeDefaults: this.config.claudeDefaults,
+                    codexDefaults: this.config.codexDefaults
                 }
             });
 
@@ -203,6 +205,7 @@ export function createWebSocketManager(config: RunnerConfig): WebSocketManager {
         heartbeatInterval: config.heartbeatInterval,
         reconnectDelay: config.reconnectDelay,
         assistantEnabled: config.assistant.enabled,
-        claudeDefaults: config.claudeDefaults || {}
+        claudeDefaults: config.claudeDefaults || {},
+        codexDefaults: config.codexDefaults || {}
     });
 }

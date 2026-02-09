@@ -684,7 +684,7 @@ async function handleRunnerSelection(interaction: any, userId: string, customId:
 }
 
 async function handleCliSelection(interaction: any, userId: string, customId: string): Promise<void> {
-    const cliType = customId.replace('session_cli_', '') as 'claude' | 'gemini' | 'terminal';
+    const cliType = customId.replace('session_cli_', '') as 'claude' | 'gemini' | 'codex' | 'terminal';
 
     const state = botState.sessionCreationState.get(userId);
     if (!state || !state.runnerId) {
@@ -768,27 +768,43 @@ async function handleCliSelection(interaction: any, userId: string, customId: st
     botState.sessionCreationState.set(userId, state);
 
     // Build plugin buttons based on CLI type
-    const pluginButtons: ButtonBuilder[] = [
-        new ButtonBuilder()
-            .setCustomId('session_plugin_tmux')
-            .setLabel('Interactive (Tmux)')
-            .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-            .setCustomId('session_plugin_print')
-            .setLabel('Basic (Print)')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('session_plugin_claude-sdk')
-            .setLabel('Claude SDK')
-            .setStyle(ButtonStyle.Primary)
-    ];
+    const pluginButtons: ButtonBuilder[] = [];
 
-    // Add Streaming option for Gemini
-    if (cliType === 'gemini') {
+    if (cliType === 'claude') {
         pluginButtons.push(
+            new ButtonBuilder()
+                .setCustomId('session_plugin_claude-sdk')
+                .setLabel('Claude SDK')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId('session_plugin_tmux')
+                .setLabel('Interactive (Tmux)')
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId('session_plugin_print')
+                .setLabel('Basic (Print)')
+                .setStyle(ButtonStyle.Secondary)
+        );
+    } else if (cliType === 'gemini') {
+        pluginButtons.push(
+            new ButtonBuilder()
+                .setCustomId('session_plugin_tmux')
+                .setLabel('Interactive (Tmux)')
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId('session_plugin_print')
+                .setLabel('Basic (Print)')
+                .setStyle(ButtonStyle.Secondary),
             new ButtonBuilder()
                 .setCustomId('session_plugin_stream')
                 .setLabel('Streaming')
+                .setStyle(ButtonStyle.Primary)
+        );
+    } else if (cliType === 'codex') {
+        pluginButtons.push(
+            new ButtonBuilder()
+                .setCustomId('session_plugin_codex-sdk')
+                .setLabel('Codex SDK')
                 .setStyle(ButtonStyle.Primary)
         );
     }
@@ -824,7 +840,7 @@ async function handleCliSelection(interaction: any, userId: string, customId: st
 }
 
 async function handlePluginSelection(interaction: any, userId: string, customId: string): Promise<void> {
-    const plugin = customId.replace('session_plugin_', '') as 'tmux' | 'print' | 'stream' | 'claude-sdk';
+    const plugin = customId.replace('session_plugin_', '') as 'tmux' | 'print' | 'stream' | 'claude-sdk' | 'codex-sdk';
 
     const state = botState.sessionCreationState.get(userId);
     if (!state || !state.runnerId || !state.cliType) {
@@ -1579,8 +1595,8 @@ async function handleStartSession(interaction: any, userId: string): Promise<voi
             threadId: thread.id,
             createdAt: new Date().toISOString(),
             status: 'active' as const,
-            cliType: storageCLIType as 'claude' | 'gemini' | 'generic',
-            plugin: state.plugin as 'tmux' | 'print' | 'stream' | 'claude-sdk' | undefined,
+            cliType: storageCLIType as 'claude' | 'gemini' | 'codex' | 'generic',
+            plugin: state.plugin as 'tmux' | 'print' | 'stream' | 'claude-sdk' | 'codex-sdk' | undefined,
             folderPath: folderPath,
             interactionToken: interaction.token,
             creatorId: interaction.user.id
@@ -2005,7 +2021,7 @@ async function handleNewSessionButton(interaction: any, userId: string, projectP
         botState.sessionCreationState.set(userId, {
             step: 'select_plugin',
             runnerId: runnerId,
-            cliType: cliType as 'claude' | 'gemini' | 'terminal',
+            cliType: cliType as 'claude' | 'gemini' | 'codex' | 'terminal',
             folderPath: projectPath
         });
 
@@ -2019,7 +2035,12 @@ async function handleNewSessionButton(interaction: any, userId: string, projectP
             : cliType === 'gemini'
             ? [
                 { id: 'tmux', label: 'Tmux' },
-                { id: 'print', label: 'Print' }
+                { id: 'print', label: 'Print' },
+                { id: 'stream', label: 'Stream' }
+              ]
+            : cliType === 'codex'
+            ? [
+                { id: 'codex-sdk', label: 'Codex SDK' }
               ]
             : [
                 { id: 'tmux', label: 'Tmux' }

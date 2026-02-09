@@ -4,8 +4,8 @@
 
 export interface SessionMetadata {
     sessionId: string;
-    cliType: 'claude' | 'gemini' | 'terminal' | 'generic';
-    plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk';
+    cliType: 'claude' | 'gemini' | 'codex' | 'terminal' | 'generic';
+    plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk' | 'codex-sdk';
     folderPath?: string;
     runnerId: string;
 }
@@ -23,4 +23,4 @@ export interface PendingMessage {
 }
 
 // CLI path storage
-export type CliPaths = Record<'claude' | 'gemini', string | null>;
+export type CliPaths = Record<'claude' | 'gemini' | 'codex', string | null>;

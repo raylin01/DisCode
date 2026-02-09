@@ -45,6 +45,7 @@ function applyDefaultRunnerConfig(runner: RunnerInfo): void {
             thinkingLevel: 'low',
             yoloMode: false,
             claudeDefaults: {},
+            codexDefaults: {},
             presets: {}
         };
         return;
@@ -54,6 +55,7 @@ function applyDefaultRunnerConfig(runner: RunnerInfo): void {
     if (runner.config.thinkingLevel === undefined) runner.config.thinkingLevel = 'low';
     if (runner.config.yoloMode === undefined) runner.config.yoloMode = false;
     if (runner.config.claudeDefaults === undefined) runner.config.claudeDefaults = {};
+    if (runner.config.codexDefaults === undefined) runner.config.codexDefaults = {};
     if (runner.config.presets === undefined) runner.config.presets = {};
 }
 
@@ -421,7 +423,7 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
             break;
 
         case 'runner_config_updated': {
-            const data = message.data as { runnerId: string; claudeDefaults?: Record<string, any>; requestId?: string; warnings?: string[] };
+            const data = message.data as { runnerId: string; claudeDefaults?: Record<string, any>; codexDefaults?: Record<string, any>; requestId?: string; warnings?: string[] };
             if (data?.requestId) {
                 const timeout = botState.pendingRunnerConfigUpdates.get(data.requestId);
                 if (timeout) {
@@ -432,7 +434,7 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
                     console.warn(`[RunnerConfig] Update warnings: ${data.warnings.join(' ')}`);
                 }
             }
-            if (data?.runnerId && data.claudeDefaults) {
+            if (data?.runnerId && (data.claudeDefaults || data.codexDefaults)) {
                 const runner = storage.getRunner(data.runnerId);
                 if (runner) {
                     runner.config = runner.config || {
@@ -440,9 +442,15 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
                         autoSync: true,
                         thinkingLevel: 'low',
                         yoloMode: false,
-                        claudeDefaults: {}
+                        claudeDefaults: {},
+                        codexDefaults: {}
                     };
-                    runner.config.claudeDefaults = { ...data.claudeDefaults };
+                    if (data.claudeDefaults) {
+                        runner.config.claudeDefaults = { ...data.claudeDefaults };
+                    }
+                    if (data.codexDefaults) {
+                        runner.config.codexDefaults = { ...data.codexDefaults };
+                    }
                     storage.updateRunner(data.runnerId, runner);
                 }
             }
@@ -544,8 +552,12 @@ async function handleRegister(ws: any, data: any): Promise<void> {
         tokenInUse.defaultWorkspace = data.defaultWorkspace;
         tokenInUse.assistantEnabled = data.assistantEnabled ?? tokenInUse.assistantEnabled ?? true;
         if (data.claudeDefaults && typeof data.claudeDefaults === 'object') {
-            tokenInUse.config = tokenInUse.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {} };
+            tokenInUse.config = tokenInUse.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {} };
             tokenInUse.config.claudeDefaults = { ...data.claudeDefaults };
+        }
+        if (data.codexDefaults && typeof data.codexDefaults === 'object') {
+            tokenInUse.config = tokenInUse.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {} };
+            tokenInUse.config.codexDefaults = { ...data.codexDefaults };
         }
         applyDefaultRunnerConfig(tokenInUse);
 
@@ -588,8 +600,12 @@ async function handleRegister(ws: any, data: any): Promise<void> {
         // Update assistantEnabled from registration message
         existingRunner.assistantEnabled = data.assistantEnabled ?? true;
         if (data.claudeDefaults && typeof data.claudeDefaults === 'object') {
-            existingRunner.config = existingRunner.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {} };
+            existingRunner.config = existingRunner.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {} };
             existingRunner.config.claudeDefaults = { ...data.claudeDefaults };
+        }
+        if (data.codexDefaults && typeof data.codexDefaults === 'object') {
+            existingRunner.config = existingRunner.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {} };
+            existingRunner.config.codexDefaults = { ...data.codexDefaults };
         }
         applyDefaultRunnerConfig(existingRunner);
 
@@ -639,7 +655,8 @@ async function handleRegister(ws: any, data: any): Promise<void> {
                 autoSync: true,
                 thinkingLevel: 'low',
                 yoloMode: false,
-                claudeDefaults: data.claudeDefaults && typeof data.claudeDefaults === 'object' ? { ...data.claudeDefaults } : {}
+                claudeDefaults: data.claudeDefaults && typeof data.claudeDefaults === 'object' ? { ...data.claudeDefaults } : {},
+                codexDefaults: data.codexDefaults && typeof data.codexDefaults === 'object' ? { ...data.codexDefaults } : {}
             }
         };
         applyDefaultRunnerConfig(newRunner);
@@ -1799,7 +1816,7 @@ async function handleSpawnThread(ws: any, data: any): Promise<void> {
     }
 
     // Determine CLI type
-    let resolvedCliType: 'claude' | 'gemini' =
+    let resolvedCliType: 'claude' | 'gemini' | 'codex' =
         cliType === 'auto' || !cliType
             ? runner.cliTypes[0]
             : cliType;

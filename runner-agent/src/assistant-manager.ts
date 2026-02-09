@@ -19,7 +19,7 @@ export interface AssistantManagerDeps {
     config: RunnerConfig;
     wsManager: WebSocketManager;
     pluginManager: PluginManager;
-    cliPaths: { claude: string | null; gemini: string | null };
+    cliPaths: { claude: string | null; gemini: string | null; codex: string | null };
 }
 
 export interface AssistantOutput {
@@ -33,7 +33,7 @@ export class AssistantManager extends EventEmitter {
     private sessionId: string | null = null;
     private deps: AssistantManagerDeps;
     private config: AssistantConfig;
-    private cliType: 'claude' | 'gemini' | null = null;
+    private cliType: 'claude' | 'gemini' | 'codex' | null = null;
 
     constructor(deps: AssistantManagerDeps) {
         super();
@@ -65,14 +65,14 @@ export class AssistantManager extends EventEmitter {
     /**
      * Get the CLI type being used
      */
-    getCliType(): 'claude' | 'gemini' | null {
+    getCliType(): 'claude' | 'gemini' | 'codex' | null {
         return this.cliType;
     }
 
     /**
      * Get available CLI types for this runner
      */
-    getAvailableCliTypes(): ('claude' | 'gemini')[] {
+    getAvailableCliTypes(): ('claude' | 'gemini' | 'codex')[] {
         return this.deps.config.cliTypes;
     }
 
@@ -134,7 +134,11 @@ export class AssistantManager extends EventEmitter {
         });
 
         try {
-            const baseOptions = this.cliType === 'claude' ? (this.deps.config.claudeDefaults || {}) : {};
+            const baseOptions = this.cliType === 'claude'
+                ? (this.deps.config.claudeDefaults || {})
+                : this.cliType === 'codex'
+                ? (this.deps.config.codexDefaults || {})
+                : {};
 
             // Create the session via PluginManager
             this.session = await this.deps.pluginManager.createSession({

@@ -16,7 +16,7 @@ export class SkillManager {
     /**
      * Installs skills into the session's workspace
      */
-    async installSkills(cwd: string, cliType: 'claude' | 'gemini', excludedSkills: string[] = []): Promise<void> {
+    async installSkills(cwd: string, cliType: 'claude' | 'gemini' | 'codex', excludedSkills: string[] = []): Promise<void> {
         const skillsRoot = path.join(this.runnerRoot, 'resources', 'skills');
 
         try {
@@ -36,7 +36,7 @@ export class SkillManager {
                 if (!stats.isDirectory()) continue;
 
                 // Target path depends on CLI type
-                const skillDirName = cliType === 'claude' ? '.claude' : '.gemini';
+                const skillDirName = cliType === 'claude' ? '.claude' : cliType === 'gemini' ? '.gemini' : '.codex';
                 const targetPath = path.join(cwd, skillDirName, 'skills', skillName);
 
                 try {
@@ -83,7 +83,10 @@ export class SkillManager {
                     // For now, let's just stick to copying CLAUDE.md/GEMINI.md if present.
                     // But wait, thread-spawning/ASSISTANT.md was part of the plan.
 
-                    const instructionFile = cliType === 'claude' ? 'CLAUDE.md' : 'GEMINI.md';
+                    const instructionFile = cliType === 'claude' ? 'CLAUDE.md' : cliType === 'gemini' ? 'GEMINI.md' : null;
+                    if (!instructionFile) {
+                        continue;
+                    }
                     const sourceInstruction = path.join(sourcePath, instructionFile);
 
                     if (await this.fileExists(sourceInstruction)) {

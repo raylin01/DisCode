@@ -34,7 +34,7 @@ export interface RunnerConfig {
     runnerName: string;
     httpPort: number;
     defaultWorkspace?: string;
-    cliTypes: ('claude' | 'gemini')[];
+    cliTypes: ('claude' | 'gemini' | 'codex')[];
 
     // Timing options
     heartbeatInterval: number;
@@ -53,6 +53,8 @@ export interface RunnerConfig {
 
     // Claude default session options
     claudeDefaults?: Partial<PluginOptions>;
+    // Codex default session options
+    codexDefaults?: Partial<PluginOptions>;
 }
 
 interface FileConfig {
@@ -69,6 +71,7 @@ interface FileConfig {
     tmux?: Partial<TmuxConfig>;
     assistant?: Partial<AssistantConfig>;
     claudeDefaults?: Partial<PluginOptions>;
+    codexDefaults?: Partial<PluginOptions>;
 }
 
 export function loadConfigFile(): FileConfig {
@@ -118,14 +121,14 @@ export function saveConfigFile(update: Partial<FileConfig>): void {
     }
 }
 
-export function parseCliTypes(input: string | string[] | undefined): ('claude' | 'gemini')[] {
+export function parseCliTypes(input: string | string[] | undefined): ('claude' | 'gemini' | 'codex')[] {
     if (!input) return ['claude'];
 
     const arr = Array.isArray(input) ? input : input.split(',');
     return arr
         .map((type: string) => type.trim().toLowerCase())
-        .filter((type: string): type is 'claude' | 'gemini' =>
-            type === 'claude' || type === 'gemini'
+        .filter((type: string): type is 'claude' | 'gemini' | 'codex' =>
+            type === 'claude' || type === 'gemini' || type === 'codex'
         );
 }
 
@@ -241,7 +244,8 @@ export function loadConfig(): RunnerConfig {
         },
 
         // Claude defaults (session options)
-        claudeDefaults: normalizedDefaults.options
+        claudeDefaults: normalizedDefaults.options,
+        codexDefaults: fileConfig.codexDefaults || {}
     };
 }
 

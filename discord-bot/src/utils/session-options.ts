@@ -4,6 +4,9 @@ export interface SessionStartOptions {
     approvalMode?: 'manual' | 'auto';
     skipPermissions?: boolean;
     thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'auto' | 'default_on';
+    approvalPolicy?: 'untrusted' | 'on-failure' | 'on-request' | 'never';
+    reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+    reasoningSummary?: 'auto' | 'concise' | 'detailed' | 'none';
     [key: string]: any;
 }
 
@@ -11,10 +14,11 @@ export function buildSessionStartOptions(
     runner: RunnerInfo | undefined,
     stateOptions?: SessionStartOptions,
     overrides?: Record<string, any>,
-    cliType?: 'claude' | 'gemini' | 'terminal' | 'generic'
+    cliType?: 'claude' | 'gemini' | 'codex' | 'terminal' | 'generic'
 ): Record<string, any> {
     const options: Record<string, any> = {
         ...(cliType === 'claude' ? (runner?.config?.claudeDefaults || {}) : {}),
+        ...(cliType === 'codex' ? (runner?.config?.codexDefaults || {}) : {}),
         ...(stateOptions || {}),
         ...(overrides || {})
     };

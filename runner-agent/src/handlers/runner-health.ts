@@ -10,7 +10,7 @@ export interface RunnerHealthRequestData {
 
 export function handleRunnerHealthRequest(
     data: RunnerHealthRequestData,
-    deps: { config: RunnerConfig; wsManager: WebSocketManager; cliPaths: Record<'claude' | 'gemini', string | null> }
+    deps: { config: RunnerConfig; wsManager: WebSocketManager; cliPaths: Record<'claude' | 'gemini' | 'codex', string | null> }
 ): void {
     if (!data || data.runnerId !== deps.wsManager.runnerId) return;
 

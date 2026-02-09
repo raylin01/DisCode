@@ -11,7 +11,7 @@ import { EventEmitter } from 'events';
 // Types
 // ============================================================================
 
-export type PluginType = 'tmux' | 'print' | 'pty' | 'stream' | 'claude-sdk';
+export type PluginType = 'tmux' | 'print' | 'pty' | 'stream' | 'claude-sdk' | 'codex-sdk';
 export type SessionStatus = 'idle' | 'working' | 'waiting' | 'offline' | 'error';
 
 export interface SessionConfig {
@@ -22,7 +22,7 @@ export interface SessionConfig {
     /** Unique session identifier */
     sessionId: string;
     /** CLI type (claude, gemini, terminal/generic for plain shell) */
-    cliType: 'claude' | 'gemini' | 'terminal' | 'generic';
+    cliType: 'claude' | 'gemini' | 'codex' | 'terminal' | 'generic';
     /** Plugin-specific options */
     options?: PluginOptions;
 }
@@ -86,6 +86,20 @@ export interface PluginOptions {
     extraArgs?: Record<string, any>;
     /** Optional sandbox setting */
     sandbox?: string;
+    /** Codex approval policy */
+    approvalPolicy?: 'untrusted' | 'on-failure' | 'on-request' | 'never';
+    /** Codex reasoning effort */
+    reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+    /** Codex reasoning summary */
+    reasoningSummary?: 'auto' | 'concise' | 'detailed' | 'none';
+    /** Codex base instructions */
+    baseInstructions?: string;
+    /** Codex developer instructions */
+    developerInstructions?: string;
+    /** Codex personality object */
+    personality?: Record<string, any>;
+    /** Codex output schema */
+    outputSchema?: Record<string, any> | string;
     /** Include partial messages */
     includePartialMessages?: boolean;
     /** Use permission prompt tool over stdio */

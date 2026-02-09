@@ -33,7 +33,7 @@ export function stripAnsi(text: string): string {
  * Find CLI executable path
  */
 export async function findCliPath(
-    cliType: 'claude' | 'gemini',
+    cliType: 'claude' | 'gemini' | 'codex',
     searchPaths: string[]
 ): Promise<string | null> {
     for (const dir of searchPaths) {

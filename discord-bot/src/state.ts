@@ -62,7 +62,7 @@ export const streamingMessages = new Map<string, StreamingMessage>();
 export interface SessionCreationState {
     step: 'select_runner' | 'select_cli' | 'select_plugin' | 'select_folder' | 'complete';
     runnerId?: string;
-    cliType?: 'claude' | 'gemini' | 'terminal';
+    cliType?: 'claude' | 'gemini' | 'codex' | 'terminal';
     plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk';
     folder?: string; // Pre-selected folder (for "New Session" button)
     folderPath?: string;

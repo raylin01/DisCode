@@ -52,7 +52,7 @@ export async function handleWebSocketMessage(
         case 'registered': {
             const data = message.data as {
                 runnerId: string;
-                cliTypes: ('claude' | 'gemini')[];
+                cliTypes: ('claude' | 'gemini' | 'codex')[];
                 reclaimed?: boolean;
             };
 

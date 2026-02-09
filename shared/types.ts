@@ -26,6 +26,7 @@ export interface RunnerConfig {
   thinkingLevel?: 'high' | 'medium' | 'low';
   yoloMode?: boolean; // If true, auto-approve commands
   claudeDefaults?: Record<string, any>;
+  codexDefaults?: Record<string, any>;
   presets?: Record<string, any>;
 }
 
@@ -37,7 +38,7 @@ export interface RunnerInfo {
   status: 'online' | 'offline';
   lastHeartbeat: string;
   authorizedUsers: string[];
-  cliTypes: ('claude' | 'gemini')[];
+  cliTypes: ('claude' | 'gemini' | 'codex')[];
   privateChannelId?: string; // ID of the private channel for this runner
   defaultWorkspace?: string;
   assistantEnabled?: boolean;  // Whether assistant is enabled for this runner
@@ -71,8 +72,8 @@ export interface Session {
   threadId: string;
   createdAt: string;
   status: 'active' | 'ended';
-  cliType: 'claude' | 'gemini' | 'generic';
-  plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk'; // Plugin type used for this session
+  cliType: 'claude' | 'gemini' | 'codex' | 'generic';
+  plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk' | 'codex-sdk'; // Plugin type used for this session
   folderPath?: string; // Optional custom working folder
   interactionToken?: string; // Token to update the ephemeral "Initializing" message
   creatorId?: string; // ID of the user who created the session
@@ -392,7 +393,7 @@ export interface SessionStartMessage extends WebSocketMessage {
     runnerId: string;
     cliType: 'claude' | 'gemini';
     folderPath?: string;
-    plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk';
+    plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk' | 'codex-sdk';
   };
 }
 
