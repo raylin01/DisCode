@@ -22,7 +22,7 @@ import { createErrorEmbed } from '../utils/embeds.js';
 import * as botState from '../state.js';
 import type { RunnerConfig } from '../../../shared/types.js';
 
-type ConfigSection = 'main' | 'projects' | 'threads' | 'claude' | 'advanced';
+type ConfigSection = 'main' | 'projects' | 'threads' | 'claude' | 'codex' | 'advanced';
 
 export async function handleRunnerConfig(
     interaction: ButtonInteraction, 
@@ -54,6 +54,7 @@ export async function handleRunnerConfig(
         thinkingLevel: 'low',
         yoloMode: false,
         claudeDefaults: {},
+        codexDefaults: {},
         presets: {}
     };
 
@@ -63,6 +64,9 @@ export async function handleRunnerConfig(
         storage.updateRunner(runnerId, runner);
     } else if (!runner.config.claudeDefaults) {
         runner.config.claudeDefaults = {};
+        storage.updateRunner(runnerId, runner);
+    } else if (!runner.config.codexDefaults) {
+        runner.config.codexDefaults = {};
         storage.updateRunner(runnerId, runner);
     } else if (!runner.config.presets) {
         runner.config.presets = {};
@@ -90,6 +94,10 @@ export async function handleRunnerConfig(
                 .setCustomId(`config:${runnerId}:section:claude`)
                 .setLabel('🤖 Claude')
                 .setStyle(section === 'claude' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId(`config:${runnerId}:section:codex`)
+                .setLabel('🧠 Codex')
+                .setStyle(section === 'codex' ? ButtonStyle.Primary : ButtonStyle.Secondary),
              new ButtonBuilder()
                 .setCustomId(`config:${runnerId}:section:advanced`)
                 .setLabel('🔧 Advanced')
@@ -326,6 +334,69 @@ export async function handleRunnerConfig(
             rows.push(permissionModeRow);
             break;
 
+        case 'codex': {
+            embed.setDescription('**Codex Settings**\n\nConfigure Codex CLI defaults.');
+            const codexDefaults = config.codexDefaults || {};
+
+            embed.addFields(
+                { name: 'Default Model', value: codexDefaults.model || 'Auto', inline: true },
+                { name: 'Approval Policy', value: codexDefaults.approvalPolicy || 'on-request', inline: true },
+                { name: 'Reasoning Effort', value: codexDefaults.reasoningEffort || 'default', inline: true },
+                { name: 'Reasoning Summary', value: codexDefaults.reasoningSummary || 'auto', inline: true },
+                { name: 'Sandbox', value: codexDefaults.sandbox || 'default', inline: true },
+                { name: 'Base Instructions', value: codexDefaults.baseInstructions ? 'Set' : 'Default', inline: true },
+                { name: 'Developer Instructions', value: codexDefaults.developerInstructions ? 'Set' : 'Default', inline: true },
+                { name: 'Output Schema', value: codexDefaults.outputSchema ? 'Set' : 'Default', inline: true }
+            );
+
+            const codexRowOne = new ActionRowBuilder<ButtonBuilder>()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setCodexModel`)
+                        .setLabel('Set Model')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setCodexApproval`)
+                        .setLabel('Set Approval')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setCodexReasoning`)
+                        .setLabel('Set Reasoning')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setCodexSummary`)
+                        .setLabel('Set Summary')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+
+            const codexRowTwo = new ActionRowBuilder<ButtonBuilder>()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setCodexSandbox`)
+                        .setLabel('Set Sandbox')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setCodexBase`)
+                        .setLabel('Set Base Instr')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setCodexDev`)
+                        .setLabel('Set Dev Instr')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:modal:setCodexSchema`)
+                        .setLabel('Set Output Schema')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:action:clearCodexDefaults`)
+                        .setLabel('Clear Defaults')
+                        .setStyle(ButtonStyle.Danger)
+                );
+
+            rows.push(codexRowOne, codexRowTwo);
+            break;
+        }
+
         case 'advanced':
             embed.setDescription('**Advanced Settings**\n\nDangerous or technical configurations.');
             // Placeholders
@@ -412,6 +483,9 @@ export async function handleConfigAction(interaction: any, userId: string, custo
         if (param === 'clearClaudeDefaults') {
             runner.config.claudeDefaults = {};
             updated = true;
+        } else if (param === 'clearCodexDefaults') {
+            runner.config.codexDefaults = {};
+            updated = true;
         }
     }
 
@@ -432,14 +506,16 @@ export async function handleConfigAction(interaction: any, userId: string, custo
             details: { section: 'claude_defaults' }
         });
 
-        if (runner.config?.claudeDefaults) {
-            sendRunnerConfigUpdate(runnerId, runner.config.claudeDefaults);
-        }
+        sendRunnerConfigUpdate(runnerId, {
+            claudeDefaults: runner.config?.claudeDefaults,
+            codexDefaults: runner.config?.codexDefaults
+        });
         
         // Determine current section to stay on
         // We can check the customId or infer likely section
         let section: ConfigSection = 'main';
         if (param.startsWith('thinkingLevel') || param === 'yoloMode' || param.startsWith('permissionMode') || param === 'clearClaudeDefaults' || param === 'includePartialMessages' || param === 'strictMcpConfig') section = 'claude';
+        if (param.startsWith('codex') || param === 'clearCodexDefaults') section = 'codex';
         if (param === 'autoSync' || param === 'archiveDays') section = 'threads';
 
         await handleRunnerConfig(interaction as ButtonInteraction, userId, runnerId, section);
@@ -453,7 +529,7 @@ async function handleConfigModal(
 ): Promise<void> {
     const modal = new ModalBuilder()
         .setCustomId(`config_modal:${runnerId}:${param}`)
-        .setTitle('Update Claude Defaults');
+        .setTitle(param.startsWith('setCodex') ? 'Update Codex Defaults' : 'Update Claude Defaults');
 
     const input = new TextInputBuilder()
         .setRequired(true)
@@ -493,6 +569,25 @@ async function handleConfigModal(
         input.setCustomId('extraArgs').setLabel('Extra Args (JSON object)');
     } else if (param === 'setSandbox') {
         input.setCustomId('sandbox').setLabel('Sandbox (string)');
+    } else if (param === 'setCodexModel') {
+        input.setCustomId('codexModel').setLabel('Model (e.g., gpt-5.1)');
+    } else if (param === 'setCodexApproval') {
+        input.setCustomId('codexApproval').setLabel('Approval Policy (untrusted | on-failure | on-request | never)');
+    } else if (param === 'setCodexReasoning') {
+        input.setCustomId('codexReasoning').setLabel('Reasoning Effort (none | minimal | low | medium | high | xhigh)');
+    } else if (param === 'setCodexSummary') {
+        input.setCustomId('codexSummary').setLabel('Reasoning Summary (auto | concise | detailed | none)');
+    } else if (param === 'setCodexSandbox') {
+        input.setCustomId('codexSandbox').setLabel('Sandbox (read-only | workspace-write | danger-full-access)');
+    } else if (param === 'setCodexBase') {
+        input.setCustomId('codexBase').setLabel('Base Instructions');
+        input.setStyle(TextInputStyle.Paragraph);
+    } else if (param === 'setCodexDev') {
+        input.setCustomId('codexDev').setLabel('Developer Instructions');
+        input.setStyle(TextInputStyle.Paragraph);
+    } else if (param === 'setCodexSchema') {
+        input.setCustomId('codexSchema').setLabel('Output Schema (JSON)');
+        input.setStyle(TextInputStyle.Paragraph);
     } else if (param === 'savePreset') {
         input.setCustomId('presetName').setLabel('Preset Name');
     } else if (param === 'applyPreset') {
@@ -509,10 +604,17 @@ async function handleConfigModal(
     await interaction.showModal(modal);
 }
 
-function sendRunnerConfigUpdate(runnerId: string, claudeDefaults: Record<string, any>): void {
+function sendRunnerConfigUpdate(
+    runnerId: string,
+    defaults: { claudeDefaults?: Record<string, any>; codexDefaults?: Record<string, any> }
+): void {
     const ws = botState.runnerConnections.get(runnerId);
     if (!ws) {
         console.warn(`[RunnerConfig] Runner ${runnerId} not connected; cannot update defaults.`);
+        return;
+    }
+    if (!defaults.claudeDefaults && !defaults.codexDefaults) {
+        console.warn(`[RunnerConfig] No defaults to update for ${runnerId}`);
         return;
     }
     const requestId = `runner_config_${runnerId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -525,7 +627,8 @@ function sendRunnerConfigUpdate(runnerId: string, claudeDefaults: Record<string,
         type: 'runner_config_update',
         data: {
             runnerId,
-            claudeDefaults,
+            ...(defaults.claudeDefaults ? { claudeDefaults: defaults.claudeDefaults } : {}),
+            ...(defaults.codexDefaults ? { codexDefaults: defaults.codexDefaults } : {}),
             requestId
         }
     }));

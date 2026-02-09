@@ -319,6 +319,7 @@ async function handleRunnerConfigModal(interaction: any, userId: string, customI
 
     if (!runner.config) runner.config = {};
     if (!runner.config.claudeDefaults) runner.config.claudeDefaults = {};
+    if (!runner.config.codexDefaults) runner.config.codexDefaults = {};
 
     if (param === 'setModel') {
         const model = interaction.fields.getTextInputValue('model').trim();
@@ -442,6 +443,67 @@ async function handleRunnerConfigModal(interaction: any, userId: string, customI
         } else {
             runner.config.claudeDefaults.sandbox = raw;
         }
+    } else if (param === 'setCodexModel') {
+        const model = interaction.fields.getTextInputValue('codexModel').trim();
+        if (!model) {
+            delete runner.config.codexDefaults.model;
+        } else {
+            runner.config.codexDefaults.model = model;
+        }
+    } else if (param === 'setCodexApproval') {
+        const approval = interaction.fields.getTextInputValue('codexApproval').trim();
+        if (!approval) {
+            delete runner.config.codexDefaults.approvalPolicy;
+        } else {
+            runner.config.codexDefaults.approvalPolicy = approval;
+        }
+    } else if (param === 'setCodexReasoning') {
+        const effort = interaction.fields.getTextInputValue('codexReasoning').trim();
+        if (!effort) {
+            delete runner.config.codexDefaults.reasoningEffort;
+        } else {
+            runner.config.codexDefaults.reasoningEffort = effort;
+        }
+    } else if (param === 'setCodexSummary') {
+        const summary = interaction.fields.getTextInputValue('codexSummary').trim();
+        if (!summary) {
+            delete runner.config.codexDefaults.reasoningSummary;
+        } else {
+            runner.config.codexDefaults.reasoningSummary = summary;
+        }
+    } else if (param === 'setCodexSandbox') {
+        const sandbox = interaction.fields.getTextInputValue('codexSandbox').trim();
+        if (!sandbox) {
+            delete runner.config.codexDefaults.sandbox;
+        } else {
+            runner.config.codexDefaults.sandbox = sandbox;
+        }
+    } else if (param === 'setCodexBase') {
+        const text = interaction.fields.getTextInputValue('codexBase').trim();
+        if (!text) {
+            delete runner.config.codexDefaults.baseInstructions;
+        } else {
+            runner.config.codexDefaults.baseInstructions = text;
+        }
+    } else if (param === 'setCodexDev') {
+        const text = interaction.fields.getTextInputValue('codexDev').trim();
+        if (!text) {
+            delete runner.config.codexDefaults.developerInstructions;
+        } else {
+            runner.config.codexDefaults.developerInstructions = text;
+        }
+    } else if (param === 'setCodexSchema') {
+        const raw = interaction.fields.getTextInputValue('codexSchema').trim();
+        if (!raw) {
+            delete runner.config.codexDefaults.outputSchema;
+        } else {
+            try {
+                runner.config.codexDefaults.outputSchema = JSON.parse(raw);
+            } catch (err) {
+                await interaction.reply({ content: 'Invalid output schema JSON.', flags: 64 });
+                return;
+            }
+        }
     } else if (param === 'savePreset') {
         const name = interaction.fields.getTextInputValue('presetName').trim();
         if (!name) {
@@ -488,7 +550,7 @@ async function handleRunnerConfigModal(interaction: any, userId: string, customI
         details: { section: 'claude_defaults' }
     });
 
-    if (runner.config?.claudeDefaults) {
+    if (runner.config?.claudeDefaults || runner.config?.codexDefaults) {
         const ws = botState.runnerConnections.get(runnerId);
         if (ws) {
             const requestId = `runner_config_${runnerId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -502,6 +564,7 @@ async function handleRunnerConfigModal(interaction: any, userId: string, customI
                 data: {
                     runnerId,
                     claudeDefaults: runner.config.claudeDefaults,
+                    codexDefaults: runner.config.codexDefaults,
                     requestId
                 }
             }));
@@ -509,7 +572,7 @@ async function handleRunnerConfigModal(interaction: any, userId: string, customI
     }
 
     await interaction.reply({
-        content: '✅ Claude defaults updated.',
+        content: '✅ Runner defaults updated.',
         flags: 64
     });
 }
