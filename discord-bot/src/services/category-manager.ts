@@ -44,7 +44,7 @@ export interface RunnerCategory {
 export interface ProjectChannel {
     channelId: string;
     projectPath: string;
-    dashboardMessageId?: string;  // Pinned dashboard message
+    dashboardMessageId?: string;  // Latest dashboard message
     lastSync?: Date;
 }
 
@@ -88,6 +88,7 @@ export class CategoryManager {
                                 projectsMap.set(path, {
                                     channelId: data.channelId,
                                     projectPath: path,
+                                    dashboardMessageId: data.dashboardMessageId,
                                     lastSync: data.lastSync ? new Date(data.lastSync) : undefined
                                 });
                             });
@@ -102,6 +103,7 @@ export class CategoryManager {
                             projects: projectsMap
                         };
                         this.categories.set(runnerId, runnerCategory);
+                        await this.ensureControlChannelLocked(runnerCategory);
                         console.log(`[CategoryManager] Restored category for runner ${runner.name} with ${projectsMap.size} projects`);
                     }
                 } catch (error) {
@@ -135,6 +137,7 @@ export class CategoryManager {
                      projectsMap.set(path, {
                          channelId: data.channelId,
                          projectPath: path,
+                         dashboardMessageId: data.dashboardMessageId,
                          lastSync: data.lastSync ? new Date(data.lastSync) : undefined
                      });
                  });
@@ -149,6 +152,7 @@ export class CategoryManager {
                 projects: projectsMap
              };
              this.categories.set(runnerId, restoredCategory);
+             await this.ensureControlChannelLocked(restoredCategory);
              return restoredCategory;
              }
         }
@@ -193,7 +197,13 @@ export class CategoryManager {
             name: 'runner-control',
             type: ChannelType.GuildText,
             parent: category.id,
-            topic: `Control channel for ${runnerName}. Use /sync-projects to discover projects.`
+            topic: `Control channel for ${runnerName}. Use /sync-projects to discover projects.`,
+            permissionOverwrites: [
+                {
+                    id: guild.roles.everyone.id,
+                    deny: [PermissionFlagsBits.SendMessages]
+                }
+            ]
         });
 
         const runnerCategory: RunnerCategory = {
@@ -274,11 +284,12 @@ export class CategoryManager {
         
         // Persist to storage
         // Convert Map to Record for storage
-        const projectsRecord: Record<string, { channelId: string; lastSync?: string }> = {};
+        const projectsRecord: Record<string, { channelId: string; lastSync?: string; dashboardMessageId?: string }> = {};
         runnerCategory.projects.forEach((val, key) => {
             projectsRecord[key] = {
                 channelId: val.channelId,
-                lastSync: val.lastSync?.toISOString()
+                lastSync: val.lastSync?.toISOString(),
+                dashboardMessageId: val.dashboardMessageId
             };
         });
         
@@ -296,11 +307,16 @@ export class CategoryManager {
         });
 
         // Post project dashboard
-        await this.postProjectDashboard(channel, projectPath, {
+        const dashboardMessageId = await this.postProjectDashboard(channel, projectPath, {
             totalSessions: 0,
             activeSessions: 0,
             pendingActions: 0
         });
+        if (dashboardMessageId) {
+            projectChannel.dashboardMessageId = dashboardMessageId;
+            runnerCategory.projects.set(projectPath, projectChannel);
+            this.persistProjects(runnerCategory);
+        }
         
         return projectChannel;
     }
@@ -323,6 +339,20 @@ export class CategoryManager {
         }
 
         return this.createProjectChannel(runnerId, projectPath);
+    }
+
+    /**
+     * Get project by Discord channel ID
+     */
+    getProjectByChannelId(channelId: string): { runnerId: string; projectPath: string; project: ProjectChannel } | null {
+        for (const [runnerId, category] of this.categories.entries()) {
+            for (const [projectPath, project] of category.projects.entries()) {
+                if (project.channelId === channelId) {
+                    return { runnerId, projectPath, project };
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -547,6 +577,50 @@ export class CategoryManager {
     }
 
     /**
+     * Bump project dashboard to bottom and update stored message id
+     */
+    async bumpProjectDashboard(
+        runnerId: string,
+        projectPath: string,
+        stats: ProjectStats,
+        channel?: TextChannel
+    ): Promise<string | null> {
+        const runnerCategory = this.categories.get(runnerId);
+        if (!runnerCategory) return null;
+
+        const project = runnerCategory.projects.get(projectPath);
+        if (!project) return null;
+
+        let targetChannel = channel;
+        if (!targetChannel) {
+            const fetched = await this.client.channels.fetch(project.channelId).catch(() => null);
+            if (fetched && fetched.isTextBased() && !fetched.isThread()) {
+                targetChannel = fetched as TextChannel;
+            }
+        }
+        if (!targetChannel) return null;
+
+        // Post new dashboard
+        const newMessageId = await this.postProjectDashboard(targetChannel, projectPath, stats);
+        if (!newMessageId) return null;
+
+        // Delete previous dashboard (if any)
+        if (project.dashboardMessageId && project.dashboardMessageId !== newMessageId) {
+            try {
+                const previous = await targetChannel.messages.fetch(project.dashboardMessageId).catch(() => null);
+                if (previous) await previous.delete().catch(() => {});
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        project.dashboardMessageId = newMessageId;
+        runnerCategory.projects.set(projectPath, project);
+        this.persistProjects(runnerCategory);
+        return newMessageId;
+    }
+
+    /**
      * Update stats voice channel names
      */
     async updateStatsChannels(
@@ -647,6 +721,42 @@ export class CategoryManager {
                     statsChannelIds
                 }
             });
+        }
+    }
+
+    private persistProjects(runnerCategory: RunnerCategory): void {
+        const projectsRecord: Record<string, { channelId: string; lastSync?: string; dashboardMessageId?: string }> = {};
+        runnerCategory.projects.forEach((val, key) => {
+            projectsRecord[key] = {
+                channelId: val.channelId,
+                lastSync: val.lastSync?.toISOString(),
+                dashboardMessageId: val.dashboardMessageId
+            };
+        });
+
+        const runnerInfo = storage.getRunner(runnerCategory.runnerId);
+        const existingState = runnerInfo?.discordState || {};
+        storage.updateRunner(runnerCategory.runnerId, {
+            discordState: {
+                ...existingState,
+                projects: projectsRecord
+            }
+        });
+    }
+
+    private async ensureControlChannelLocked(runnerCategory: RunnerCategory): Promise<void> {
+        try {
+            const channel = await this.client.channels.fetch(runnerCategory.controlChannelId).catch(() => null);
+            if (!channel || !('permissionOverwrites' in channel)) return;
+
+            const guild = await this.client.guilds.fetch(runnerCategory.guildId).catch(() => null);
+            if (!guild) return;
+
+            await channel.permissionOverwrites.edit(guild.roles.everyone.id, {
+                SendMessages: false
+            }).catch(() => {});
+        } catch (error) {
+            console.error('[CategoryManager] Failed to lock runner control channel:', error);
         }
     }
 

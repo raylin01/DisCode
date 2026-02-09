@@ -134,3 +134,6 @@ export const pendingRunnerConfigUpdates = new Map<string, NodeJS.Timeout>();
 
 export const pendingRunnerHealthRequests = new Map<string, { resolve: (data: any | null) => void; timeout: NodeJS.Timeout }>();
 export const pendingRunnerLogsRequests = new Map<string, { resolve: (data: any | null) => void; timeout: NodeJS.Timeout }>();
+
+// Project dashboard bump tracking (channelId -> last bump timestamp ms)
+export const projectDashboardBumps = new Map<string, number>();

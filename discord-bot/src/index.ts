@@ -249,6 +249,37 @@ botState.client.on(Events.MessageCreate, async (message) => {
   // Ignore bot messages
   if (message.author.bot) return;
 
+  // Bump project controls in project channels (not threads)
+  if (!message.channel.isThread()) {
+    const categoryManager = getCategoryManager();
+    if (categoryManager) {
+      const projectInfo = categoryManager.getProjectByChannelId(message.channel.id);
+      if (projectInfo) {
+        const now = Date.now();
+        const lastBump = botState.projectDashboardBumps.get(message.channel.id) || 0;
+        if (now - lastBump > 30000) {
+          botState.projectDashboardBumps.set(message.channel.id, now);
+          const sessionSync = getSessionSyncService();
+          const stats = sessionSync?.getProjectStats(projectInfo.runnerId, projectInfo.projectPath) || {
+            totalSessions: 0,
+            activeSessions: 0,
+            pendingActions: 0
+          };
+          try {
+            await categoryManager.bumpProjectDashboard(
+              projectInfo.runnerId,
+              projectInfo.projectPath,
+              stats,
+              message.channel as any
+            );
+          } catch (e) {
+            // ignore bump errors
+          }
+        }
+      }
+    }
+  }
+
   // Handle thread messages (existing logic)
   if (message.channel.isThread()) {
     // Find the session for this thread

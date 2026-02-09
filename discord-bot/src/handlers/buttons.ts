@@ -2148,7 +2148,7 @@ async function handleSyncSessionsButton(interaction: any, userId: string, projec
 
              if (dashboardChannel && !dashboardChannel.isThread()) {
                  const stats = sessionSync.getProjectStats(syncRid, projectPath);
-                 await syncCm.postProjectDashboard(dashboardChannel, projectPath, stats);
+                 await syncCm.bumpProjectDashboard(syncRid, projectPath, stats, dashboardChannel as any);
              }
         }
 

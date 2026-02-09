@@ -57,7 +57,7 @@ export interface RunnerInfo {
       sessions?: string;
       pending?: string;
     };
-    projects?: Record<string, { channelId: string; lastSync?: string }>;
+    projects?: Record<string, { channelId: string; lastSync?: string; dashboardMessageId?: string }>;
     // Persist session->thread mapping to prevent duplicates on restart
     sessions?: Record<string, { threadId: string; projectPath: string; lastSync?: string }>;
   };
@@ -77,7 +77,7 @@ export interface Session {
   interactionToken?: string; // Token to update the ephemeral "Initializing" message
   creatorId?: string; // ID of the user who created the session
   options?: Record<string, any>; // Session-specific options
-  settingsMessageId?: string; // Pinned settings summary message ID
+  settingsMessageId?: string; // Latest settings summary message ID
 }
 
 export interface Attachment {
