@@ -12,6 +12,43 @@ import { createErrorEmbed, createInfoEmbed, createSuccessEmbed } from '../../uti
 import { getCategoryManager } from '../../services/category-manager.js';
 import type { RunnerInfo, Session } from '../../../../shared/types.ts';
 
+async function resolveProjectContext(interaction: any): Promise<{
+    runnerId?: string;
+    projectPath?: string;
+    projectChannelId?: string;
+}> {
+    const categoryManager = getCategoryManager();
+    if (!categoryManager) return {};
+
+    let channel = interaction.channel;
+    if (!channel || !channel.parentId) {
+        try {
+            channel = await interaction.client.channels.fetch(interaction.channelId);
+        } catch (e) {
+            return {};
+        }
+    }
+
+    if (channel?.isThread()) {
+        try {
+            channel = channel.parent || (channel.parentId ? await interaction.client.channels.fetch(channel.parentId) : channel);
+        } catch (e) {
+            return {};
+        }
+    }
+
+    if (!channel) return {};
+
+    const projectInfo = categoryManager.getProjectByChannelId(channel.id);
+    if (!projectInfo) return {};
+
+    return {
+        runnerId: projectInfo.runnerId,
+        projectPath: projectInfo.projectPath,
+        projectChannelId: channel.id
+    };
+}
+
 /**
  * Handle /create-session command
  */
@@ -21,6 +58,8 @@ export async function handleCreateSession(interaction: any, userId: string): Pro
         botState.sessionCreationState.delete(userId);
     }
 
+    const projectContext = await resolveProjectContext(interaction);
+
     // Get accessible online runners
     const allRunners = storage.getUserRunners(userId).filter(r => r.status === 'online');
 
@@ -29,7 +68,14 @@ export async function handleCreateSession(interaction: any, userId: string): Pro
     allRunners.forEach(runner => {
         runnersMap.set(runner.runnerId, runner);
     });
-    const runners = Array.from(runnersMap.values());
+
+    let runners = Array.from(runnersMap.values());
+    if (projectContext.runnerId) {
+        const candidate = runnersMap.get(projectContext.runnerId);
+        if (candidate && storage.canUserAccessRunner(userId, candidate.runnerId)) {
+            runners = [candidate];
+        }
+    }
 
     if (runners.length === 0) {
         await interaction.reply({
@@ -46,7 +92,9 @@ export async function handleCreateSession(interaction: any, userId: string): Pro
         // Auto-select this runner
         botState.sessionCreationState.set(userId, {
             step: 'select_cli',
-            runnerId: runner.runnerId
+            runnerId: runner.runnerId,
+            ...(projectContext.projectPath ? { folderPath: projectContext.projectPath } : {}),
+            ...(projectContext.projectChannelId ? { projectChannelId: projectContext.projectChannelId } : {})
         });
 
         // Check if we can also auto-select the CLI type
@@ -183,7 +231,9 @@ export async function handleCreateSession(interaction: any, userId: string): Pro
 
     // Multiple runners - show selection
     botState.sessionCreationState.set(userId, {
-        step: 'select_runner'
+        step: 'select_runner',
+        ...(projectContext.projectPath ? { folderPath: projectContext.projectPath } : {}),
+        ...(projectContext.projectChannelId ? { projectChannelId: projectContext.projectChannelId } : {})
     });
 
     // Row 1: Runner buttons

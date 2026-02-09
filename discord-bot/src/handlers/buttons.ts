@@ -805,6 +805,7 @@ async function handleTellClaude(interaction: any, userId: string, requestId: str
 async function handleRunnerSelection(interaction: any, userId: string, customId: string): Promise<void> {
     const runnerId = customId.replace('session_runner_', '');
     const runner = storage.getRunner(runnerId);
+    const existingState = botState.sessionCreationState.get(userId);
 
     if (!runner || !storage.canUserAccessRunner(userId, runnerId)) {
         await interaction.reply({
@@ -816,7 +817,9 @@ async function handleRunnerSelection(interaction: any, userId: string, customId:
 
     botState.sessionCreationState.set(userId, {
         step: 'select_cli',
-        runnerId: runnerId
+        runnerId: runnerId,
+        ...(existingState?.folderPath ? { folderPath: existingState.folderPath } : {}),
+        ...(existingState?.projectChannelId ? { projectChannelId: existingState.projectChannelId } : {})
     });
 
     // Row 1: CLI type buttons + Terminal option
@@ -1796,20 +1799,34 @@ async function handleStartSession(interaction: any, userId: string): Promise<voi
     const { ChannelType } = await import('discord.js');
     const { randomUUID } = await import('crypto');
 
-    // Get or create runner's private channel
-    let channelId: string;
-    if (!runner.privateChannelId) {
-        const guildId = interaction.guildId;
-        if (!guildId) {
-            await interaction.reply({
-                embeds: [createErrorEmbed('Cannot Create Session', 'Cannot determine guild ID.')],
-                flags: 64
-            });
-            return;
+    // Prefer project channel if available (project-centric sessions)
+    let channelId: string | undefined = state.projectChannelId;
+    if (!channelId) {
+        const categoryManager = getCategoryManager();
+        if (categoryManager) {
+            try {
+                channelId = await categoryManager.ensureProjectChannel(runner.runnerId, folderPath);
+            } catch (error) {
+                console.warn('[Buttons] Failed to resolve project channel, falling back to runner channel:', error);
+            }
         }
-        channelId = await getOrCreateRunnerChannel(runner, guildId);
-    } else {
-        channelId = runner.privateChannelId;
+    }
+
+    // Fallback to runner's private channel
+    if (!channelId) {
+        if (!runner.privateChannelId) {
+            const guildId = interaction.guildId;
+            if (!guildId) {
+                await interaction.reply({
+                    embeds: [createErrorEmbed('Cannot Create Session', 'Cannot determine guild ID.')],
+                    flags: 64
+                });
+                return;
+            }
+            channelId = await getOrCreateRunnerChannel(runner, guildId);
+        } else {
+            channelId = runner.privateChannelId;
+        }
     }
 
     try {
@@ -1825,11 +1842,14 @@ async function handleStartSession(interaction: any, userId: string): Promise<voi
         // Cast channel to TextChannel
         const textChannel = channel as any;
 
-        // Create a private thread
+        const threadType = channelId === runner.privateChannelId
+            ? ChannelType.PrivateThread
+            : ChannelType.PublicThread;
+
         const thread = await textChannel.threads.create({
             name: `${state.cliType.toUpperCase()}-${Date.now()}`,
-            type: ChannelType.PrivateThread,
-            invitable: false,
+            type: threadType,
+            invitable: threadType === ChannelType.PrivateThread ? false : undefined,
             reason: `CLI session for ${state.cliType}`
         });
 
@@ -2281,10 +2301,12 @@ async function handleNewSessionButton(interaction: any, userId: string, projectP
     }
 
     // Initialize session creation state with pre-filled values
+    const projectChannelId = await getProjectChannelIdFromContext(interaction);
     botState.sessionCreationState.set(userId, {
         step: 'select_cli',
         runnerId: runnerId,
-        folderPath: projectPath // Pre-fill the folder!
+        folderPath: projectPath, // Pre-fill the folder!
+        projectChannelId
     });
 
     // If there's only one CLI type, skip directly to plugin selection
@@ -2294,7 +2316,8 @@ async function handleNewSessionButton(interaction: any, userId: string, projectP
             step: 'select_plugin',
             runnerId: runnerId,
             cliType: cliType as 'claude' | 'gemini' | 'codex' | 'terminal',
-            folderPath: projectPath
+            folderPath: projectPath,
+            projectChannelId
         });
 
         // Show plugin selection for this CLI
@@ -2407,6 +2430,33 @@ async function getRunnerIdFromContext(interaction: any): Promise<string | undefi
     return fallbackRunner?.runnerId;
 }
 
+async function getProjectChannelIdFromContext(interaction: any): Promise<string | undefined> {
+    let channel = interaction.channel;
+    if (!channel || !channel.parentId) {
+        try {
+            channel = await interaction.client.channels.fetch(interaction.channelId);
+        } catch (e) {
+            console.error('[Buttons] Failed to fetch channel for project channel lookup:', e);
+            return undefined;
+        }
+    }
+
+    if (channel?.isThread()) {
+        try {
+            if (channel.parent) {
+                channel = channel.parent;
+            } else if (channel.parentId) {
+                channel = await interaction.client.channels.fetch(channel.parentId);
+            }
+        } catch (e) {
+            console.error('[Buttons] Failed to fetch parent channel for project channel lookup:', e);
+            return undefined;
+        }
+    }
+
+    return channel?.id;
+}
+
 async function getProjectPathFromContext(interaction: any): Promise<string | undefined> {
     const syncCm = getCategoryManager();
     if (!syncCm) return undefined;
@@ -2443,10 +2493,12 @@ async function recoverSessionCreationState(interaction: any, userId: string) {
     if (!runnerId) return null;
 
     const projectPath = await getProjectPathFromContext(interaction);
+    const projectChannelId = await getProjectChannelIdFromContext(interaction);
     const state = {
         step: 'select_cli' as const,
         runnerId,
-        folderPath: projectPath
+        folderPath: projectPath,
+        projectChannelId
     };
     botState.sessionCreationState.set(userId, state);
     return state;

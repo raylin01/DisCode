@@ -379,9 +379,14 @@ export class SessionSyncService extends EventEmitter {
         const projectState = await this.ensureProjectState(runnerId, projectPath);
         if (!projectState) return;
 
-        for (const session of sessions) {
+        for (let index = 0; index < sessions.length; index++) {
+            const session = sessions[index];
             if (this.ownedSessions.has(session.sessionId)) continue;
             await this.syncSessionToDiscord(runnerId, projectPath, session, session.messages);
+
+            if (index % 3 === 0) {
+                await new Promise<void>(resolve => setImmediate(resolve));
+            }
         }
 
         projectState.lastSync = new Date();
