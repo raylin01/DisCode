@@ -9,6 +9,11 @@ internal/
 .claude/
 .gemini/
 
+# VS Code extensions (local reference only)
+claude-code-ext/
+codex-ext/
+*.vsix
+
 # Ignored test documentation
 TEST_PLAN.md
 TESTING_PROGRESS.md
