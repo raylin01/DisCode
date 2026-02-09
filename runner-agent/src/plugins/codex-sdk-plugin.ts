@@ -84,8 +84,9 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
       ?? (options.skipPermissions ? 'never' : 'on-request');
 
     const sandbox = (options.sandbox as SandboxMode | undefined) || null;
+    const persistSession = options.persistSession !== false;
 
-    const threadParams: ThreadStartParams = {
+    const baseParams = {
       model: (options.model as string | undefined) ?? null,
       modelProvider: null,
       cwd: this.config.cwd,
@@ -94,12 +95,30 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
       config: (options.config as any) ?? null,
       baseInstructions: options.baseInstructions ?? null,
       developerInstructions: options.developerInstructions ?? null,
-      personality: options.personality ?? null,
-      ephemeral: false,
-      experimentalRawEvents: false
+      personality: options.personality ?? null
     };
 
-    const response = await this.plugin.client.startThread(threadParams);
+    let response: { thread: { id: string }; model: string; approvalPolicy: AskForApproval };
+    if (options.resumeSessionId) {
+      if (options.forkSession) {
+        response = await this.plugin.client.forkThread({
+          threadId: options.resumeSessionId,
+          ...baseParams
+        });
+      } else {
+        response = await this.plugin.client.resumeThread({
+          threadId: options.resumeSessionId,
+          ...baseParams
+        });
+      }
+    } else {
+      const threadParams: ThreadStartParams = {
+        ...baseParams,
+        ephemeral: !persistSession,
+        experimentalRawEvents: false
+      };
+      response = await this.plugin.client.startThread(threadParams);
+    }
     this.threadId = response.thread.id;
     this.isReady = true;
     this.emit('ready');
