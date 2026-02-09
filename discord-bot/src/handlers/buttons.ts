@@ -17,6 +17,93 @@ import { getSessionSyncService } from '../services/session-sync.js';
 import { getCategoryManager } from '../services/category-manager.js';
 import { listSessions } from '../../../claude-client/src/sessions.js';
 
+const EPHEMERAL_FLAGS = { flags: 64 };
+
+function isUnknownInteraction(error: any): boolean {
+    return error?.code === 10062 || error?.rawError?.code === 10062;
+}
+
+async function sendExpiredInteractionNotice(interaction: any, message?: string): Promise<void> {
+    if (!interaction?.channel?.isTextBased?.()) return;
+    const content = message ?? 'Buttons expired. Please use the latest dashboard message or run /create-session.';
+    try {
+        await interaction.channel.send({ content });
+    } catch (error) {
+        console.error('[Buttons] Failed to send expired interaction notice:', error);
+    }
+}
+
+async function safeDeferReply(interaction: any, fallbackMessage?: string): Promise<boolean> {
+    if (interaction.deferred || interaction.replied) return true;
+    try {
+        await interaction.deferReply(EPHEMERAL_FLAGS);
+        return true;
+    } catch (error) {
+        if (isUnknownInteraction(error)) {
+            await sendExpiredInteractionNotice(interaction, fallbackMessage);
+            return false;
+        }
+        throw error;
+    }
+}
+
+async function safeEditReply(interaction: any, payload: any, fallbackMessage?: string): Promise<void> {
+    try {
+        await interaction.editReply(payload);
+    } catch (error) {
+        if (isUnknownInteraction(error)) {
+            await sendExpiredInteractionNotice(interaction, fallbackMessage);
+            return;
+        }
+        throw error;
+    }
+}
+
+async function safeReply(interaction: any, payload: any, fallbackMessage?: string): Promise<void> {
+    try {
+        await interaction.reply(payload);
+    } catch (error) {
+        if (isUnknownInteraction(error)) {
+            await sendExpiredInteractionNotice(interaction, fallbackMessage);
+            return;
+        }
+        throw error;
+    }
+}
+
+async function safeUpdate(interaction: any, payload: any, fallbackMessage?: string): Promise<void> {
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.update(payload);
+        } else {
+            await interaction.editReply(payload);
+        }
+    } catch (error) {
+        if (isUnknownInteraction(error)) {
+            await sendExpiredInteractionNotice(interaction, fallbackMessage);
+            return;
+        }
+        throw error;
+    }
+}
+
+function inferCliTypeFromInteraction(interaction: any, plugin: string): 'claude' | 'gemini' | 'codex' | 'terminal' | null {
+    if (plugin === 'codex-sdk') return 'codex';
+    if (plugin === 'claude-sdk') return 'claude';
+    if (plugin === 'stream') return 'gemini';
+
+    const content = interaction?.message?.content ?? '';
+    const description = interaction?.message?.embeds?.[0]?.description ?? '';
+    const match = `${content}\n${description}`.match(/\*\*CLI:\*\*\s*([A-Za-z0-9_-]+)/i);
+    if (!match) return null;
+
+    const cli = match[1].toLowerCase();
+    if (cli === 'claude' || cli === 'gemini' || cli === 'codex' || cli === 'terminal') {
+        return cli;
+    }
+    return null;
+}
+
 /**
  * Main button interaction dispatcher
  */
@@ -195,11 +282,10 @@ export async function handleButtonInteraction(interaction: any): Promise<void> {
         return;
     }
 
-    if (!interaction.replied && !interaction.deferred) {
-        await interaction.deferReply({ ephemeral: true });
-    }
+    const acknowledged = await safeDeferReply(interaction);
+    if (!acknowledged) return;
 
-    await interaction.editReply({
+    await safeEditReply(interaction, {
         content: '❓ Unknown action. Please try again or refresh the dashboard.'
     });
 }
@@ -677,7 +763,7 @@ async function handleRunnerSelection(interaction: any, userId: string, customId:
         .setTitle('Select CLI Type')
         .setDescription(`**Runner:** \`${runner.name}\`\n\nSelect the CLI tool to use:\n\n**Terminal** - Plain shell session (no AI CLI)`);
 
-    await interaction.update({
+    await safeUpdate(interaction, {
         embeds: [embed],
         components: [mainButtonRow, navButtonRow]
     });
@@ -691,7 +777,7 @@ async function handleCliSelection(interaction: any, userId: string, customId: st
         state = await recoverSessionCreationState(interaction, userId);
     }
     if (!state || !state.runnerId) {
-        await interaction.reply({
+        await safeReply(interaction, {
             embeds: [createErrorEmbed('Session Expired', 'Please start over with /create-session')],
             flags: 64
         });
@@ -759,7 +845,7 @@ async function handleCliSelection(interaction: any, userId: string, customId: st
             embed.addFields({ name: 'Default Folder', value: `\`${runner.defaultWorkspace}\``, inline: false });
         }
 
-        await interaction.update({
+        await safeUpdate(interaction, {
             embeds: [embed],
             components: [mainButtonRow, navButtonRow]
         });
@@ -836,7 +922,7 @@ async function handleCliSelection(interaction: any, userId: string, customId: st
         .setTitle('Select Plugin Type')
         .setDescription(`**Runner:** \`${runner?.name}\`\n**CLI:** ${cliType.toUpperCase()}\n\nSelect how you want to interact:`);
 
-    await interaction.update({
+    await safeUpdate(interaction, {
         embeds: [embed],
         components: [mainButtonRow, navButtonRow]
     });
@@ -845,9 +931,23 @@ async function handleCliSelection(interaction: any, userId: string, customId: st
 async function handlePluginSelection(interaction: any, userId: string, customId: string): Promise<void> {
     const plugin = customId.replace('session_plugin_', '') as 'tmux' | 'print' | 'stream' | 'claude-sdk' | 'codex-sdk';
 
-    const state = botState.sessionCreationState.get(userId);
+    let state = botState.sessionCreationState.get(userId);
     if (!state || !state.runnerId || !state.cliType) {
-        await interaction.reply({
+        await recoverSessionCreationState(interaction, userId);
+        state = botState.sessionCreationState.get(userId) ?? state;
+
+        const inferredCli = inferCliTypeFromInteraction(interaction, plugin);
+        if (state && !state.cliType && inferredCli) {
+            state.cliType = inferredCli;
+        }
+        if (state) {
+            state.step = 'select_plugin';
+            botState.sessionCreationState.set(userId, state);
+        }
+    }
+
+    if (!state || !state.runnerId || !state.cliType) {
+        await safeReply(interaction, {
             embeds: [createErrorEmbed('Session Expired', 'Please start over with /create-session')],
             flags: 64
         });
@@ -1555,7 +1655,7 @@ async function handleSessionSettingsModal(interaction: any, userId: string, cust
     } else if (param === 'sandbox') {
         input.setCustomId('sandbox').setLabel('Sandbox (string)');
     } else {
-        await interaction.reply({ content: 'Unknown session setting.', ephemeral: true });
+        await interaction.reply({ content: 'Unknown session setting.', flags: 64 });
         return;
     }
 
@@ -1954,12 +2054,12 @@ async function handleOtherButton(interaction: any, userId: string, customId: str
 async function handleRunnerStats(interaction: any, userId: string, runnerId: string): Promise<void> {
     const runner = storage.getRunner(runnerId);
     if (!runner) {
-        await interaction.reply({ content: '❌ Runner not found.', ephemeral: true });
+        await interaction.reply({ content: '❌ Runner not found.', flags: 64 });
         return;
     }
 
     if (!storage.canUserAccessRunner(userId, runnerId)) {
-        await interaction.reply({ content: '❌ Access denied.', ephemeral: true });
+        await interaction.reply({ content: '❌ Access denied.', flags: 64 });
         return;
     }
 
@@ -1979,11 +2079,12 @@ async function handleRunnerStats(interaction: any, userId: string, runnerId: str
         )
         .setColor(0x0099FF);
 
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    await interaction.reply({ embeds: [embed], flags: 64 });
 }
 
 async function handleListSessionsButton(interaction: any, userId: string, projectPath: string): Promise<void> {
-    await interaction.deferReply({ ephemeral: true });
+    const acknowledged = await safeDeferReply(interaction);
+    if (!acknowledged) return;
 
     try {
         // Verify access (implicit via channel check usually, but good to be safe)
@@ -1992,7 +2093,7 @@ async function handleListSessionsButton(interaction: any, userId: string, projec
         const sessions = await listSessions(projectPath);
         
         if (sessions.length === 0) {
-            await interaction.editReply({ content: 'No sessions found for this project.' });
+            await safeEditReply(interaction, { content: 'No sessions found for this project.' });
             return;
         }
 
@@ -2007,11 +2108,11 @@ async function handleListSessionsButton(interaction: any, userId: string, projec
             )
             .setColor(0x0099FF);
 
-        await interaction.editReply({ embeds: [embed] });
+        await safeEditReply(interaction, { embeds: [embed] });
 
     } catch (error) {
         console.error('Error listing sessions:', error);
-        await interaction.editReply({ content: '❌ Error listing sessions.' });
+        await safeEditReply(interaction, { content: '❌ Error listing sessions.' });
     }
 }
 
@@ -2019,7 +2120,8 @@ async function handleNewSessionButton(interaction: any, userId: string, projectP
     let useChannelFallback = false;
     if (!interaction.deferred && !interaction.replied) {
         try {
-            await interaction.deferReply({ flags: 64 });
+            const acknowledged = await safeDeferReply(interaction);
+            if (!acknowledged) useChannelFallback = true;
         } catch (error) {
             console.warn('[Buttons] Failed to defer interaction, falling back to channel message:', error);
             useChannelFallback = true;
@@ -2053,7 +2155,7 @@ async function handleNewSessionButton(interaction: any, userId: string, projectP
             }
             return;
         }
-        await interaction.editReply(payload);
+        await safeEditReply(interaction, payload);
         return;
     }
 
@@ -2153,7 +2255,7 @@ async function handleNewSessionButton(interaction: any, userId: string, projectP
         }
         return;
     }
-    await interaction.editReply(payload);
+    await safeEditReply(interaction, payload);
 }
 
 async function getRunnerIdFromContext(interaction: any): Promise<string | undefined> {
@@ -2245,12 +2347,11 @@ async function recoverSessionCreationState(interaction: any, userId: string) {
 }
 
 async function handleSyncSessionsButton(interaction: any, userId: string, projectPath: string): Promise<void> {
-    try {
-        await interaction.deferReply({ ephemeral: true });
-    } catch (error) {
-        console.error('[Buttons] deferReply failed for sync_sessions:', error);
-        return; // Cannot proceed if interaction is dead
-    }
+    const acknowledged = await safeDeferReply(
+        interaction,
+        'Buttons expired. Please use the latest project dashboard to sync sessions.'
+    );
+    if (!acknowledged) return;
     
     let syncRid = await getRunnerIdFromContext(interaction);
     if (!syncRid) {
@@ -2261,13 +2362,13 @@ async function handleSyncSessionsButton(interaction: any, userId: string, projec
     console.log(`[DEBUG] handleSyncSessionsButton: projectPath=${projectPath} syncRid=${syncRid}`);
 
     if (!syncRid) {
-         await interaction.editReply('❌ Could not identify runner. Try running this from the Project Channel, not a thread.');
+         await safeEditReply(interaction, { content: '❌ Could not identify runner. Try running this from the Project Channel, not a thread.' });
          return;
     }
 
     const sessionSync = getSessionSyncService();
     if (!sessionSync) {
-        await interaction.editReply('❌ Session sync service not available.');
+        await safeEditReply(interaction, { content: '❌ Session sync service not available.' });
         return;
     }
 
@@ -2294,11 +2395,11 @@ async function handleSyncSessionsButton(interaction: any, userId: string, projec
              }
         }
 
-        await interaction.editReply('✅ Sync complete!');
+        await safeEditReply(interaction, { content: '✅ Sync complete!' });
     } catch (error) {
         console.error('[Buttons] Sync failed:', error);
         try {
-            await interaction.editReply('❌ Sync failed.');
+            await safeEditReply(interaction, { content: '❌ Sync failed.' });
         } catch (e) {
             console.error('[Buttons] Failed to send failure message:', e);
         }
