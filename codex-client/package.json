@@ -1,0 +1,26 @@
+{
+  "name": "codex-client",
+  "version": "0.1.0",
+  "description": "A standalone Node.js client for controlling Codex CLI app-server",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "codex",
+    "openai",
+    "ai",
+    "cli",
+    "client",
+    "sdk"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
