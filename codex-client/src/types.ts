@@ -10,6 +10,12 @@ export type SandboxPolicy =
   | { type: 'workspaceWrite'; writableRoots: string[]; networkAccess: boolean; excludeTmpdirEnvVar: boolean; excludeSlashTmp: boolean };
 export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 export type ReasoningSummary = 'auto' | 'concise' | 'detailed' | 'none';
+export type InputModality = 'text' | 'image';
+
+export interface ReasoningEffortOption {
+  reasoningEffort: ReasoningEffort;
+  description: string;
+}
 
 export interface ClientInfo {
   name: string;
@@ -189,6 +195,36 @@ export interface ToolRequestUserInputAnswer {
 export interface ToolRequestUserInputResponse {
   answers: Record<string, ToolRequestUserInputAnswer>;
 }
+
+export interface Model {
+  id: string;
+  model: string;
+  upgrade: string | null;
+  displayName: string;
+  description: string;
+  supportedReasoningEfforts: ReasoningEffortOption[];
+  defaultReasoningEffort: ReasoningEffort;
+  inputModalities: InputModality[];
+  supportsPersonality: boolean;
+  isDefault: boolean;
+}
+
+export interface ModelListParams {
+  cursor?: string | null;
+  limit?: number | null;
+}
+
+export interface ModelListResponse {
+  data: Model[];
+  nextCursor: string | null;
+}
+
+export interface SetDefaultModelParams {
+  model: string | null;
+  reasoningEffort: ReasoningEffort | null;
+}
+
+export type SetDefaultModelResponse = Record<string, never>;
 
 export type ThreadSortKey = 'created_at' | 'updated_at';
 export type ThreadSourceKind =

@@ -28,6 +28,10 @@ import {
   ThreadLoadedListResponse,
   ThreadReadParams,
   ThreadReadResponse,
+  ModelListParams,
+  ModelListResponse,
+  SetDefaultModelParams,
+  SetDefaultModelResponse,
   TurnStartParams,
   TurnStartResponse,
   TurnInterruptParams,
@@ -259,6 +263,16 @@ export class CodexClient extends EventEmitter {
   async readThread(params: ThreadReadParams): Promise<ThreadReadResponse> {
     await this.start();
     return this.sendRequest<ThreadReadResponse>('thread/read', params);
+  }
+
+  async listModels(params: ModelListParams = {}): Promise<ModelListResponse> {
+    await this.start();
+    return this.sendRequest<ModelListResponse>('model/list', params);
+  }
+
+  async setDefaultModel(params: SetDefaultModelParams): Promise<SetDefaultModelResponse> {
+    await this.start();
+    return this.sendRequest<SetDefaultModelResponse>('setDefaultModel', params);
   }
 
   async startTurn(params: TurnStartParams): Promise<TurnStartResponse> {
