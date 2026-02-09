@@ -53,6 +53,7 @@ const config = getConfig();
 const DISCORD_TOKEN = config.discordToken;
 const DISCORD_CLIENT_ID = config.discordClientId;
 const WS_PORT = config.wsPort;
+const PROJECT_DASHBOARD_REFRESH_MS = parseInt(process.env.DISCODE_PROJECT_DASHBOARD_REFRESH_MS || '600000');
 
 // Create WebSocket server
 createWebSocketServer(WS_PORT);
@@ -68,6 +69,30 @@ botState.client.once(Events.ClientReady, async () => {
       console.log('[Index] Initializing CategoryManager...');
       await categoryManager.initialize();
       await reconcileRunnerCategories();
+  }
+
+  // Periodically refresh project dashboards to keep buttons fresh
+  if (categoryManager) {
+      setInterval(async () => {
+          const sessionSync = getSessionSyncService();
+          const projects = categoryManager.listProjects();
+          const now = Date.now();
+          for (const project of projects) {
+              const lastBump = botState.projectDashboardBumps.get(project.channelId) || 0;
+              if (now - lastBump < PROJECT_DASHBOARD_REFRESH_MS) continue;
+              const stats = sessionSync?.getProjectStats(project.runnerId, project.projectPath) || {
+                  totalSessions: 0,
+                  activeSessions: 0,
+                  pendingActions: 0
+              };
+              try {
+                  await categoryManager.bumpProjectDashboard(project.runnerId, project.projectPath, stats);
+                  botState.projectDashboardBumps.set(project.channelId, now);
+              } catch (e) {
+                  // ignore refresh errors
+              }
+          }
+      }, PROJECT_DASHBOARD_REFRESH_MS);
   }
 });
 
@@ -90,9 +115,9 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
     console.error('Error handling interaction:', error);
     try {
         if ((interaction as any).replied || (interaction as any).deferred) {
-            await (interaction as any).followUp({ content: '❌ Interaction failed.', ephemeral: true });
+            await (interaction as any).followUp({ content: '❌ Interaction failed.', flags: 64 });
         } else {
-            await (interaction as any).reply({ content: '❌ Interaction failed.', ephemeral: true });
+            await (interaction as any).reply({ content: '❌ Interaction failed.', flags: 64 });
         }
     } catch (e) {
         // Ignore secondary error

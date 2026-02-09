@@ -115,6 +115,19 @@ export class CategoryManager {
     }
 
     /**
+     * List all project channels across runners
+     */
+    listProjects(): Array<{ runnerId: string; projectPath: string; channelId: string }> {
+        const projects: Array<{ runnerId: string; projectPath: string; channelId: string }> = [];
+        for (const [runnerId, category] of this.categories.entries()) {
+            for (const [projectPath, project] of category.projects.entries()) {
+                projects.push({ runnerId, projectPath, channelId: project.channelId });
+            }
+        }
+        return projects;
+    }
+
+    /**
      * Create category structure for a new runner
      */
     async createRunnerCategory(

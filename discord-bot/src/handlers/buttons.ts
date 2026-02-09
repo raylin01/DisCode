@@ -2016,7 +2016,15 @@ async function handleListSessionsButton(interaction: any, userId: string, projec
 }
 
 async function handleNewSessionButton(interaction: any, userId: string, projectPath: string): Promise<void> {
-    await interaction.deferReply({ flags: 64 });
+    let useChannelFallback = false;
+    if (!interaction.deferred && !interaction.replied) {
+        try {
+            await interaction.deferReply({ flags: 64 });
+        } catch (error) {
+            console.warn('[Buttons] Failed to defer interaction, falling back to channel message:', error);
+            useChannelFallback = true;
+        }
+    }
 
     const categoryManager = getCategoryManager();
 
@@ -2036,17 +2044,31 @@ async function handleNewSessionButton(interaction: any, userId: string, projectP
     console.log(`[DEBUG] handleNewSessionButton: projectPath=${projectPath} runnerId=${runnerId}`);
 
     if (!runnerId) {
-        await interaction.editReply({
+        const payload = {
             content: '❌ Could not identify runner. Try running this from the Project Channel.',
-        });
+        };
+        if (useChannelFallback) {
+            if (interaction.channel?.isTextBased()) {
+                await interaction.channel.send(payload);
+            }
+            return;
+        }
+        await interaction.editReply(payload);
         return;
     }
 
     const runner = storage.getRunner(runnerId);
     if (!runner) {
-        await interaction.editReply({
+        const payload = {
             content: '❌ Runner not found.',
-        });
+        };
+        if (useChannelFallback) {
+            if (interaction.channel?.isTextBased()) {
+                await interaction.channel.send(payload);
+            }
+            return;
+        }
+        await interaction.editReply(payload);
         return;
     }
 
@@ -2097,10 +2119,17 @@ async function handleNewSessionButton(interaction: any, userId: string, projectP
 
         const row = new ActionRowBuilder<ButtonBuilder>().addComponents(...pluginButtons);
 
-        await interaction.editReply({
+        const payload = {
             content: `**New Session for ${projectPath}**\n\nSelected: **${cliType.toUpperCase()}**\nSelect plugin:`,
             components: [row],
-        });
+        };
+        if (useChannelFallback) {
+            if (interaction.channel?.isTextBased()) {
+                await interaction.channel.send(payload);
+            }
+            return;
+        }
+        await interaction.editReply(payload);
         return;
     }
 
@@ -2114,10 +2143,17 @@ async function handleNewSessionButton(interaction: any, userId: string, projectP
 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(...cliButtons);
 
-    await interaction.editReply({
+    const payload = {
         content: `**New Session for ${projectPath}**\n\nSelect CLI tool:`,
         components: [row],
-    });
+    };
+    if (useChannelFallback) {
+        if (interaction.channel?.isTextBased()) {
+            await interaction.channel.send(payload);
+        }
+        return;
+    }
+    await interaction.editReply(payload);
 }
 
 async function getRunnerIdFromContext(interaction: any): Promise<string | undefined> {
