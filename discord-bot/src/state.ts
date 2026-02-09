@@ -63,7 +63,7 @@ export interface SessionCreationState {
     step: 'select_runner' | 'select_cli' | 'select_plugin' | 'select_folder' | 'complete';
     runnerId?: string;
     cliType?: 'claude' | 'gemini' | 'codex' | 'terminal';
-    plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk';
+    plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk' | 'codex-sdk';
     folder?: string; // Pre-selected folder (for "New Session" button)
     folderPath?: string;
     options?: {

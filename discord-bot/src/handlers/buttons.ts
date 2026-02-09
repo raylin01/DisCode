@@ -686,7 +686,10 @@ async function handleRunnerSelection(interaction: any, userId: string, customId:
 async function handleCliSelection(interaction: any, userId: string, customId: string): Promise<void> {
     const cliType = customId.replace('session_cli_', '') as 'claude' | 'gemini' | 'codex' | 'terminal';
 
-    const state = botState.sessionCreationState.get(userId);
+    let state = botState.sessionCreationState.get(userId);
+    if (!state || !state.runnerId) {
+        state = await recoverSessionCreationState(interaction, userId);
+    }
     if (!state || !state.runnerId) {
         await interaction.reply({
             embeds: [createErrorEmbed('Session Expired', 'Please start over with /create-session')],
@@ -1009,9 +1012,9 @@ async function handleBackToPlugin(interaction: any, userId: string): Promise<voi
 
     const runner = storage.getRunner(state.runnerId);
 
-    // Row 1: Main action buttons
-    const mainButtonRow = new ActionRowBuilder<ButtonBuilder>()
-        .addComponents(
+    let pluginButtons: ButtonBuilder[] = [];
+    if (state.cliType === 'claude') {
+        pluginButtons = [
             new ButtonBuilder()
                 .setCustomId('session_plugin_tmux')
                 .setLabel('Interactive (Tmux)')
@@ -1027,7 +1030,44 @@ async function handleBackToPlugin(interaction: any, userId: string): Promise<voi
                 .setLabel('Claude SDK')
                 .setStyle(ButtonStyle.Primary)
                 .setEmoji('⚡')
-        );
+        ];
+    } else if (state.cliType === 'gemini') {
+        pluginButtons = [
+            new ButtonBuilder()
+                .setCustomId('session_plugin_tmux')
+                .setLabel('Interactive (Tmux)')
+                .setStyle(ButtonStyle.Success)
+                .setEmoji('🖥️'),
+            new ButtonBuilder()
+                .setCustomId('session_plugin_print')
+                .setLabel('Basic (Print)')
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji('📄'),
+            new ButtonBuilder()
+                .setCustomId('session_plugin_stream')
+                .setLabel('Streaming')
+                .setStyle(ButtonStyle.Primary)
+                .setEmoji('⚡')
+        ];
+    } else if (state.cliType === 'codex') {
+        pluginButtons = [
+            new ButtonBuilder()
+                .setCustomId('session_plugin_codex-sdk')
+                .setLabel('Codex SDK')
+                .setStyle(ButtonStyle.Primary)
+                .setEmoji('⚡')
+        ];
+    } else {
+        pluginButtons = [
+            new ButtonBuilder()
+                .setCustomId('session_plugin_tmux')
+                .setLabel('Interactive (Tmux)')
+                .setStyle(ButtonStyle.Success)
+                .setEmoji('🖥️')
+        ];
+    }
+
+    const mainButtonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(...pluginButtons);
 
     // Row 2: Navigation buttons
     const navButtonRow = new ActionRowBuilder<ButtonBuilder>()
@@ -1142,6 +1182,8 @@ export async function handleSessionReview(interaction: any, userId: string): Pro
     }
 
     const runner = storage.getRunner(state.runnerId);
+    const isCodex = state.cliType === 'codex';
+    const defaults = isCodex ? runner?.config?.codexDefaults : runner?.config?.claudeDefaults;
 
     // Determine start button implementation
     let startLabel = 'Start Session';
@@ -1152,32 +1194,32 @@ export async function handleSessionReview(interaction: any, userId: string): Pro
         approvalText = 'Auto-Approve (Stream Mode)';
     }
 
-    const modelText = state.options?.model || runner?.config?.claudeDefaults?.model || 'Auto';
-    const fallbackText = state.options?.fallbackModel || runner?.config?.claudeDefaults?.fallbackModel || 'None';
-    const maxTurnsText = state.options?.maxTurns || runner?.config?.claudeDefaults?.maxTurns || 'Default';
-    const maxThinkingText = state.options?.maxThinkingTokens || runner?.config?.claudeDefaults?.maxThinkingTokens || 'Default';
-    const maxBudgetText = state.options?.maxBudgetUsd || runner?.config?.claudeDefaults?.maxBudgetUsd || 'Default';
-    const agentText = state.options?.agent || runner?.config?.claudeDefaults?.agent || 'Default';
-    const permissionModeText = state.options?.permissionMode || runner?.config?.claudeDefaults?.permissionMode || 'default';
-    const partialsText = (state.options?.includePartialMessages ?? runner?.config?.claudeDefaults?.includePartialMessages) === false ? 'Disabled' : 'Enabled';
+    const modelText = state.options?.model || (defaults as any)?.model || 'Auto';
+    const fallbackText = state.options?.fallbackModel || (defaults as any)?.fallbackModel || 'None';
+    const maxTurnsText = state.options?.maxTurns || (defaults as any)?.maxTurns || 'Default';
+    const maxThinkingText = state.options?.maxThinkingTokens || (defaults as any)?.maxThinkingTokens || 'Default';
+    const maxBudgetText = state.options?.maxBudgetUsd || (defaults as any)?.maxBudgetUsd || 'Default';
+    const agentText = state.options?.agent || (defaults as any)?.agent || 'Default';
+    const permissionModeText = state.options?.permissionMode || (defaults as any)?.permissionMode || 'default';
+    const partialsText = (state.options?.includePartialMessages ?? (defaults as any)?.includePartialMessages) === false ? 'Disabled' : 'Enabled';
     const allowedToolsText = state.options?.allowedTools?.length
         ? state.options.allowedTools.join(', ')
-        : (runner?.config?.claudeDefaults?.allowedTools?.length ? runner.config.claudeDefaults.allowedTools.join(', ') : 'Any');
+        : ((defaults as any)?.allowedTools?.length ? (defaults as any).allowedTools.join(', ') : 'Any');
     const disallowedToolsText = state.options?.disallowedTools?.length
         ? state.options.disallowedTools.join(', ')
-        : (runner?.config?.claudeDefaults?.disallowedTools?.length ? runner.config.claudeDefaults.disallowedTools.join(', ') : 'None');
+        : ((defaults as any)?.disallowedTools?.length ? (defaults as any).disallowedTools.join(', ') : 'None');
     const toolsListText = state.options?.tools
         ? (Array.isArray(state.options.tools) ? state.options.tools.join(', ') : 'default')
-        : (runner?.config?.claudeDefaults?.tools ? (Array.isArray(runner.config.claudeDefaults.tools) ? runner.config.claudeDefaults.tools.join(', ') : 'default') : 'default');
+        : ((defaults as any)?.tools ? (Array.isArray((defaults as any).tools) ? (defaults as any).tools.join(', ') : 'default') : 'default');
     const betasText = state.options?.betas?.length
         ? state.options.betas.join(', ')
-        : (runner?.config?.claudeDefaults?.betas?.length ? runner.config.claudeDefaults.betas.join(', ') : 'None');
+        : ((defaults as any)?.betas?.length ? (defaults as any).betas.join(', ') : 'None');
     const settingSourcesText = state.options?.settingSources?.length
         ? state.options.settingSources.join(', ')
-        : (runner?.config?.claudeDefaults?.settingSources?.length ? runner.config.claudeDefaults.settingSources.join(', ') : 'Default');
+        : ((defaults as any)?.settingSources?.length ? (defaults as any).settingSources.join(', ') : 'Default');
     const additionalDirsText = state.options?.additionalDirectories?.length
         ? state.options.additionalDirectories.join(', ')
-        : (runner?.config?.claudeDefaults?.additionalDirectories?.length ? runner.config.claudeDefaults.additionalDirectories.join(', ') : 'None');
+        : ((defaults as any)?.additionalDirectories?.length ? (defaults as any).additionalDirectories.join(', ') : 'None');
 
     const embed = new EmbedBuilder()
         .setColor(0x00FF00)
@@ -2121,6 +2163,51 @@ async function getRunnerIdFromContext(interaction: any): Promise<string | undefi
 
     const fallbackRunner = Object.values(storage.data.runners).find(r => r.discordState?.categoryId === categoryId);
     return fallbackRunner?.runnerId;
+}
+
+async function getProjectPathFromContext(interaction: any): Promise<string | undefined> {
+    const syncCm = getCategoryManager();
+    if (!syncCm) return undefined;
+
+    let channel = interaction.channel;
+    if (!channel || !channel.parentId) {
+        try {
+            channel = await interaction.client.channels.fetch(interaction.channelId);
+        } catch (e) {
+            console.error('[Buttons] Failed to fetch channel for project lookup:', e);
+            return undefined;
+        }
+    }
+
+    if (channel?.isThread()) {
+        try {
+            if (channel.parent) {
+                channel = channel.parent;
+            } else if (channel.parentId) {
+                channel = await interaction.client.channels.fetch(channel.parentId);
+            }
+        } catch (e) {
+            console.error('[Buttons] Failed to fetch parent channel for project lookup:', e);
+            return undefined;
+        }
+    }
+
+    const projectInfo = syncCm.getProjectByChannelId(channel.id);
+    return projectInfo?.projectPath;
+}
+
+async function recoverSessionCreationState(interaction: any, userId: string) {
+    const runnerId = await getRunnerIdFromContext(interaction);
+    if (!runnerId) return null;
+
+    const projectPath = await getProjectPathFromContext(interaction);
+    const state = {
+        step: 'select_cli' as const,
+        runnerId,
+        folderPath: projectPath
+    };
+    botState.sessionCreationState.set(userId, state);
+    return state;
 }
 
 async function handleSyncSessionsButton(interaction: any, userId: string, projectPath: string): Promise<void> {
