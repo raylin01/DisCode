@@ -71,6 +71,20 @@ async function safeReply(interaction: any, payload: any, fallbackMessage?: strin
     }
 }
 
+async function safeDeferUpdate(interaction: any, fallbackMessage?: string): Promise<boolean> {
+    if (interaction.deferred || interaction.replied) return true;
+    try {
+        await interaction.deferUpdate();
+        return true;
+    } catch (error) {
+        if (isUnknownInteraction(error)) {
+            await sendExpiredInteractionNotice(interaction, fallbackMessage);
+            return false;
+        }
+        throw error;
+    }
+}
+
 async function safeUpdate(interaction: any, payload: any, fallbackMessage?: string): Promise<void> {
     try {
         if (!interaction.deferred && !interaction.replied) {
@@ -772,12 +786,18 @@ async function handleRunnerSelection(interaction: any, userId: string, customId:
 async function handleCliSelection(interaction: any, userId: string, customId: string): Promise<void> {
     const cliType = customId.replace('session_cli_', '') as 'claude' | 'gemini' | 'codex' | 'terminal';
 
+    const acknowledged = await safeDeferUpdate(
+        interaction,
+        'Buttons expired. Please use the latest session prompt or run /create-session.'
+    );
+    if (!acknowledged) return;
+
     let state = botState.sessionCreationState.get(userId);
     if (!state || !state.runnerId) {
         state = await recoverSessionCreationState(interaction, userId);
     }
     if (!state || !state.runnerId) {
-        await safeReply(interaction, {
+        await safeEditReply(interaction, {
             embeds: [createErrorEmbed('Session Expired', 'Please start over with /create-session')],
             flags: 64
         });
@@ -931,6 +951,12 @@ async function handleCliSelection(interaction: any, userId: string, customId: st
 async function handlePluginSelection(interaction: any, userId: string, customId: string): Promise<void> {
     const plugin = customId.replace('session_plugin_', '') as 'tmux' | 'print' | 'stream' | 'claude-sdk' | 'codex-sdk';
 
+    const acknowledged = await safeDeferUpdate(
+        interaction,
+        'Buttons expired. Please use the latest session prompt or run /create-session.'
+    );
+    if (!acknowledged) return;
+
     let state = botState.sessionCreationState.get(userId);
     if (!state || !state.runnerId || !state.cliType) {
         await recoverSessionCreationState(interaction, userId);
@@ -947,7 +973,7 @@ async function handlePluginSelection(interaction: any, userId: string, customId:
     }
 
     if (!state || !state.runnerId || !state.cliType) {
-        await safeReply(interaction, {
+        await safeEditReply(interaction, {
             embeds: [createErrorEmbed('Session Expired', 'Please start over with /create-session')],
             flags: 64
         });
