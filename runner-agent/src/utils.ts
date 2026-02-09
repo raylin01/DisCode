@@ -47,6 +47,86 @@ export async function findCliPath(
             // Path doesn't exist or isn't accessible
         }
     }
+
+    if (cliType === 'codex') {
+        const codexFromExtension = findCodexCliFromExtensions();
+        if (codexFromExtension) {
+            console.log(`Found codex via VS Code extension at ${codexFromExtension}`);
+            return codexFromExtension;
+        }
+    }
+
+    return null;
+}
+
+function findCodexCliFromExtensions(): string | null {
+    const home = os.homedir();
+    const extensionBases = [
+        path.join(home, '.vscode', 'extensions'),
+        path.join(home, '.vscode-insiders', 'extensions'),
+        path.join(home, '.vscode-oss', 'extensions'),
+        path.join(home, '.vscode-server', 'extensions'),
+        path.join(home, '.vscode-server-insiders', 'extensions'),
+        path.join(home, '.cursor', 'extensions')
+    ];
+
+    const prefixes = ['openai.chatgpt', 'openai.codex'];
+    const candidates: Array<{ path: string; mtimeMs: number }> = [];
+
+    for (const base of extensionBases) {
+        if (!fs.existsSync(base)) continue;
+        let entries: fs.Dirent[];
+        try {
+            entries = fs.readdirSync(base, { withFileTypes: true });
+        } catch {
+            continue;
+        }
+
+        for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+            const name = entry.name.toLowerCase();
+            if (!prefixes.some(prefix => name === prefix || name.startsWith(`${prefix}-`))) continue;
+
+            const extDir = path.join(base, entry.name);
+            const found = findCodexBinaryInExtensionDir(extDir);
+            if (found) {
+                try {
+                    const stat = fs.statSync(found);
+                    candidates.push({ path: found, mtimeMs: stat.mtimeMs });
+                } catch {
+                    candidates.push({ path: found, mtimeMs: 0 });
+                }
+            }
+        }
+    }
+
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    return candidates[0].path;
+}
+
+function findCodexBinaryInExtensionDir(extensionDir: string): string | null {
+    const binDir = path.join(extensionDir, 'extension', 'bin');
+    if (!fs.existsSync(binDir)) return null;
+
+    const direct = path.join(binDir, process.platform === 'win32' ? 'codex.exe' : 'codex');
+    if (fs.existsSync(direct)) return direct;
+
+    let entries: fs.Dirent[];
+    try {
+        entries = fs.readdirSync(binDir, { withFileTypes: true });
+    } catch {
+        return null;
+    }
+
+    for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const candidate = path.join(binDir, entry.name, process.platform === 'win32' ? 'codex.exe' : 'codex');
+        if (fs.existsSync(candidate)) {
+            return candidate;
+        }
+    }
+
     return null;
 }
 

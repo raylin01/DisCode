@@ -234,7 +234,7 @@ export async function handleRunnerHealth(interaction: any, userId: string): Prom
             { name: 'Load Avg', value: Array.isArray(data.loadAvg) ? data.loadAvg.map((n: number) => n.toFixed(2)).join(', ') : 'N/A', inline: true },
             { name: 'Memory', value: data.totalMem ? `${Math.round((data.totalMem - data.freeMem) / 1e6)}MB / ${Math.round(data.totalMem / 1e6)}MB` : 'N/A', inline: true },
             { name: 'Uptime', value: data.uptimeSec ? `${Math.round(data.uptimeSec)}s` : 'N/A', inline: true },
-            { name: 'CLI Paths', value: `Claude: ${data.cliPaths?.claude || 'N/A'}\nGemini: ${data.cliPaths?.gemini || 'N/A'}`, inline: false }
+            { name: 'CLI Paths', value: `Claude: ${data.cliPaths?.claude || 'N/A'}\nGemini: ${data.cliPaths?.gemini || 'N/A'}\nCodex: ${data.cliPaths?.codex || 'N/A'}`, inline: false }
         )
         .setTimestamp();
 
