@@ -61,7 +61,14 @@ async function safeEditReply(interaction: any, payload: any, fallbackMessage?: s
 
 async function safeReply(interaction: any, payload: any, fallbackMessage?: string): Promise<void> {
     try {
-        await interaction.reply(payload);
+        if (interaction.deferred || interaction.replied) {
+            if (interaction.followUp) {
+                await interaction.followUp(payload);
+            }
+            return;
+        }
+        const originalReply = (interaction as any).__discodeOriginalReply || interaction.reply;
+        await originalReply(payload);
     } catch (error) {
         if (isUnknownInteraction(error)) {
             await sendExpiredInteractionNotice(interaction, fallbackMessage);
@@ -88,7 +95,8 @@ async function safeDeferUpdate(interaction: any, fallbackMessage?: string): Prom
 async function safeUpdate(interaction: any, payload: any, fallbackMessage?: string): Promise<void> {
     try {
         if (!interaction.deferred && !interaction.replied) {
-            await interaction.update(payload);
+            const originalUpdate = (interaction as any).__discodeOriginalUpdate || interaction.update;
+            await originalUpdate(payload);
         } else {
             await interaction.editReply(payload);
         }
@@ -99,6 +107,56 @@ async function safeUpdate(interaction: any, payload: any, fallbackMessage?: stri
         }
         throw error;
     }
+}
+
+function patchInteraction(interaction: any): void {
+    if (!interaction || (interaction as any).__discodePatched) return;
+    (interaction as any).__discodePatched = true;
+
+    const originalReply = interaction.reply?.bind(interaction);
+    const originalUpdate = interaction.update?.bind(interaction);
+    const originalDeferReply = interaction.deferReply?.bind(interaction);
+    const originalDeferUpdate = interaction.deferUpdate?.bind(interaction);
+
+    (interaction as any).__discodeOriginalReply = originalReply;
+    (interaction as any).__discodeOriginalUpdate = originalUpdate;
+
+    if (originalReply) {
+        interaction.reply = async (payload: any) => safeReply(interaction, payload);
+    }
+    if (originalUpdate) {
+        interaction.update = async (payload: any) => safeUpdate(interaction, payload);
+    }
+    if (originalDeferReply) {
+        interaction.deferReply = async (payload: any) => {
+            if (interaction.deferred || interaction.replied) return;
+            return originalDeferReply(payload);
+        };
+    }
+    if (originalDeferUpdate) {
+        interaction.deferUpdate = async () => {
+            if (interaction.deferred || interaction.replied) return;
+            return originalDeferUpdate();
+        };
+    }
+}
+
+function getAutoDeferMode(customId: string): 'reply' | 'update' | null {
+    if (customId.startsWith('prompt_')) return null;
+    if (customId.startsWith('other_')) return null;
+    if (customId.startsWith('tell_')) return null;
+    if (customId === 'session_custom_folder') return null;
+    if (customId.startsWith('session_settings_modal:')) return null;
+    if (customId.startsWith('config:')) return null;
+    if (customId.startsWith('runner_config:')) return null;
+
+    if (customId.startsWith('new_session:')) return 'reply';
+    if (customId.startsWith('list_sessions:')) return 'reply';
+    if (customId.startsWith('sync_sessions:')) return 'reply';
+
+    if (customId.startsWith('session_')) return 'update';
+
+    return null;
 }
 
 function inferCliTypeFromInteraction(interaction: any, plugin: string): 'claude' | 'gemini' | 'codex' | 'terminal' | null {
@@ -124,6 +182,28 @@ function inferCliTypeFromInteraction(interaction: any, plugin: string): 'claude'
 export async function handleButtonInteraction(interaction: any): Promise<void> {
     const customId = interaction.customId;
     const userId = interaction.user.id;
+
+    patchInteraction(interaction);
+
+    const delayMs = Date.now() - (interaction.createdTimestamp || Date.now());
+    if (delayMs > 1500) {
+        console.warn(`[Buttons] Interaction delay ${delayMs}ms for ${customId}`);
+    }
+
+    const autoDefer = getAutoDeferMode(customId);
+    if (autoDefer === 'reply') {
+        const acknowledged = await safeDeferReply(
+            interaction,
+            'Buttons expired. Please use the latest dashboard message or run /create-session.'
+        );
+        if (!acknowledged) return;
+    } else if (autoDefer === 'update') {
+        const acknowledged = await safeDeferUpdate(
+            interaction,
+            'Buttons expired. Please use the latest session prompt or run /create-session.'
+        );
+        if (!acknowledged) return;
+    }
 
     // Handle prompt buttons (open modal)
     if (customId.startsWith('prompt_')) {
@@ -830,12 +910,12 @@ async function handleCliSelection(interaction: any, userId: string, customId: st
         const mainButtonRow = new ActionRowBuilder<ButtonBuilder>()
             .addComponents(
                 new ButtonBuilder()
-                    .setCustomId('session_folder_default')
+                    .setCustomId('session_default_folder')
                     .setLabel('Use Default Folder')
                     .setStyle(ButtonStyle.Success)
                     .setEmoji('📁'),
                 new ButtonBuilder()
-                    .setCustomId('session_folder_custom')
+                    .setCustomId('session_custom_folder')
                     .setLabel('Custom Folder')
                     .setStyle(ButtonStyle.Secondary)
                     .setEmoji('✏️')
