@@ -21,6 +21,7 @@ import { handleSyncProjects, handleSyncSessions, handleSyncStatusRequest, handle
 import { handleSessionControl } from './session-control.js';
 import { handleRunnerConfigUpdate } from './runner-config.js';
 import { handleRunnerHealthRequest, handleRunnerLogsRequest } from './runner-health.js';
+import { handleCodexThreadListRequest } from './codex-threads.js';
 
 export interface HandlerDependencies {
     config: RunnerConfig;
@@ -217,6 +218,15 @@ export async function handleWebSocketMessage(
             await handleRunnerConfigUpdate(message.data as any, {
                 config: deps.config,
                 wsManager: deps.wsManager
+            });
+            break;
+        }
+
+        case 'codex_thread_list_request': {
+            await handleCodexThreadListRequest(message.data as any, {
+                wsManager: deps.wsManager,
+                cliPaths: deps.cliPaths,
+                pluginManager: deps.pluginManager
             });
             break;
         }

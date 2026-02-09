@@ -106,8 +106,39 @@ export interface ApprovalResponse {
 
 // WebSocket messages
 export interface WebSocketMessage {
-  type: 'approval_request' | 'approval_response' | 'heartbeat' | 'register' | 'session_start' | 'session_ready' | 'session_end' | 'output' | 'user_message' | 'list_terminals' | 'terminal_list' | 'watch_terminal' | 'session_discovered' | 'sync_session_discovered' | 'sync_session_updated' | 'status' | 'action_item' | 'metadata' | 'discord_action' | 'assistant_message' | 'assistant_output' | 'spawn_thread' | 'tool_execution' | 'tool_result' | 'result' | 'sync_projects' | 'sync_projects_response' | 'sync_projects_progress' | 'sync_projects_complete' | 'sync_sessions' | 'sync_sessions_response' | 'sync_sessions_complete' | 'sync_status_request' | 'sync_status_response' | 'permission_decision' | 'permission_decision_ack' | 'session_control' | 'sync_session_messages' | 'runner_config_update' | 'runner_config_updated' | 'runner_health_request' | 'runner_health_response' | 'runner_logs_request' | 'runner_logs_response';
+  type: 'approval_request' | 'approval_response' | 'heartbeat' | 'register' | 'session_start' | 'session_ready' | 'session_end' | 'output' | 'user_message' | 'list_terminals' | 'terminal_list' | 'watch_terminal' | 'session_discovered' | 'sync_session_discovered' | 'sync_session_updated' | 'status' | 'action_item' | 'metadata' | 'discord_action' | 'assistant_message' | 'assistant_output' | 'spawn_thread' | 'tool_execution' | 'tool_result' | 'result' | 'sync_projects' | 'sync_projects_response' | 'sync_projects_progress' | 'sync_projects_complete' | 'sync_sessions' | 'sync_sessions_response' | 'sync_sessions_complete' | 'sync_status_request' | 'sync_status_response' | 'permission_decision' | 'permission_decision_ack' | 'session_control' | 'sync_session_messages' | 'runner_config_update' | 'runner_config_updated' | 'runner_health_request' | 'runner_health_response' | 'runner_logs_request' | 'runner_logs_response' | 'codex_thread_list_request' | 'codex_thread_list_response';
   data: unknown;
+}
+
+export interface CodexThreadListRequest extends WebSocketMessage {
+  type: 'codex_thread_list_request';
+  data: {
+    runnerId: string;
+    requestId?: string;
+    cursor?: string | null;
+    limit?: number | null;
+    sortKey?: 'created_at' | 'updated_at' | null;
+    archived?: boolean | null;
+  };
+}
+
+export interface CodexThreadListResponse extends WebSocketMessage {
+  type: 'codex_thread_list_response';
+  data: {
+    runnerId: string;
+    requestId?: string;
+    threads?: Array<{
+      id: string;
+      preview?: string;
+      cwd?: string;
+      updatedAt?: number;
+      createdAt?: number;
+      modelProvider?: string;
+      path?: string | null;
+    }>;
+    nextCursor?: string | null;
+    error?: string;
+  };
 }
 
 export interface SyncProjectsMessage extends WebSocketMessage {

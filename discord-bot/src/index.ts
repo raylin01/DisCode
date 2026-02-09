@@ -26,6 +26,7 @@ import {
   handleRunnerStatus,
   handleRunnerHealth,
   handleRunnerLogs,
+  handleListClis,
   handleActionItems,
   handleStatus,
   handleEndSession,
@@ -43,6 +44,8 @@ import {
   handleResumeSession,
   handleRegisterProject,
   handleDeleteProject,
+  handleCodexThreads,
+  handleResumeCodex,
 } from './handlers/index.js';
 
 // Load configuration
@@ -140,6 +143,10 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
         await handleRunnerHealth(interaction, userId);
         break;
 
+      case 'list-clis':
+        await handleListClis(interaction, userId);
+        break;
+
       case 'runner-logs':
         await handleRunnerLogs(interaction, userId);
         break;
@@ -206,6 +213,14 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
 
       case 'resume':
         await handleResumeSession(interaction, userId);
+        break;
+
+      case 'codex-threads':
+        await handleCodexThreads(interaction, userId);
+        break;
+
+      case 'resume-codex':
+        await handleResumeCodex(interaction, userId);
         break;
 
       case 'delete-project':
@@ -589,6 +604,15 @@ async function registerCommands(): Promise<void> {
       ),
 
     new SlashCommandBuilder()
+      .setName('list-clis')
+      .setDescription('List detected CLI paths for a runner')
+      .addStringOption(option =>
+        option.setName('runner')
+          .setDescription('Runner ID (optional)')
+          .setRequired(false)
+      ),
+
+    new SlashCommandBuilder()
       .setName('runner-logs')
       .setDescription('Fetch recent runner logs (requires DISCODE_RUNNER_LOG_PATH)')
       .addStringOption(option =>
@@ -777,6 +801,44 @@ async function registerCommands(): Promise<void> {
       .addStringOption(option =>
         option.setName('session')
           .setDescription('Session ID to resume (optional if in thread)')
+          .setRequired(false)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('codex-threads')
+      .setDescription('List Codex threads available on a runner')
+      .addStringOption(option =>
+        option.setName('runner')
+          .setDescription('Runner ID (optional)')
+          .setRequired(false)
+      )
+      .addBooleanOption(option =>
+        option.setName('archived')
+          .setDescription('Include archived threads')
+          .setRequired(false)
+      )
+      .addIntegerOption(option =>
+        option.setName('limit')
+          .setDescription('Max threads to display (default 10)')
+          .setRequired(false)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('resume-codex')
+      .setDescription('Resume a Codex thread')
+      .addStringOption(option =>
+        option.setName('thread')
+          .setDescription('Codex thread ID to resume')
+          .setRequired(true)
+      )
+      .addStringOption(option =>
+        option.setName('runner')
+          .setDescription('Runner ID (optional)')
+          .setRequired(false)
+      )
+      .addStringOption(option =>
+        option.setName('cwd')
+          .setDescription('Working directory override (optional)')
           .setRequired(false)
       ),
 

@@ -483,6 +483,34 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
             break;
         }
 
+        case 'codex_thread_list_response': {
+            const data = message.data as { requestId?: string; threads?: Array<any>; nextCursor?: string | null; error?: string; runnerId?: string };
+            if (data?.requestId) {
+                const pending = botState.pendingCodexThreadListRequests.get(data.requestId);
+                if (pending) {
+                    clearTimeout(pending.timeout);
+                    botState.pendingCodexThreadListRequests.delete(data.requestId);
+                    pending.resolve(data);
+                }
+            }
+
+            if (data?.threads?.length && data.runnerId) {
+                const now = Date.now();
+                for (const thread of data.threads) {
+                    if (!thread?.id) continue;
+                    botState.codexThreadCache.set(thread.id, {
+                        runnerId: data.runnerId,
+                        cwd: thread.cwd,
+                        preview: thread.preview,
+                        updatedAt: thread.updatedAt,
+                        createdAt: thread.createdAt,
+                        lastSeen: now
+                    });
+                }
+            }
+            break;
+        }
+
         case 'sync_session_discovered':
             await handleSyncSessionDiscovered(message.data);
             break;

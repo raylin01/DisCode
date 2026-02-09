@@ -241,6 +241,68 @@ export async function handleRunnerHealth(interaction: any, userId: string): Prom
     await interaction.editReply({ embeds: [embed] });
 }
 
+export async function handleListClis(interaction: any, userId: string): Promise<void> {
+    const runnerId = interaction.options.getString('runner');
+    let runner = runnerId ? storage.getRunner(runnerId) : null;
+
+    if (!runner) {
+        const candidates = storage.getUserRunners(userId).filter(r => r.status === 'online');
+        runner = candidates[0] || null;
+    }
+
+    if (!runner || !storage.canUserAccessRunner(userId, runner.runnerId)) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Access Denied', 'You do not have access to this runner.')],
+            flags: 64
+        });
+        return;
+    }
+
+    const ws = botState.runnerConnections.get(runner.runnerId);
+    if (!ws) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Runner Offline', 'Runner is not connected.')],
+            flags: 64
+        });
+        return;
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    const requestId = `runner_health_${runner.runnerId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const data = await new Promise<any | null>((resolve) => {
+        const timeout = setTimeout(() => {
+            botState.pendingRunnerHealthRequests.delete(requestId);
+            resolve(null);
+        }, 8000);
+        botState.pendingRunnerHealthRequests.set(requestId, { resolve, timeout });
+        ws.send(JSON.stringify({
+            type: 'runner_health_request',
+            data: { runnerId: runner.runnerId, requestId }
+        }));
+    });
+
+    if (!data) {
+        await interaction.editReply({
+            embeds: [createErrorEmbed('Timeout', 'Runner did not respond in time.')]
+        });
+        return;
+    }
+
+    const cliPaths = data.cliPaths || {};
+    const embed = new EmbedBuilder()
+        .setColor(0x0099FF)
+        .setTitle(`CLI Availability: ${runner.name}`)
+        .addFields(
+            { name: 'Claude', value: cliPaths.claude || 'Not detected', inline: false },
+            { name: 'Gemini', value: cliPaths.gemini || 'Not detected', inline: false },
+            { name: 'Codex', value: cliPaths.codex || 'Not detected', inline: false }
+        )
+        .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+}
+
 export async function handleRunnerLogs(interaction: any, userId: string): Promise<void> {
     const runnerId = interaction.options.getString('runner', true);
     const runner = storage.getRunner(runnerId);

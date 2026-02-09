@@ -28,7 +28,9 @@ import {
   CommandExecutionRequestApprovalResponse,
   FileChangeRequestApprovalResponse,
   ToolRequestUserInputResponse,
-  DynamicToolCallResponse
+  DynamicToolCallResponse,
+  ThreadListParams,
+  ThreadListResponse
 } from '../../../codex-client/src/index.js';
 
 class CodexSDKSession extends EventEmitter implements PluginSession {
@@ -617,5 +619,20 @@ export class CodexSDKPlugin extends BasePlugin {
     this.sessions.set(session.sessionId, session);
     await session.initializeThread();
     return session;
+  }
+
+  async listThreads(cliPath: string, params: ThreadListParams = {}): Promise<ThreadListResponse> {
+    if (!cliPath) {
+      throw new Error('Codex CLI path not provided');
+    }
+
+    if (!this.clientPath || this.clientPath !== cliPath) {
+      await this.client.shutdown();
+      this.client = new CodexClient({ codexPath: cliPath });
+      this.attachClientListeners();
+      this.clientPath = cliPath;
+    }
+
+    return this.client.listThreads(params);
   }
 }

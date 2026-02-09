@@ -18,6 +18,7 @@ export {
     handleRunnerHealth,
     handleRunnerLogs,
     handleActionItems,
+    handleListClis,
 } from './runner.js';
 
 // Session commands
@@ -32,6 +33,7 @@ export {
 } from './session.js';
 
 export { handleResumeSession } from './resume.js';
+export { handleCodexThreads, handleResumeCodex } from './codex.js';
 export { handleRegisterProject } from './register-project.js';
 export { handleDeleteProject } from './delete-project.js';
 

@@ -137,6 +137,13 @@ export class PluginManager extends EventEmitter {
     }
 
     /**
+     * Get a plugin instance by type
+     */
+    getPlugin<T extends CliPlugin = CliPlugin>(type: PluginType): T | undefined {
+        return this.plugins.get(type) as T | undefined;
+    }
+
+    /**
      * Get default plugin type
      */
     getDefaultPlugin(): PluginType {
