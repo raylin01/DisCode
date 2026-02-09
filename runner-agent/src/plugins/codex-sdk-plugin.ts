@@ -52,6 +52,7 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
   private currentOutput = '';
   private outputTimer: NodeJS.Timeout | null = null;
   private readonly OUTPUT_THROTTLE_MS = 500;
+  private completedOutputEmitted = false;
 
   private thinkingBuffer = '';
   private currentThinking = '';
@@ -156,6 +157,7 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
 
       this.currentOutput = '';
       this.currentThinking = '';
+      this.completedOutputEmitted = false;
 
       const options = this.config.options || {};
       const turnParams: TurnStartParams = {
@@ -501,6 +503,7 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
   private appendOutput(content: string, outputType: 'stdout' | 'tool_result'): void {
     this.outputBuffer += content;
     this.currentOutput += content;
+    this.completedOutputEmitted = false;
     if (!this.outputTimer) {
       this.outputTimer = setTimeout(() => {
         this.outputBuffer = '';
@@ -525,6 +528,7 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
   private flushOutput(outputType: 'stdout' | 'thinking' | 'tool_result', isComplete: boolean): void {
     const payload = outputType === 'thinking' ? this.currentThinking : this.currentOutput;
     if (!payload.trim() && !isComplete) return;
+    if (outputType === 'stdout' && isComplete && this.completedOutputEmitted) return;
     this.plugin.emit('output', {
       sessionId: this.sessionId,
       content: payload,
@@ -532,6 +536,9 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
       outputType,
       timestamp: new Date()
     });
+    if (outputType === 'stdout' && isComplete) {
+      this.completedOutputEmitted = true;
+    }
   }
 }
 

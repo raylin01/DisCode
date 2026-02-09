@@ -109,6 +109,20 @@ async function safeUpdate(interaction: any, payload: any, fallbackMessage?: stri
     }
 }
 
+async function safeImmediateUpdate(interaction: any, payload: any, fallbackMessage?: string): Promise<boolean> {
+    try {
+        const originalUpdate = (interaction as any).__discodeOriginalUpdate || interaction.update;
+        await originalUpdate(payload);
+        return true;
+    } catch (error) {
+        if (isUnknownInteraction(error)) {
+            await sendExpiredInteractionNotice(interaction, fallbackMessage);
+            return false;
+        }
+        throw error;
+    }
+}
+
 function patchInteraction(interaction: any): void {
     if (!interaction || (interaction as any).__discodePatched) return;
     (interaction as any).__discodePatched = true;
@@ -146,6 +160,7 @@ function getAutoDeferMode(customId: string): 'reply' | 'update' | null {
     if (customId.startsWith('other_')) return null;
     if (customId.startsWith('tell_')) return null;
     if (customId === 'session_custom_folder') return null;
+    if (customId === 'session_start') return null;
     if (customId.startsWith('session_settings_modal:')) return null;
     if (customId.startsWith('config:')) return null;
     if (customId.startsWith('runner_config:')) return null;
@@ -1792,6 +1807,26 @@ async function handleStartSession(interaction: any, userId: string): Promise<voi
         return;
     }
 
+    const initializingEmbed = new EmbedBuilder()
+        .setColor(0xFFFF00)
+        .setTitle('Initializing Session...')
+        .setDescription('Request sent to runner. Waiting for confirmation...')
+        .addFields(
+            { name: 'Runner', value: runner.name, inline: true },
+            { name: 'CLI Type', value: state.cliType.toUpperCase(), inline: true },
+            { name: 'Plugin', value: (state.plugin || 'Tmux').toUpperCase(), inline: true },
+            { name: 'Approval', value: state.options?.approvalMode === 'auto' ? 'Auto-Approve' : 'Manual', inline: true },
+            { name: 'Working Folder', value: `\`\`\`${state.folderPath}\`\`\``, inline: false }
+        )
+        .setTimestamp();
+
+    const updated = await safeImmediateUpdate(
+        interaction,
+        { embeds: [initializingEmbed], components: [] },
+        'Buttons expired. Please start the session again.'
+    );
+    if (!updated) return;
+
     const folderPath = state.folderPath;
 
     // Import required items for session creation
@@ -1907,24 +1942,6 @@ async function handleStartSession(interaction: any, userId: string): Promise<voi
                 type: 'session_start',
                 data: startData
             }));
-
-            const initializingEmbed = new EmbedBuilder()
-                .setColor(0xFFFF00)
-                .setTitle('Initializing Session...')
-                .setDescription('Request sent to runner. Waiting for confirmation...')
-                .addFields(
-                    { name: 'Runner', value: runner.name, inline: true },
-                    { name: 'CLI Type', value: state.cliType.toUpperCase(), inline: true },
-                    { name: 'Plugin', value: (state.plugin || 'Tmux').toUpperCase(), inline: true },
-                    { name: 'Approval', value: state.options?.approvalMode === 'auto' ? 'Auto-Approve' : 'Manual', inline: true },
-                    { name: 'Working Folder', value: `\`\`\`${folderPath}\`\`\``, inline: false }
-                )
-                .setTimestamp();
-
-            await interaction.update({
-                embeds: [initializingEmbed],
-                components: []
-            });
 
             botState.sessionCreationState.delete(userId);
             console.log(`Session ${session.sessionId} created with options:`, startData.options);
