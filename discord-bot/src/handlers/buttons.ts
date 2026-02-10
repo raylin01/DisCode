@@ -191,6 +191,39 @@ function inferCliTypeFromInteraction(interaction: any, plugin: string): 'claude'
     return null;
 }
 
+function inferSessionFromReviewEmbed(interaction: any): Partial<any> | null {
+    const description = interaction?.message?.embeds?.[0]?.description;
+    if (!description || typeof description !== 'string') return null;
+
+    const cliMatch = description.match(/\*\*CLI:\*\*\s*([A-Za-z0-9_-]+)/i);
+    const pluginMatch = description.match(/\*\*Plugin:\*\*\s*([A-Za-z0-9 _()-]+)/i);
+    const folderMatch = description.match(/\*\*Folder:\*\*\s*`([^`]+)`/i);
+
+    const inferred: Partial<any> = {};
+
+    if (cliMatch) {
+        const cli = cliMatch[1].toLowerCase();
+        if (cli === 'claude' || cli === 'gemini' || cli === 'codex' || cli === 'terminal') {
+            inferred.cliType = cli;
+        }
+    }
+
+    if (pluginMatch) {
+        const pluginRaw = pluginMatch[1].toLowerCase();
+        if (pluginRaw.includes('claude') && pluginRaw.includes('sdk')) inferred.plugin = 'claude-sdk';
+        else if (pluginRaw.includes('codex') && pluginRaw.includes('sdk')) inferred.plugin = 'codex-sdk';
+        else if (pluginRaw.includes('stream')) inferred.plugin = 'stream';
+        else if (pluginRaw.includes('print')) inferred.plugin = 'print';
+        else if (pluginRaw.includes('tmux') || pluginRaw.includes('interactive')) inferred.plugin = 'tmux';
+    }
+
+    if (folderMatch) {
+        inferred.folderPath = folderMatch[1];
+    }
+
+    return Object.keys(inferred).length > 0 ? inferred : null;
+}
+
 /**
  * Main button interaction dispatcher
  */
@@ -1789,7 +1822,26 @@ async function handleSessionSettingsModal(interaction: any, userId: string, cust
 }
 
 async function handleStartSession(interaction: any, userId: string): Promise<void> {
-    const state = botState.sessionCreationState.get(userId);
+    let state = botState.sessionCreationState.get(userId);
+    if (!state || !state.runnerId || !state.cliType || !state.folderPath) {
+        await recoverSessionCreationState(interaction, userId);
+        state = botState.sessionCreationState.get(userId) ?? state;
+
+        if (state) {
+            const inferred = inferSessionFromReviewEmbed(interaction);
+            if (inferred) {
+                state = { ...state, ...inferred };
+            }
+            if (!state.projectChannelId) {
+                const projectChannelId = await getProjectChannelIdFromContext(interaction);
+                if (projectChannelId) {
+                    (state as any).projectChannelId = projectChannelId;
+                }
+            }
+            botState.sessionCreationState.set(userId, state);
+        }
+    }
+
     if (!state || !state.runnerId || !state.cliType || !state.folderPath) {
         await interaction.reply({
             embeds: [createErrorEmbed('Session Error', 'Missing required session information.')],
