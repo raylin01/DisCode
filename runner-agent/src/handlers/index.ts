@@ -6,7 +6,7 @@
 
 import type { WebSocketMessage } from '../../../shared/types.js';
 import type { PluginManager, PluginSession } from '../plugins/index.js';
-import type { SessionMetadata, PendingApproval, PendingMessage, CliPaths } from '../types.js';
+import type { SessionMetadata, PendingApproval, PendingMessage, CliPaths, PendingApprovalRequestInfo } from '../types.js';
 import type { WebSocketManager } from '../websocket.js';
 import type { RunnerConfig } from '../config.js';
 import type { AssistantManager } from '../assistant-manager.js';
@@ -15,6 +15,7 @@ import { handleSessionStart, handleSessionEnd } from './session.js';
 import { handleUserMessage } from './message.js';
 import { handleApprovalResponse } from './approval.js';
 import { handlePermissionDecision } from './permission-decision.js';
+import { handlePermissionSyncRequest } from './permission-sync.js';
 import { handleListTerminals, handleWatchTerminal } from './terminal.js';
 import { handleInterrupt } from './interrupt.js';
 import { handleSyncProjects, handleSyncSessions, handleSyncStatusRequest, handleSyncSessionMessages } from './sync.js';
@@ -22,6 +23,7 @@ import { handleSessionControl } from './session-control.js';
 import { handleRunnerConfigUpdate } from './runner-config.js';
 import { handleRunnerHealthRequest, handleRunnerLogsRequest } from './runner-health.js';
 import { handleCodexThreadListRequest } from './codex-threads.js';
+import { handleModelListRequest } from './models.js';
 
 export interface HandlerDependencies {
     config: RunnerConfig;
@@ -30,6 +32,7 @@ export interface HandlerDependencies {
     cliSessions: Map<string, PluginSession>;
     sessionMetadata: Map<string, SessionMetadata>;
     pendingApprovals: Map<string, PendingApproval>;
+    pendingApprovalRequests: Map<string, PendingApprovalRequestInfo>;
     pendingMessages: Map<string, PendingMessage[]>;
     cliPaths: CliPaths;
     assistantManager: AssistantManager | null;
@@ -65,12 +68,22 @@ export async function handleWebSocketMessage(
             }
 
             console.log(`   Supported CLI types: ${data.cliTypes.join(', ')}`);
+
+            if (deps.pendingApprovalRequests.size > 0) {
+                await handlePermissionSyncRequest({
+                    reason: 'runner_reconnect'
+                }, {
+                    wsManager: deps.wsManager,
+                    pendingApprovalRequests: deps.pendingApprovalRequests
+                });
+            }
             break;
         }
 
         case 'approval_response': {
             await handleApprovalResponse(message.data as any, {
                 pendingApprovals: deps.pendingApprovals,
+                pendingApprovalRequests: deps.pendingApprovalRequests,
                 cliSessions: deps.cliSessions,
                 wsManager: deps.wsManager,
                 assistantManager: deps.assistantManager
@@ -81,7 +94,16 @@ export async function handleWebSocketMessage(
         case 'permission_decision': {
             await handlePermissionDecision(message.data as any, {
                 cliSessions: deps.cliSessions,
-                wsManager: deps.wsManager
+                wsManager: deps.wsManager,
+                pendingApprovalRequests: deps.pendingApprovalRequests
+            });
+            break;
+        }
+
+        case 'permission_sync_request': {
+            await handlePermissionSyncRequest(message.data as any, {
+                wsManager: deps.wsManager,
+                pendingApprovalRequests: deps.pendingApprovalRequests
             });
             break;
         }
@@ -102,7 +124,8 @@ export async function handleWebSocketMessage(
             await handleSessionEnd(message.data as any, {
                 cliSessions: deps.cliSessions,
                 sessionMetadata: deps.sessionMetadata,
-                pendingMessages: deps.pendingMessages
+                pendingMessages: deps.pendingMessages,
+                pendingApprovalRequests: deps.pendingApprovalRequests
             });
             break;
         }
@@ -225,6 +248,16 @@ export async function handleWebSocketMessage(
         case 'codex_thread_list_request': {
             await handleCodexThreadListRequest(message.data as any, {
                 wsManager: deps.wsManager,
+                cliPaths: deps.cliPaths,
+                pluginManager: deps.pluginManager
+            });
+            break;
+        }
+
+        case 'model_list_request': {
+            await handleModelListRequest(message.data as any, {
+                wsManager: deps.wsManager,
+                config: deps.config,
                 cliPaths: deps.cliPaths,
                 pluginManager: deps.pluginManager
             });

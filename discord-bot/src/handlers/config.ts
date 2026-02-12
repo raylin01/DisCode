@@ -19,10 +19,128 @@ import {
 } from 'discord.js';
 import { storage } from '../storage.js';
 import { createErrorEmbed } from '../utils/embeds.js';
+import { fetchRunnerModels, AUTO_MODEL_VALUE } from '../utils/models.js';
 import * as botState from '../state.js';
 import type { RunnerConfig } from '../../../shared/types.js';
 
 type ConfigSection = 'main' | 'projects' | 'threads' | 'claude' | 'codex' | 'advanced';
+
+function truncateForDiscord(value: string, max: number): string {
+    if (value.length <= max) return value;
+    return `${value.slice(0, Math.max(0, max - 1))}…`;
+}
+
+async function showDefaultModelPicker(
+    interaction: any,
+    userId: string,
+    runnerId: string,
+    cliType: 'claude' | 'codex',
+    forceRefresh: boolean = false
+): Promise<void> {
+    const runner = storage.getRunner(runnerId);
+    if (!runner) {
+        const embeds = [createErrorEmbed('Runner Not Found', 'This runner no longer exists.')];
+        if (interaction.deferred || interaction.replied) await interaction.editReply({ embeds });
+        else await interaction.reply({ embeds, flags: 64 });
+        return;
+    }
+
+    if (!storage.canUserAccessRunner(userId, runnerId)) {
+        const embeds = [createErrorEmbed('Access Denied', 'You do not have permission to configure this runner.')];
+        if (interaction.deferred || interaction.replied) await interaction.editReply({ embeds });
+        else await interaction.reply({ embeds, flags: 64 });
+        return;
+    }
+
+    const result = await fetchRunnerModels(runnerId, cliType, { forceRefresh, limit: 100 });
+    if (result.error) {
+        await interaction.editReply({
+            embeds: [createErrorEmbed('Model Fetch Failed', result.error)],
+            components: [
+                new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:section:${cliType === 'claude' ? 'claude' : 'codex'}`)
+                        .setLabel('Back')
+                        .setStyle(ButtonStyle.Secondary)
+                )
+            ]
+        });
+        return;
+    }
+
+    const currentModel = cliType === 'claude'
+        ? runner.config?.claudeDefaults?.model
+        : runner.config?.codexDefaults?.model;
+
+    const options = [
+        new StringSelectMenuOptionBuilder()
+            .setLabel('Auto (CLI default)')
+            .setValue(AUTO_MODEL_VALUE)
+            .setDescription('Use the CLI default model when spawning sessions.')
+            .setDefault(!currentModel),
+        ...result.models.slice(0, 24).map(model => {
+            const option = new StringSelectMenuOptionBuilder()
+                .setLabel(truncateForDiscord(model.label || model.id, 100))
+                .setValue(model.id)
+                .setDefault(currentModel === model.id);
+
+            const description = model.description
+                ? truncateForDiscord(model.description, 100)
+                : (model.isDefault ? 'Marked as default by CLI.' : `Model ID: ${model.id}`);
+            option.setDescription(description);
+            return option;
+        })
+    ];
+
+    if (currentModel && currentModel !== AUTO_MODEL_VALUE && !result.models.some(model => model.id === currentModel)) {
+        const customLabel = truncateForDiscord(`Current: ${currentModel}`, 100);
+        if (options.length >= 25) {
+            options.pop();
+        }
+        options.push(
+            new StringSelectMenuOptionBuilder()
+                .setLabel(customLabel)
+                .setValue(currentModel)
+                .setDescription('Current model is not in the fetched catalog.')
+                .setDefault(true)
+        );
+    }
+
+    const embed = new EmbedBuilder()
+        .setColor(0x5ca1e6)
+        .setTitle(cliType === 'claude' ? 'Select Default Claude Model' : 'Select Default Codex Model')
+        .setDescription(
+            `Runner: \`${runner.name}\`\n` +
+            `Current default: \`${currentModel || 'Auto'}\`\n` +
+            `Available models: **${result.models.length}**${result.models.length > 24 ? ' (showing first 24)' : ''}`
+        )
+        .addFields({
+            name: 'Spawn Behavior',
+            value: 'This default model is used when new sessions are created unless overridden per-session.'
+        });
+
+    const selectRow = new ActionRowBuilder<StringSelectMenuBuilder>()
+        .addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId(`config:${runnerId}:selectModel:${cliType}`)
+                .setPlaceholder('Choose default model…')
+                .addOptions(options)
+        );
+
+    const actionRow = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId(`config:${runnerId}:models:${cliType}:refresh`)
+                .setLabel('Refresh')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId(`config:${runnerId}:section:${cliType === 'claude' ? 'claude' : 'codex'}`)
+                .setLabel('Back')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+    await interaction.editReply({ embeds: [embed], components: [selectRow, actionRow] });
+}
 
 export async function handleRunnerConfig(
     interaction: ButtonInteraction, 
@@ -196,9 +314,9 @@ export async function handleRunnerConfig(
             const claudeDefaultsRow = new ActionRowBuilder<ButtonBuilder>()
                 .addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setModel`)
-                        .setLabel('Set Model')
-                        .setStyle(ButtonStyle.Secondary),
+                        .setCustomId(`config:${runnerId}:models:claude`)
+                        .setLabel('Select Model')
+                        .setStyle(ButtonStyle.Primary),
                     new ButtonBuilder()
                         .setCustomId(`config:${runnerId}:modal:setMaxTurns`)
                         .setLabel('Set Max Turns')
@@ -352,9 +470,9 @@ export async function handleRunnerConfig(
             const codexRowOne = new ActionRowBuilder<ButtonBuilder>()
                 .addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setCodexModel`)
-                        .setLabel('Set Model')
-                        .setStyle(ButtonStyle.Secondary),
+                        .setCustomId(`config:${runnerId}:models:codex`)
+                        .setLabel('Select Model')
+                        .setStyle(ButtonStyle.Primary),
                     new ButtonBuilder()
                         .setCustomId(`config:${runnerId}:modal:setCodexApproval`)
                         .setLabel('Set Approval')
@@ -441,6 +559,54 @@ export async function handleConfigAction(interaction: any, userId: string, custo
 
     if (action === 'modal') {
         await handleConfigModal(interaction as ButtonInteraction, runnerId, param);
+        return;
+    }
+
+    if (action === 'models') {
+        const [cliTypeRaw, refreshFlag] = param.split(':');
+        const cliType = cliTypeRaw === 'codex' ? 'codex' : 'claude';
+        await showDefaultModelPicker(interaction, userId, runnerId, cliType, refreshFlag === 'refresh');
+        return;
+    }
+
+    if (action === 'selectModel') {
+        const cliType = param === 'codex' ? 'codex' : 'claude';
+        if (!interaction.isStringSelectMenu()) {
+            await interaction.reply({ content: 'Model selection must use the dropdown menu.', flags: 64 });
+            return;
+        }
+
+        const selected = interaction.values?.[0];
+        const defaults = cliType === 'claude'
+            ? (runner.config.claudeDefaults = runner.config.claudeDefaults || {})
+            : (runner.config.codexDefaults = runner.config.codexDefaults || {});
+
+        if (!selected || selected === AUTO_MODEL_VALUE) {
+            delete defaults.model;
+        } else {
+            defaults.model = selected;
+        }
+
+        storage.updateRunner(runnerId, runner);
+        storage.logAudit({
+            timestamp: new Date().toISOString(),
+            type: 'runner_config_update',
+            runnerId,
+            userId,
+            details: { section: `${cliType}_defaults_model` }
+        });
+
+        sendRunnerConfigUpdate(runnerId, {
+            claudeDefaults: runner.config?.claudeDefaults,
+            codexDefaults: runner.config?.codexDefaults
+        });
+
+        await handleRunnerConfig(
+            interaction as ButtonInteraction,
+            userId,
+            runnerId,
+            cliType === 'claude' ? 'claude' : 'codex'
+        );
         return;
     }
 

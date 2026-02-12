@@ -8,7 +8,7 @@ import fs from 'fs';
 import WebSocket from 'ws';
 import type { PluginManager, PluginSession } from '../plugins/index.js';
 import type { PluginOptions } from '../plugins/base.js';
-import type { SessionMetadata } from '../types.js';
+import type { SessionMetadata, PendingApprovalRequestInfo } from '../types.js';
 import type { WebSocketManager } from '../websocket.js';
 import type { RunnerConfig } from '../config.js';
 import { expandPath, findCliPath, validateOrCreateFolder } from '../utils.js';
@@ -215,9 +215,12 @@ export async function handleSessionStart(
 
 export async function handleSessionEnd(
     data: { sessionId: string },
-    deps: Pick<SessionHandlerDeps, 'cliSessions' | 'sessionMetadata'> & { pendingMessages: Map<string, any[]> }
+    deps: Pick<SessionHandlerDeps, 'cliSessions' | 'sessionMetadata'> & {
+        pendingMessages: Map<string, any[]>;
+        pendingApprovalRequests: Map<string, PendingApprovalRequestInfo>;
+    }
 ): Promise<void> {
-    const { cliSessions, sessionMetadata, pendingMessages } = deps;
+    const { cliSessions, sessionMetadata, pendingMessages, pendingApprovalRequests } = deps;
 
     console.log(`Session ended: ${data.sessionId}`);
 
@@ -230,6 +233,11 @@ export async function handleSessionEnd(
     cliSessions.delete(data.sessionId);
     sessionMetadata.delete(data.sessionId);
     pendingMessages.delete(data.sessionId);
+    for (const [requestId, pending] of pendingApprovalRequests.entries()) {
+        if (pending.sessionId === data.sessionId) {
+            pendingApprovalRequests.delete(requestId);
+        }
+    }
 
     console.log(`Session ${data.sessionId} cleaned up`);
 }

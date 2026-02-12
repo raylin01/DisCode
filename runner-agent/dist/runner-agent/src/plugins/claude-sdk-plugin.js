@@ -1,0 +1,718 @@
+/**
+ * Claude SDK Plugin for CLI Integration
+ *
+ * Uses the standalone @discode/claude-client library to manage the Claude Code CLI.
+ * This plugin acts as a bridge between the generic DisCode runner-agent and the Claude Client.
+ */
+import { EventEmitter } from 'events';
+import { randomUUID } from 'crypto';
+import { readFileSync, existsSync } from 'fs';
+import { BasePlugin } from './base.js';
+// Import from our new library
+import { ClaudeClient } from '../../../claude-client/src/index.js';
+// ============================================================================
+// Claude SDK Session
+// ============================================================================
+class ClaudeSDKSession extends EventEmitter {
+    plugin;
+    sessionId;
+    config;
+    createdAt;
+    isOwned = true;
+    // Status tracking conforming to SessionStatus interface
+    status = 'idle';
+    lastActivity;
+    // The underlying Claude Client
+    client;
+    // Buffer for batching output
+    textBuffer = '';
+    flushTimer = null;
+    BATCH_INTERVAL_MS = 100;
+    // Throttle for accumulated output (to avoid Discord rate limits)
+    pendingStdoutContent = '';
+    pendingThinkingContent = '';
+    outputThrottleTimer = null;
+    OUTPUT_THROTTLE_MS = 500; // Update Discord at most every 500ms
+    // Track current state
+    currentActivity = null;
+    currentThinking = '';
+    currentOutputType = 'stdout';
+    // Plan Mode State
+    currentPlanPath = null;
+    activeToolExecutions = new Map();
+    // AskUserQuestion state
+    pendingQuestion = null;
+    // Permission request tracking
+    pendingPermissions = new Map();
+    deferredApproval = null;
+    applyScopeToSuggestions(suggestions, scope) {
+        if (!suggestions || suggestions.length === 0)
+            return [];
+        return suggestions.map((suggestion) => {
+            if (suggestion.type === 'setMode') {
+                return {
+                    ...suggestion,
+                    destination: suggestion.destination || scope
+                };
+            }
+            return {
+                ...suggestion,
+                destination: suggestion.destination || scope
+            };
+        });
+    }
+    constructor(config, plugin) {
+        super();
+        this.plugin = plugin;
+        this.sessionId = config.sessionId || randomUUID();
+        this.config = config;
+        this.createdAt = new Date();
+        this.lastActivity = new Date();
+        // Initialize the Claude Client
+        this.client = new ClaudeClient({
+            cwd: config.cwd || process.cwd(),
+            claudePath: config.cliPath, // Use provided CLI path
+            debug: process.env.DEBUG_CLAUDE === 'true',
+            sessionId: this.sessionId,
+            env: {
+                ...process.env,
+                DISCODE_SESSION_ID: this.sessionId
+            },
+            thinking: {
+                maxTokens: config.options?.maxThinkingTokens,
+                level: config.options?.thinkingLevel
+            }
+        });
+        // Set up Event Listeners
+        this.setupEventListeners();
+    }
+    setupEventListeners() {
+        // Ready
+        this.client.on('ready', () => {
+            this.status = 'idle';
+            this.emit('ready');
+            // Notify generic plugin listeners
+        });
+        // Text Streaming (accumulated mode with throttling)
+        this.client.on('text_accumulated', (accumulatedText) => {
+            if (this.currentOutputType !== 'stdout') {
+                // Flush any pending thinking content before switching
+                this.flushThrottledOutput();
+                this.currentOutputType = 'stdout';
+            }
+            // Store latest accumulated content and schedule throttled emit
+            this.pendingStdoutContent = accumulatedText;
+            this.scheduleThrottledOutput();
+        });
+        // Thinking Streaming (accumulated mode with throttling)
+        this.client.on('thinking_accumulated', (accumulatedThinking) => {
+            if (this.currentOutputType !== 'thinking') {
+                // Flush any pending stdout content before switching
+                this.flushThrottledOutput();
+                this.currentOutputType = 'thinking';
+                this.status = 'working';
+                this.setActivity('Thinking');
+            }
+            this.currentThinking = accumulatedThinking;
+            // Store latest accumulated content and schedule throttled emit
+            this.pendingThinkingContent = accumulatedThinking;
+            this.scheduleThrottledOutput();
+        });
+        // Full Messages (Assistant)
+        this.client.on('message', (message) => {
+            this.flushTextBuffer(true, this.currentOutputType);
+            this.flushThrottledOutput(); // Ensure any pending throttled content is sent
+            this.status = 'idle';
+            this.setActivity(null);
+            // Handle Todos
+            const legacyTodos = message.todos || [];
+            // Check for tool use todos (TodoWrite)
+            const toolTodos = [];
+            message.message.content.forEach(block => {
+                if (block.type === 'tool_use' && block.name === 'TodoWrite') {
+                    const input = block.input;
+                    if (input && Array.isArray(input.todos)) {
+                        toolTodos.push(...input.todos);
+                    }
+                }
+            });
+            const allTodos = [...legacyTodos, ...toolTodos];
+            if (allTodos.length > 0) {
+                const todoContent = allTodos.map(todo => {
+                    const status = todo.status === 'completed' ? '✅' :
+                        todo.status === 'in_progress' ? '🔄' : 'box';
+                    return `${status} ${todo.content}`;
+                }).join('\n');
+                this.plugin.emit('output', {
+                    sessionId: this.sessionId,
+                    content: todoContent,
+                    isComplete: true,
+                    outputType: 'todos',
+                    timestamp: new Date()
+                });
+            }
+        });
+        // Tool Use & Permissions
+        this.client.on('control_request', (req) => {
+            const request = req.request;
+            console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] control_request: id=${req.request_id} subtype=${request.subtype} tool=${request.tool_name || 'n/a'}`);
+            if (request.subtype === 'can_use_tool') {
+                if (request.tool_name === 'AskUserQuestion') {
+                    this.handleAskUserQuestion(req.request_id, request).catch((err) => {
+                        this.plugin.emit('error', {
+                            sessionId: this.sessionId,
+                            error: err.message,
+                            fatal: false
+                        });
+                    });
+                    return;
+                }
+                if (request.tool_name === 'ExitPlanMode') {
+                    this.handleExitPlanModeRequest(req).catch((err) => {
+                        this.plugin.emit('error', {
+                            sessionId: this.sessionId,
+                            error: `ExitPlanMode error: ${err.message}`,
+                            fatal: false
+                        });
+                    });
+                    return;
+                }
+                this.status = 'waiting';
+                const approvalId = `${this.sessionId}-${Date.now()}-${randomUUID().slice(0, 8)}`;
+                this.pendingPermissions.set(approvalId, {
+                    requestId: approvalId,
+                    sdkRequestId: req.request_id,
+                    toolName: request.tool_name || 'unknown',
+                    input: request.input || {},
+                    toolUseId: request.tool_use_id || '',
+                    suggestions: request.permission_suggestions || [],
+                    blockedPath: request.blocked_path,
+                    decisionReason: request.decision_reason
+                });
+                console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] pendingPermissions add: approvalId=${approvalId} sdkRequestId=${req.request_id} toolUseId=${request.tool_use_id || 'none'}`);
+                // Apply deferred approval if one exists and is recent (within 1 second)
+                // This handles race conditions where approval arrives before control_request
+                // The short window prevents stale approvals from applying to unrelated requests
+                if (this.deferredApproval && Date.now() - this.deferredApproval.receivedAt < 1000) {
+                    const { optionNumber, message } = this.deferredApproval;
+                    this.deferredApproval = null;
+                    console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Applying deferred approval: option=${optionNumber}`);
+                    this.sendApproval(optionNumber, message, approvalId).catch((err) => {
+                        this.plugin.emit('error', {
+                            sessionId: this.sessionId,
+                            error: err.message,
+                            fatal: false
+                        });
+                    });
+                }
+                else if (this.deferredApproval) {
+                    // Clear stale deferred approval
+                    console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Clearing stale deferred approval (${Date.now() - this.deferredApproval.receivedAt}ms old)`);
+                    this.deferredApproval = null;
+                }
+                this.plugin.emit('approval', {
+                    sessionId: this.sessionId,
+                    requestId: approvalId,
+                    tool: request.tool_name || 'unknown',
+                    context: JSON.stringify(request.input),
+                    toolInput: request.input || {},
+                    suggestions: request.permission_suggestions || [],
+                    blockedPath: request.blocked_path,
+                    decisionReason: request.decision_reason,
+                    detectedAt: new Date()
+                });
+            }
+            else if (request.subtype === 'hook_callback') {
+                const responseData = {
+                    behavior: 'allow',
+                    updatedInput: request.input || {},
+                    message: 'OK'
+                };
+                this.client.sendControlResponse(req.request_id, responseData).catch((err) => {
+                    this.plugin.emit('error', {
+                        sessionId: this.sessionId,
+                        error: err.message,
+                        fatal: false
+                    });
+                });
+            }
+        });
+        this.client.on('error', (err) => {
+            this.plugin.emit('error', {
+                sessionId: this.sessionId,
+                error: err.message,
+                fatal: false
+            });
+        });
+        this.client.on('exit', (code) => {
+            this.status = 'offline';
+        });
+        // Tool use start - surfaces ALL tool invocations including auto-approved
+        this.client.on('tool_use_start', (tool) => {
+            // Track tool name for result matching
+            this.activeToolExecutions.set(tool.id, tool.name);
+            this.plugin.emit('tool_execution', {
+                sessionId: this.sessionId,
+                toolName: tool.name,
+                toolId: tool.id,
+                input: tool.input,
+                timestamp: new Date()
+            });
+        });
+        // Tool result - surfaces success/failure status
+        this.client.on('tool_result', (result) => {
+            // Check for EnterPlanMode to capture plan path
+            const toolName = this.activeToolExecutions.get(result.toolUseId);
+            if (toolName === 'EnterPlanMode' && !result.isError) {
+                // Look for "A plan file was designated: <path>"
+                const match = result.content.match(/A plan file was designated: (.*)$/m);
+                if (match && match[1]) {
+                    this.currentPlanPath = match[1].trim();
+                    console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Captured plan path: ${this.currentPlanPath}`);
+                }
+            }
+            // Cleanup
+            this.activeToolExecutions.delete(result.toolUseId);
+            this.plugin.emit('tool_result', {
+                sessionId: this.sessionId,
+                toolUseId: result.toolUseId,
+                content: result.content,
+                isError: result.isError,
+                timestamp: new Date()
+            });
+        });
+        // Result events - surfaces final session summary
+        this.client.on('result', (result) => {
+            this.plugin.emit('result', {
+                sessionId: this.sessionId,
+                result: result.result,
+                subtype: result.subtype,
+                durationMs: result.duration_ms,
+                durationApiMs: result.duration_api_ms,
+                numTurns: result.num_turns,
+                isError: result.is_error,
+                error: result.error,
+                timestamp: new Date()
+            });
+        });
+    }
+    async start() {
+        this.status = 'working';
+        await this.client.start();
+    }
+    /**
+     * Interrupt the current operation (proper protocol method, not Ctrl+C)
+     */
+    async interrupt() {
+        await this.client.interrupt();
+    }
+    async sendMessage(message) {
+        this.status = 'working';
+        this.lastActivity = new Date();
+        await this.client.sendMessage(message);
+    }
+    /**
+     * Send a message with image attachments
+     */
+    async sendMessageWithImages(text, images) {
+        this.status = 'working';
+        this.lastActivity = new Date();
+        const content = [];
+        // Add images first
+        for (const image of images) {
+            content.push({
+                type: 'image',
+                source: {
+                    type: 'base64',
+                    media_type: image.mediaType,
+                    data: image.data
+                }
+            });
+        }
+        // Add text
+        if (text) {
+            content.push({ type: 'text', text });
+        }
+        await this.client.sendMessageWithContent(content);
+    }
+    async sendApproval(optionNumber, message, requestId) {
+        console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] sendApproval called: option=${optionNumber}, requestId=${requestId || 'none'}, pendingCount=${this.pendingPermissions.size}, pendingKeys=[${Array.from(this.pendingPermissions.keys()).join(', ')}]`);
+        if (this.pendingQuestion) {
+            console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] AskUserQuestion approval: option=${optionNumber}, message=${message || 'none'}`);
+            await this.handleAskUserQuestionResponse(optionNumber, message, requestId);
+            return;
+        }
+        // Find the pending permission (simplified logic: take the first one)
+        // In reality we should map optionNumber to the specific request if possible
+        // or store the mapping.
+        if (this.pendingPermissions.size === 0) {
+            this.deferredApproval = {
+                optionNumber,
+                message,
+                receivedAt: Date.now()
+            };
+            console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Deferred approval: option=${optionNumber}, message=${message || 'none'}, requestId=${requestId || 'none'}`);
+            return;
+        }
+        const approvalId = requestId && this.pendingPermissions.has(requestId)
+            ? requestId
+            : Array.from(this.pendingPermissions.keys())[0];
+        const perm = this.pendingPermissions.get(approvalId);
+        if (!perm)
+            return;
+        console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] sendApproval mapping: approvalId=${approvalId} sdkRequestId=${perm.sdkRequestId} toolUseId=${perm.toolUseId || 'none'} pendingCount=${this.pendingPermissions.size}`);
+        const isAllow = optionNumber === '1' || optionNumber.toLowerCase() === 'yes';
+        const isAlways = optionNumber === '3' || optionNumber.toLowerCase() === 'always';
+        const responseData = {
+            behavior: isAllow || isAlways ? 'allow' : 'deny',
+            toolUseID: perm.toolUseId
+        };
+        if (message) {
+            responseData.message = message;
+        }
+        if (isAlways && perm.suggestions && perm.suggestions.length > 0) {
+            const scopedSuggestions = this.applyScopeToSuggestions(perm.suggestions, 'session');
+            responseData.updatedPermissions = scopedSuggestions;
+            responseData.scope = 'session';
+        }
+        if (responseData.behavior === 'allow' && responseData.updatedInput === undefined) {
+            responseData.updatedInput = perm.input || {};
+        }
+        if (responseData.behavior === 'deny' && !responseData.message) {
+            responseData.message = 'The user does not want to proceed with this tool use.';
+        }
+        console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Sending control_response: requestId=${perm.sdkRequestId} behavior=${responseData.behavior} scope=${responseData.scope || 'none'} toolUseId=${perm.toolUseId || 'none'}`);
+        await this.client.sendControlResponse(perm.sdkRequestId, responseData);
+        this.pendingPermissions.delete(approvalId);
+        this.status = 'working';
+    }
+    async handleExitPlanModeRequest(req) {
+        let planContent = '';
+        // Try to read the plan file
+        if (this.currentPlanPath && existsSync(this.currentPlanPath)) {
+            try {
+                planContent = readFileSync(this.currentPlanPath, 'utf8');
+            }
+            catch (err) {
+                console.error(`[ClaudeSDK] Failed to read plan file: ${err}`);
+            }
+        }
+        const request = req.request;
+        const approvalId = `${this.sessionId}-${Date.now()}-${randomUUID().slice(0, 8)}`;
+        // Register pending permission with special handling for ExitPlanMode
+        // We re-use 'AskUserQuestion' style mechanism but map it back to a tool permission
+        this.pendingPermissions.set(approvalId, {
+            requestId: approvalId,
+            sdkRequestId: req.request_id,
+            toolName: 'ExitPlanMode',
+            input: request.input || {},
+            toolUseId: request.tool_use_id || '',
+            suggestions: [],
+            blockedPath: undefined,
+            decisionReason: undefined
+        });
+        // If we have plan content, present it for review
+        if (planContent) {
+            console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Intercepted ExitPlanMode, requesting review of plan (${planContent.length} chars)`);
+            this.plugin.emit('approval', {
+                sessionId: this.sessionId,
+                requestId: approvalId,
+                tool: 'ExitPlanMode',
+                context: planContent, // Pass full plan content as context
+                toolInput: {
+                    question: 'Please review the proposed plan before proceeding.',
+                    planPath: this.currentPlanPath
+                },
+                options: ['Approve Plan'], // Option 1
+                hasOther: true, // Option 0 triggers feedback (Deny)
+                detectedAt: new Date()
+            });
+        }
+        else {
+            // Fallback if no plan content found (standard approval)
+            console.log(`[ClaudeSDK] Plan content missing, falling back to standard ExitPlanMode approval`);
+            this.plugin.emit('approval', {
+                sessionId: this.sessionId,
+                requestId: approvalId,
+                tool: 'ExitPlanMode',
+                context: JSON.stringify(request.input),
+                toolInput: request.input || {},
+                suggestions: [],
+                detectedAt: new Date()
+            });
+        }
+    }
+    async handleAskUserQuestion(requestId, request) {
+        let questionsArray = [];
+        if (Array.isArray(request.input)) {
+            questionsArray = request.input;
+        }
+        else if (request.input && Array.isArray(request.input.questions)) {
+            questionsArray = request.input.questions;
+        }
+        else if (request.input && request.input.question) {
+            questionsArray = [request.input];
+        }
+        if (questionsArray.length === 0) {
+            this.plugin.emit('error', {
+                sessionId: this.sessionId,
+                error: 'AskUserQuestion input missing questions',
+                fatal: false
+            });
+            return;
+        }
+        this.pendingQuestion = {
+            baseRequestId: requestId,
+            input: request.input,
+            questions: questionsArray,
+            allAnswers: [],
+            currentQuestionIndex: 0
+        };
+        await this.askNextQuestion();
+    }
+    async askNextQuestion() {
+        if (!this.pendingQuestion)
+            return;
+        const questionIndex = this.pendingQuestion.currentQuestionIndex;
+        const questionsArray = this.pendingQuestion.questions;
+        if (questionIndex >= questionsArray.length) {
+            await this.sendAllAnswers();
+            return;
+        }
+        const currentQuestion = questionsArray[questionIndex];
+        const question = currentQuestion.question || 'Please provide input:';
+        const options = currentQuestion.options || [];
+        const multiSelect = currentQuestion.multiSelect || false;
+        const header = currentQuestion.header || null;
+        const processedOptions = options.map((opt, idx) => {
+            if (typeof opt === 'string') {
+                return { label: opt, value: opt };
+            }
+            return {
+                ...opt,
+                value: opt.value || opt.label || `option${idx}`
+            };
+        });
+        const optionLabels = options.map((opt, idx) => {
+            if (typeof opt === 'string')
+                return opt;
+            return opt.label || opt.value || `Option ${idx + 1}`;
+        });
+        let contextText = header ? `**${header}**\n\n${question}` : question;
+        if (questionsArray.length > 1) {
+            contextText += `\n\n*(Question ${questionIndex + 1} of ${questionsArray.length})*`;
+        }
+        if (options.length > 0) {
+            const optionDescriptions = options.map((o, idx) => {
+                if (typeof o === 'string')
+                    return `${idx + 1}. ${o}`;
+                return `${idx + 1}. ${o.label || o.value || 'Option'}`;
+            }).join('\n');
+            contextText += `\n\n${optionDescriptions}`;
+        }
+        const questionRequestId = `${this.pendingQuestion.baseRequestId}-${questionIndex}-${randomUUID().slice(0, 8)}`;
+        this.pendingQuestion.currentRequestId = questionRequestId;
+        this.plugin.emit('approval', {
+            sessionId: this.sessionId,
+            requestId: questionRequestId,
+            tool: 'AskUserQuestion',
+            context: contextText,
+            toolInput: { question, options: processedOptions, multiSelect },
+            options: optionLabels,
+            detectedAt: new Date(),
+            isMultiSelect: multiSelect,
+            hasOther: true
+        });
+        this.pendingQuestion.currentOptions = processedOptions;
+        this.pendingQuestion.currentMultiSelect = multiSelect;
+    }
+    async handleAskUserQuestionResponse(optionNumber, message, requestId) {
+        if (!this.pendingQuestion)
+            return;
+        if (requestId && this.pendingQuestion.currentRequestId && requestId !== this.pendingQuestion.currentRequestId) {
+            console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Ignoring response for stale question requestId=${requestId}`);
+            return;
+        }
+        const pendingQuestion = this.pendingQuestion;
+        const currentOptions = pendingQuestion.currentOptions || [];
+        // Handle custom "Other" input
+        if (optionNumber === '0' && message) {
+            pendingQuestion.allAnswers.push(message);
+            pendingQuestion.currentQuestionIndex++;
+            await this.askNextQuestion();
+            return;
+        }
+        // Multi-select
+        if (optionNumber.includes(',')) {
+            const optionNumbers = optionNumber.split(',').map((s) => s.trim());
+            const selectedValues = [];
+            for (const optNum of optionNumbers) {
+                const optionIndex = parseInt(optNum, 10) - 1;
+                if (optionIndex >= 0 && optionIndex < currentOptions.length) {
+                    const option = currentOptions[optionIndex];
+                    selectedValues.push(option.value || option.label);
+                }
+            }
+            pendingQuestion.allAnswers.push(selectedValues);
+            pendingQuestion.currentQuestionIndex++;
+            await this.askNextQuestion();
+            return;
+        }
+        // Single option selection
+        const optionIndex = parseInt(optionNumber, 10) - 1;
+        if (optionIndex >= 0 && optionIndex < currentOptions.length) {
+            const option = currentOptions[optionIndex];
+            pendingQuestion.allAnswers.push(option.value || option.label);
+            pendingQuestion.currentQuestionIndex++;
+            await this.askNextQuestion();
+            return;
+        }
+    }
+    async sendAllAnswers() {
+        if (!this.pendingQuestion)
+            return;
+        const pendingQuestion = this.pendingQuestion;
+        const answers = pendingQuestion.allAnswers;
+        const answersObject = {};
+        for (let i = 0; i < pendingQuestion.questions.length; i++) {
+            const q = pendingQuestion.questions[i];
+            const key = q.header || q.question || `Question ${i + 1}`;
+            answersObject[key] = answers[i];
+        }
+        const questionSummary = pendingQuestion.questions.length === 1
+            ? pendingQuestion.questions[0].question
+            : pendingQuestion.questions.map((q, i) => q.header || q.question || `Question ${i + 1}`).join(', ');
+        const updatedInput = {
+            question: questionSummary,
+            answers: answersObject
+        };
+        const responseData = {
+            behavior: 'allow',
+            updatedInput
+        };
+        console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Sending AskUserQuestion response: requestId=${pendingQuestion.baseRequestId} answers=${Object.keys(answersObject).length}`);
+        await this.client.sendControlResponse(pendingQuestion.baseRequestId, responseData);
+        this.pendingQuestion = null;
+    }
+    async sendPermissionDecision(requestId, decision) {
+        const perm = this.pendingPermissions.get(requestId);
+        if (!perm)
+            return;
+        const responseData = {
+            behavior: decision.behavior,
+            updatedPermissions: decision.updatedPermissions
+                ? this.applyScopeToSuggestions(decision.updatedPermissions, decision.scope || 'session')
+                : undefined,
+            updatedInput: decision.updatedInput,
+            message: decision.message,
+            toolUseID: perm.toolUseId,
+            scope: decision.scope
+        };
+        if (responseData.behavior === 'allow' && responseData.updatedInput === undefined) {
+            responseData.updatedInput = perm.input || {};
+        }
+        if (responseData.behavior === 'deny' && !responseData.message) {
+            responseData.message = 'The user does not want to proceed with this tool use.';
+        }
+        console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Sending permission_decision: requestId=${perm.sdkRequestId} behavior=${responseData.behavior} scope=${responseData.scope || 'none'} toolUseId=${perm.toolUseId || 'none'}`);
+        await this.client.sendControlResponse(perm.sdkRequestId, responseData);
+        this.pendingPermissions.delete(requestId);
+        this.status = 'working';
+    }
+    async close() {
+        this.client.kill();
+        this.status = 'offline';
+    }
+    // Property implementation for isReady
+    get isReady() {
+        return this.status === 'idle';
+    }
+    // Helper to buffer output
+    scheduleBatchFlush(outputType = 'stdout') {
+        if (this.flushTimer)
+            return;
+        this.flushTimer = setTimeout(() => {
+            this.flushTextBuffer(false, outputType);
+            this.flushTimer = null;
+        }, this.BATCH_INTERVAL_MS);
+    }
+    flushTextBuffer(isComplete = false, outputType = 'stdout') {
+        if (!this.textBuffer)
+            return;
+        this.plugin.emit('output', {
+            sessionId: this.sessionId,
+            content: this.textBuffer,
+            isComplete,
+            outputType,
+            timestamp: new Date()
+        });
+        this.textBuffer = '';
+    }
+    // Throttle output to Discord to avoid rate limits
+    scheduleThrottledOutput() {
+        if (this.outputThrottleTimer)
+            return; // Already scheduled
+        this.outputThrottleTimer = setTimeout(() => {
+            this.flushThrottledOutput();
+            this.outputThrottleTimer = null;
+        }, this.OUTPUT_THROTTLE_MS);
+    }
+    flushThrottledOutput() {
+        if (this.outputThrottleTimer) {
+            clearTimeout(this.outputThrottleTimer);
+            this.outputThrottleTimer = null;
+        }
+        // Emit stdout if we have pending content
+        if (this.pendingStdoutContent) {
+            this.plugin.emit('output', {
+                sessionId: this.sessionId,
+                content: this.pendingStdoutContent,
+                isComplete: false,
+                outputType: 'stdout',
+                timestamp: new Date()
+            });
+            this.pendingStdoutContent = '';
+        }
+        // Emit thinking if we have pending content
+        if (this.pendingThinkingContent) {
+            this.plugin.emit('output', {
+                sessionId: this.sessionId,
+                content: this.pendingThinkingContent,
+                isComplete: false,
+                outputType: 'thinking',
+                timestamp: new Date()
+            });
+            this.pendingThinkingContent = '';
+        }
+    }
+    setActivity(activity) {
+        if (this.currentActivity !== activity) {
+            this.currentActivity = activity;
+            this.plugin.emit('metadata', {
+                sessionId: this.sessionId,
+                activity: activity || undefined,
+                timestamp: new Date()
+            });
+        }
+    }
+}
+// ============================================================================
+// Main Plugin Class
+// ============================================================================
+export class ClaudeSDKPlugin extends BasePlugin {
+    name = 'claude-sdk';
+    type = 'claude-sdk';
+    version = '1.0.0';
+    description = 'Claude Code CLI Integration (Libraries)';
+    isPersistent = true;
+    constructor(runnerId = 'default') {
+        super();
+        this.log(`Initialized ClaudeSDKPlugin for runner ${runnerId}`);
+    }
+    async createSession(config) {
+        const session = new ClaudeSDKSession(config, this);
+        this.sessions.set(session.sessionId, session);
+        await session.start();
+        return session;
+    }
+}

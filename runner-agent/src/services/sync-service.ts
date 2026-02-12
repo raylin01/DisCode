@@ -1,5 +1,6 @@
 
 import { EventEmitter } from 'events';
+import path from 'path';
 import { 
     SessionWatcher, 
     SessionEntry, 
@@ -7,6 +8,7 @@ import {
     listSessions, 
     getSessionDetailsAsync
 } from '../../../claude-client/src/sessions.js';
+import { CodexClient, Thread } from '../../../codex-client/src/index.js';
 import { WebSocketManager } from '../websocket.js';
 import { 
     SyncProjectsResponseMessage, 
@@ -26,9 +28,16 @@ import {
 export class RunnerSyncService extends EventEmitter {
     private watcher: SessionWatcher;
     private wsManager: WebSocketManager;
+    private codexPath: string | null;
+    private codexClient: CodexClient | null = null;
     private ownedSessions = new Set<string>(); // Sessions created/controlled by Discord
     private syncProjectsTask: Promise<void> | null = null;
     private syncSessionsTasks = new Map<string, Promise<void>>();
+    private codexPollTimer: NodeJS.Timeout | null = null;
+    private codexPollInFlight = false;
+    private codexPollInitialized = false;
+    private readonly codexPollIntervalMs = parseInt(process.env.DISCODE_CODEX_SYNC_POLL_MS || '15000');
+    private codexThreadUpdatedAt = new Map<string, number>();
     private syncStatus: {
         state: 'idle' | 'syncing' | 'error';
         lastSyncAt?: string;
@@ -46,21 +55,335 @@ export class RunnerSyncService extends EventEmitter {
     };
     private maxSyncChunkBytes = parseInt(process.env.DISCODE_SYNC_MAX_BYTES || String(2 * 1024 * 1024));
 
-    constructor(wsManager: WebSocketManager) {
+    constructor(wsManager: WebSocketManager, options?: { codexPath?: string | null }) {
         super();
         this.wsManager = wsManager;
         this.watcher = new SessionWatcher();
+        this.codexPath = options?.codexPath || null;
 
         // Listen for watcher events
         this.watcher.on('session_new', (entry: SessionEntry) => {
-            if (this.ownedSessions.has(entry.sessionId)) return;
+            if (this.ownedSessions.has(entry.sessionId) || this.ownedSessions.has(this.toSyncSessionKey(entry.sessionId, 'claude'))) return;
             void this.pushSessionDiscovered(entry);
         });
 
         this.watcher.on('session_updated', (entry: SessionEntry) => {
-            if (this.ownedSessions.has(entry.sessionId)) return;
+            if (this.ownedSessions.has(entry.sessionId) || this.ownedSessions.has(this.toSyncSessionKey(entry.sessionId, 'claude'))) return;
             void this.pushSessionUpdated(entry);
         });
+
+        this.startCodexPolling();
+    }
+
+    private normalizeProjectPath(projectPath: string): string {
+        if (!projectPath || typeof projectPath !== 'string') return projectPath;
+        return path.resolve(projectPath);
+    }
+
+    private toSyncSessionKey(sessionId: string, cliType: 'claude' | 'codex' = 'claude'): string {
+        return `${cliType}:${sessionId}`;
+    }
+
+    private normalizeThreadRecord(thread: Thread): {
+        sessionId: string;
+        projectPath: string;
+        firstPrompt: string;
+        created: string;
+        messageCount: number;
+        gitBranch?: string;
+        messages: any[];
+        cliType: 'codex';
+    } | null {
+        const cwd = thread.cwd || (typeof thread.path === 'string' ? thread.path : null);
+        if (!cwd) return null;
+
+        const createdAt = typeof thread.createdAt === 'number'
+            ? new Date(thread.createdAt * 1000)
+            : new Date();
+
+        return {
+            sessionId: thread.id,
+            projectPath: this.normalizeProjectPath(cwd),
+            firstPrompt: thread.preview || 'Codex thread',
+            created: createdAt.toISOString(),
+            messageCount: 0,
+            gitBranch: typeof thread.gitInfo?.branch === 'string' ? thread.gitInfo.branch : undefined,
+            messages: [],
+            cliType: 'codex'
+        };
+    }
+
+    private async ensureCodexClient(): Promise<CodexClient | null> {
+        if (!this.codexPath) return null;
+        if (this.codexClient) return this.codexClient;
+
+        this.codexClient = new CodexClient({ codexPath: this.codexPath });
+        try {
+            await this.codexClient.start();
+            return this.codexClient;
+        } catch (error) {
+            console.error('[SyncService] Failed to initialize Codex client for sync:', error);
+            this.codexClient = null;
+            return null;
+        }
+    }
+
+    private async listCodexThreads(): Promise<Thread[]> {
+        const client = await this.ensureCodexClient();
+        if (!client) return [];
+
+        const threads: Thread[] = [];
+        let cursor: string | null = null;
+
+        try {
+            do {
+                const response = await client.listThreads({
+                    cursor,
+                    limit: 200,
+                    sortKey: 'updated_at',
+                    archived: false
+                });
+                if (Array.isArray(response.data)) {
+                    threads.push(...response.data);
+                }
+                cursor = response.nextCursor || null;
+            } while (cursor);
+        } catch (error) {
+            console.error('[SyncService] Failed listing Codex threads:', error);
+            return [];
+        }
+
+        return threads;
+    }
+
+    private async listCodexProjects(): Promise<Map<string, number>> {
+        const projects = new Map<string, number>();
+        const threads = await this.listCodexThreads();
+        for (const thread of threads) {
+            const normalized = this.normalizeThreadRecord(thread);
+            if (!normalized) continue;
+            const key = normalized.projectPath;
+            projects.set(key, (projects.get(key) || 0) + 1);
+        }
+        return projects;
+    }
+
+    private async listCodexSessions(projectPath: string): Promise<any[]> {
+        const normalizedPath = this.normalizeProjectPath(projectPath);
+        const sessions: any[] = [];
+        const threads = await this.listCodexThreads();
+        for (const thread of threads) {
+            const record = this.normalizeThreadRecord(thread);
+            if (!record) continue;
+            if (record.projectPath !== normalizedPath) continue;
+            sessions.push(record);
+        }
+        return sessions;
+    }
+
+    private extractTextSnippets(value: any): string[] {
+        if (value == null) return [];
+
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            return trimmed ? [trimmed] : [];
+        }
+
+        if (Array.isArray(value)) {
+            return value.flatMap((entry) => this.extractTextSnippets(entry));
+        }
+
+        if (typeof value !== 'object') return [];
+
+        const snippets: string[] = [];
+        if (typeof value.text === 'string') snippets.push(...this.extractTextSnippets(value.text));
+        if (typeof value.delta === 'string') snippets.push(...this.extractTextSnippets(value.delta));
+        if (typeof value.content === 'string' || Array.isArray(value.content)) snippets.push(...this.extractTextSnippets(value.content));
+        if (Array.isArray(value.contentItems)) snippets.push(...this.extractTextSnippets(value.contentItems));
+        if (Array.isArray(value.input)) snippets.push(...this.extractTextSnippets(value.input));
+        if (typeof value.message === 'string') snippets.push(...this.extractTextSnippets(value.message));
+
+        return snippets;
+    }
+
+    private inferCodexRole(payload: any, fallback: 'assistant' | 'user' = 'assistant'): 'assistant' | 'user' {
+        if (payload?.role === 'user') return 'user';
+        if (payload?.role === 'assistant') return 'assistant';
+
+        const type = typeof payload?.type === 'string' ? payload.type.toLowerCase() : '';
+        if (type.includes('user') || type.startsWith('input')) return 'user';
+        if (type.includes('agent') || type.includes('assistant') || type.includes('output')) return 'assistant';
+
+        return fallback;
+    }
+
+    private extractCodexMessages(thread: Thread): any[] {
+        const messages: any[] = [];
+        const turns = Array.isArray(thread.turns) ? thread.turns : [];
+
+        for (const turn of turns) {
+            const seenTurnMessages = new Set<string>();
+
+            const turnInput = Array.isArray((turn as any).input) ? (turn as any).input : [];
+            for (const input of turnInput) {
+                const snippets = this.extractTextSnippets(input);
+                for (const text of snippets) {
+                    const dedupKey = `user:${text}`;
+                    if (seenTurnMessages.has(dedupKey)) continue;
+                    seenTurnMessages.add(dedupKey);
+                    messages.push({
+                        type: 'message',
+                        role: 'user',
+                        content: [{ type: 'text', text }],
+                        created_at: Date.now()
+                    });
+                }
+            }
+
+            const items = Array.isArray((turn as any).items) ? (turn as any).items : [];
+            for (const item of items) {
+                const payload = (item as any).item || item;
+                const snippets = this.extractTextSnippets(payload);
+                if (snippets.length === 0) continue;
+
+                const role = this.inferCodexRole(payload);
+                for (const text of snippets) {
+                    const dedupKey = `${role}:${text}`;
+                    if (seenTurnMessages.has(dedupKey)) continue;
+                    seenTurnMessages.add(dedupKey);
+
+                    messages.push({
+                        type: 'message',
+                        role,
+                        content: [{ type: 'text', text }],
+                        created_at: Date.now()
+                    });
+                }
+            }
+        }
+
+        return messages;
+    }
+
+    private async readCodexThreadMessages(sessionId: string): Promise<{ messages: any[]; messageCount: number }> {
+        const client = await this.ensureCodexClient();
+        if (!client) return { messages: [], messageCount: 0 };
+
+        try {
+            const result = await client.readThread({ threadId: sessionId, includeTurns: true });
+            const messages = this.extractCodexMessages(result.thread);
+            const messageCount = messages.length || (Array.isArray(result.thread.turns) ? result.thread.turns.length : 0);
+            return { messages, messageCount };
+        } catch (error) {
+            console.error(`[SyncService] Error reading Codex thread ${sessionId}:`, error);
+            return { messages: [], messageCount: 0 };
+        }
+    }
+
+    private startCodexPolling(): void {
+        if (!this.codexPath) return;
+        if (this.codexPollIntervalMs <= 0) return;
+        if (this.codexPollTimer) return;
+
+        this.codexPollTimer = setInterval(() => {
+            void this.pollCodexThreads();
+        }, this.codexPollIntervalMs);
+
+        void this.pollCodexThreads();
+    }
+
+    private async pollCodexThreads(): Promise<void> {
+        if (!this.codexPath) return;
+        if (this.codexPollInFlight) return;
+        this.codexPollInFlight = true;
+
+        try {
+            const threads = await this.listCodexThreads();
+            const currentIds = new Set<string>();
+
+            if (!this.codexPollInitialized) {
+                for (const thread of threads) {
+                    const updatedAt = typeof thread.updatedAt === 'number'
+                        ? thread.updatedAt
+                        : (typeof thread.createdAt === 'number' ? thread.createdAt : 0);
+                    this.codexThreadUpdatedAt.set(thread.id, updatedAt);
+                }
+                this.codexPollInitialized = true;
+                return;
+            }
+
+            for (const thread of threads) {
+                const record = this.normalizeThreadRecord(thread);
+                if (!record) continue;
+
+                currentIds.add(record.sessionId);
+                const sessionKey = this.toSyncSessionKey(record.sessionId, 'codex');
+                if (this.ownedSessions.has(sessionKey) || this.ownedSessions.has(record.sessionId)) {
+                    continue;
+                }
+
+                const updatedAt = typeof thread.updatedAt === 'number'
+                    ? thread.updatedAt
+                    : (typeof thread.createdAt === 'number' ? thread.createdAt : 0);
+                const previousUpdatedAt = this.codexThreadUpdatedAt.get(record.sessionId);
+
+                if (previousUpdatedAt == null) {
+                    this.codexThreadUpdatedAt.set(record.sessionId, updatedAt);
+
+                    const { messages, messageCount } = await this.readCodexThreadMessages(record.sessionId);
+                    const discovered: SyncSessionDiscoveredMessage = {
+                        type: 'sync_session_discovered',
+                        data: {
+                            runnerId: this.wsManager.runnerId,
+                            session: {
+                                sessionId: record.sessionId,
+                                projectPath: record.projectPath,
+                                cliType: 'codex',
+                                firstPrompt: record.firstPrompt,
+                                created: record.created,
+                                messageCount,
+                                gitBranch: record.gitBranch,
+                                messages
+                            }
+                        }
+                    };
+                    this.wsManager.send(discovered);
+                    continue;
+                }
+
+                if (updatedAt <= previousUpdatedAt) continue;
+                this.codexThreadUpdatedAt.set(record.sessionId, updatedAt);
+
+                const { messages, messageCount } = await this.readCodexThreadMessages(record.sessionId);
+                const updated: SyncSessionUpdatedMessage = {
+                    type: 'sync_session_updated',
+                    data: {
+                        runnerId: this.wsManager.runnerId,
+                        session: {
+                            sessionId: record.sessionId,
+                            projectPath: record.projectPath,
+                            cliType: 'codex',
+                            firstPrompt: record.firstPrompt,
+                            created: record.created,
+                            messageCount,
+                            gitBranch: record.gitBranch
+                        },
+                        newMessages: messages
+                    }
+                };
+                this.wsManager.send(updated);
+            }
+
+            for (const sessionId of this.codexThreadUpdatedAt.keys()) {
+                if (!currentIds.has(sessionId)) {
+                    this.codexThreadUpdatedAt.delete(sessionId);
+                }
+            }
+        } catch (error) {
+            console.error('[SyncService] Codex polling failed:', error);
+        } finally {
+            this.codexPollInFlight = false;
+        }
     }
 
     /**
@@ -76,9 +399,11 @@ export class RunnerSyncService extends EventEmitter {
     /**
      * Mark a session as owned (don't push sync updates)
      */
-    markAsOwned(sessionId: string): void {
-        this.ownedSessions.add(sessionId);
-        this.watcher.markAsOwned(sessionId);
+    markAsOwned(sessionId: string, cliType: 'claude' | 'codex' = 'claude'): void {
+        this.ownedSessions.add(this.toSyncSessionKey(sessionId, cliType));
+        if (cliType === 'claude') {
+            this.watcher.markAsOwned(sessionId);
+        }
     }
 
     /**
@@ -158,8 +483,33 @@ export class RunnerSyncService extends EventEmitter {
         }
     }
 
-    async handleSyncSessionMessages(sessionId: string, projectPath: string, requestId?: string): Promise<void> {
+    async handleSyncSessionMessages(
+        sessionId: string,
+        projectPath: string,
+        requestId?: string,
+        cliType: 'claude' | 'codex' = 'claude'
+    ): Promise<void> {
         try {
+            if (cliType === 'codex') {
+                const { messages, messageCount } = await this.readCodexThreadMessages(sessionId);
+
+                const codexMessage: SyncSessionUpdatedMessage = {
+                    type: 'sync_session_updated',
+                    data: {
+                        runnerId: this.wsManager.runnerId,
+                        session: {
+                            sessionId,
+                            projectPath: this.normalizeProjectPath(projectPath),
+                            cliType: 'codex',
+                            messageCount
+                        },
+                        newMessages: messages
+                    }
+                };
+                this.wsManager.send(codexMessage);
+                return;
+            }
+
             const details = await getSessionDetailsAsync(sessionId, projectPath);
             const message: SyncSessionUpdatedMessage = {
                 type: 'sync_session_updated',
@@ -167,7 +517,8 @@ export class RunnerSyncService extends EventEmitter {
                     runnerId: this.wsManager.runnerId,
                     session: {
                         sessionId,
-                        projectPath,
+                        projectPath: this.normalizeProjectPath(projectPath),
+                        cliType: 'claude',
                         messageCount: details?.messageCount || 0
                     },
                     newMessages: details?.messages || []
@@ -197,7 +548,33 @@ export class RunnerSyncService extends EventEmitter {
         } as SyncProjectsProgressMessage);
 
         try {
-            const projects = await listProjectsAsync();
+            const claudeProjects = await listProjectsAsync();
+            const codexProjects = await this.listCodexProjects();
+            const mergedProjects = new Map<string, { path: string; lastModified: Date; sessionCount: number }>();
+
+            for (const project of claudeProjects) {
+                const normalizedPath = this.normalizeProjectPath(project.path);
+                mergedProjects.set(normalizedPath, {
+                    path: normalizedPath,
+                    lastModified: project.lastModified,
+                    sessionCount: project.sessionCount
+                });
+            }
+
+            for (const [projectPath, sessionCount] of codexProjects.entries()) {
+                const existing = mergedProjects.get(projectPath);
+                if (existing) {
+                    existing.sessionCount += sessionCount;
+                    continue;
+                }
+                mergedProjects.set(projectPath, {
+                    path: projectPath,
+                    lastModified: new Date(),
+                    sessionCount
+                });
+            }
+
+            const projects = Array.from(mergedProjects.values());
 
             const response: SyncProjectsResponseMessage = {
                 type: 'sync_projects_response',
@@ -263,49 +640,84 @@ export class RunnerSyncService extends EventEmitter {
 
     private async runSyncSessions(projectPath: string, requestId?: string): Promise<void> {
         const startedAt = new Date();
+        const normalizedProjectPath = this.normalizeProjectPath(projectPath);
 
-        const projectStatus = this.syncStatus.projects.get(projectPath) || {
-            projectPath,
+        const projectStatus = this.syncStatus.projects.get(normalizedProjectPath) || {
+            projectPath: normalizedProjectPath,
             state: 'idle' as const
         };
         projectStatus.state = 'syncing';
         projectStatus.lastError = undefined;
-        this.syncStatus.projects.set(projectPath, projectStatus);
+        this.syncStatus.projects.set(normalizedProjectPath, projectStatus);
 
         try {
-            const sessions = await listSessions(projectPath);
-            console.log(`[SyncService] Found ${sessions.length} sessions for ${projectPath}`);
+            let claudeSessions: any[] = [];
+            try {
+                claudeSessions = await listSessions(normalizedProjectPath);
+            } catch (error) {
+                console.warn(`[SyncService] Claude sessions unavailable for ${normalizedProjectPath}:`, error);
+            }
+
+            const codexSessions = await this.listCodexSessions(normalizedProjectPath);
+            const sessions = [...claudeSessions, ...codexSessions];
+            console.log(`[SyncService] Found ${sessions.length} sessions for ${normalizedProjectPath}`);
+            const codexClient = codexSessions.length > 0 ? await this.ensureCodexClient() : null;
 
             const mappedSessions = [] as any[];
-            for (const s of sessions) {
-                const details = await getSessionDetailsAsync(s.sessionId, s.projectPath);
-                mappedSessions.push({
-                    sessionId: s.sessionId,
-                    projectPath: s.projectPath,
-                    firstPrompt: s.firstPrompt,
-                    created: s.created,
-                    messageCount: s.messageCount,
-                    gitBranch: s.gitBranch,
-                    messages: details?.messages || []
-                });
+            for (const session of sessions) {
+                const cliType: 'claude' | 'codex' = session.cliType === 'codex' ? 'codex' : 'claude';
+                if (cliType === 'codex') {
+                    let codexMessages = Array.isArray(session.messages) ? session.messages : [];
+                    let codexMessageCount = typeof session.messageCount === 'number' ? session.messageCount : 0;
+
+                    // thread/list does not reliably include turns; hydrate with thread/read for initial sync.
+                    if (codexMessages.length === 0 && codexClient) {
+                        const snapshot = await this.readCodexThreadMessages(session.sessionId);
+                        codexMessages = snapshot.messages;
+                        codexMessageCount = snapshot.messageCount;
+                    }
+
+                    mappedSessions.push({
+                        sessionId: session.sessionId,
+                        projectPath: this.normalizeProjectPath(session.projectPath),
+                        cliType,
+                        firstPrompt: session.firstPrompt,
+                        created: session.created,
+                        messageCount: codexMessageCount,
+                        gitBranch: session.gitBranch,
+                        messages: codexMessages
+                    });
+                } else {
+                    const details = await getSessionDetailsAsync(session.sessionId, session.projectPath);
+                    mappedSessions.push({
+                        sessionId: session.sessionId,
+                        projectPath: this.normalizeProjectPath(session.projectPath),
+                        cliType,
+                        firstPrompt: session.firstPrompt,
+                        created: session.created,
+                        messageCount: session.messageCount,
+                        gitBranch: session.gitBranch,
+                        messages: details?.messages || []
+                    });
+                }
 
                 await new Promise<void>(resolve => setImmediate(resolve));
             }
 
-            await this.sendSyncSessionsInChunks(projectPath, requestId, mappedSessions);
+            await this.sendSyncSessionsInChunks(normalizedProjectPath, requestId, mappedSessions);
 
-            this.watcher.watchProject(projectPath);
+            this.watcher.watchProject(normalizedProjectPath);
 
             projectStatus.state = 'complete';
             projectStatus.lastSyncAt = new Date().toISOString();
             projectStatus.sessionCount = sessions.length;
-            this.syncStatus.projects.set(projectPath, projectStatus);
+            this.syncStatus.projects.set(normalizedProjectPath, projectStatus);
 
             this.wsManager.send({
                 type: 'sync_sessions_complete',
                 data: {
                     runnerId: this.wsManager.runnerId,
-                    projectPath,
+                    projectPath: normalizedProjectPath,
                     requestId,
                     status: 'success',
                     startedAt: startedAt.toISOString(),
@@ -314,16 +726,16 @@ export class RunnerSyncService extends EventEmitter {
                 }
             } as SyncSessionsCompleteMessage);
         } catch (error: any) {
-            console.error(`[SyncService] Error listing sessions for ${projectPath}:`, error);
+            console.error(`[SyncService] Error listing sessions for ${normalizedProjectPath}:`, error);
             projectStatus.state = 'error';
             projectStatus.lastError = error?.message || String(error);
-            this.syncStatus.projects.set(projectPath, projectStatus);
+            this.syncStatus.projects.set(normalizedProjectPath, projectStatus);
 
             this.wsManager.send({
                 type: 'sync_sessions_complete',
                 data: {
                     runnerId: this.wsManager.runnerId,
-                    projectPath,
+                    projectPath: normalizedProjectPath,
                     requestId,
                     status: 'error',
                     error: projectStatus.lastError,
@@ -417,7 +829,8 @@ export class RunnerSyncService extends EventEmitter {
                 runnerId: this.wsManager.runnerId,
                 session: {
                     sessionId: entry.sessionId,
-                    projectPath: entry.projectPath,
+                    projectPath: this.normalizeProjectPath(entry.projectPath),
+                    cliType: 'claude',
                     firstPrompt: entry.firstPrompt,
                     created: entry.created,
                     messageCount: entry.messageCount,
@@ -441,7 +854,8 @@ export class RunnerSyncService extends EventEmitter {
                 runnerId: this.wsManager.runnerId,
                 session: {
                     sessionId: entry.sessionId,
-                    projectPath: entry.projectPath,
+                    projectPath: this.normalizeProjectPath(entry.projectPath),
+                    cliType: 'claude',
                     messageCount: details?.messageCount || entry.messageCount
                 },
                 newMessages: details?.messages || []
@@ -456,15 +870,28 @@ export class RunnerSyncService extends EventEmitter {
      */
     shutdown(): void {
         this.watcher.close();
+        if (this.codexPollTimer) {
+            clearInterval(this.codexPollTimer);
+            this.codexPollTimer = null;
+        }
+        if (this.codexClient) {
+            void this.codexClient.shutdown().catch((error) => {
+                console.error('[SyncService] Error shutting down Codex sync client:', error);
+            });
+            this.codexClient = null;
+        }
     }
 }
 
 // Singleton
 let syncServiceInstance: RunnerSyncService | null = null;
 
-export function getSyncService(wsManager?: WebSocketManager): RunnerSyncService | null {
+export function getSyncService(
+    wsManager?: WebSocketManager,
+    options?: { codexPath?: string | null }
+): RunnerSyncService | null {
     if (!syncServiceInstance && wsManager) {
-        syncServiceInstance = new RunnerSyncService(wsManager);
+        syncServiceInstance = new RunnerSyncService(wsManager, options);
     }
     return syncServiceInstance;
 }

@@ -6,11 +6,13 @@
 
 import type { PluginSession } from '../plugins/index.js';
 import type { PendingApproval } from '../types.js';
+import type { PendingApprovalRequestInfo } from '../types.js';
 import type { WebSocketManager } from '../websocket.js';
 import type { AssistantManager } from '../assistant-manager.js';
 
 export interface ApprovalHandlerDeps {
     pendingApprovals: Map<string, PendingApproval>;
+    pendingApprovalRequests: Map<string, PendingApprovalRequestInfo>;
     cliSessions: Map<string, PluginSession>;
     wsManager: WebSocketManager;
     assistantManager: AssistantManager | null;
@@ -27,7 +29,7 @@ export async function handleApprovalResponse(
     },
     deps: ApprovalHandlerDeps
 ): Promise<void> {
-    const { pendingApprovals, cliSessions, wsManager } = deps;
+    const { pendingApprovals, pendingApprovalRequests, cliSessions, wsManager } = deps;
 
     // Flow 1: HTTP approval (legacy, for PrintPlugin)
     if (data.requestId) {
@@ -39,6 +41,7 @@ export async function handleApprovalResponse(
             });
             pendingApprovals.delete(data.requestId);
         }
+        pendingApprovalRequests.delete(data.requestId);
     }
 
     // Recover sessionId from requestId if missing (Runner generates requestId as `${sessionId}-${timestamp}`)

@@ -37,6 +37,15 @@ const WS_PING_TIMEOUT_MS = parseInt(process.env.DISCODE_WS_PING_TIMEOUT || '9000
 
 const runnerOfflineTimers = new Map<string, NodeJS.Timeout>();
 
+function isInvalidWebhookTokenError(error: any): boolean {
+    return (
+        error?.code === 50027 ||
+        error?.rawError?.code === 50027 ||
+        error?.code === 10015 ||
+        error?.rawError?.code === 10015
+    );
+}
+
 function applyDefaultRunnerConfig(runner: RunnerInfo): void {
     if (!runner.config) {
         runner.config = {
@@ -511,6 +520,40 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
             break;
         }
 
+        case 'model_list_response': {
+            const data = message.data as {
+                requestId?: string;
+                runnerId?: string;
+                cliType?: 'claude' | 'codex';
+                models?: Array<{ id: string; label: string; description?: string; isDefault?: boolean }>;
+                defaultModel?: string | null;
+                nextCursor?: string | null;
+                error?: string;
+            };
+
+            if (data?.requestId) {
+                const pending = botState.pendingModelListRequests.get(data.requestId);
+                if (pending) {
+                    clearTimeout(pending.timeout);
+                    botState.pendingModelListRequests.delete(data.requestId);
+                    pending.resolve(data);
+                }
+            }
+
+            if (data?.runnerId && data?.cliType && Array.isArray(data.models) && !data.error) {
+                const cacheKey = `${data.runnerId}:${data.cliType}`;
+                botState.runnerModelCache.set(cacheKey, {
+                    runnerId: data.runnerId,
+                    cliType: data.cliType,
+                    models: data.models,
+                    defaultModel: data.defaultModel ?? null,
+                    nextCursor: data.nextCursor ?? null,
+                    fetchedAt: Date.now()
+                });
+            }
+            break;
+        }
+
         case 'sync_session_discovered':
             await handleSyncSessionDiscovered(message.data);
             break;
@@ -717,6 +760,9 @@ async function handleRegister(ws: any, data: any): Promise<void> {
         if (wsConn) {
             const activeSessions = storage.getRunnerSessions(data.runnerId).filter(s => s.status === 'active');
             for (const session of activeSessions) {
+                if (session.plugin === 'claude-sdk' || session.plugin === 'codex-sdk') {
+                    botState.suppressSessionReadyNotification.add(session.sessionId);
+                }
                 const startOptions = buildSessionStartOptions(
                     storage.getRunner(data.runnerId),
                     undefined,
@@ -1443,6 +1489,8 @@ async function handleSessionReady(data: any): Promise<void> {
         console.error(`[handleSessionReady] Session not found: ${sessionId}`);
         return;
     }
+    const suppressReadyNotice = botState.suppressSessionReadyNotification.delete(sessionId)
+        && (session.plugin === 'claude-sdk' || session.plugin === 'codex-sdk');
 
     // Mark session as active
     session.status = 'active';
@@ -1480,22 +1528,39 @@ async function handleSessionReady(data: any): Promise<void> {
             const buttonRow = new ActionRowBuilder<ButtonBuilder>()
                 .addComponents(goToThreadButton);
 
-            await thread.send({
-                content,
-                embeds: [readyEmbed]
-            });
+            if (!suppressReadyNotice) {
+                await thread.send({
+                    content,
+                    embeds: [readyEmbed]
+                });
+            }
 
             // Update ephemeral message if we have the token
-            if (session.interactionToken && botState.client.application) {
-                try {
-                    const webhook = new WebhookClient({ id: botState.client.application.id, token: session.interactionToken });
-                    await webhook.editMessage('@original', {
-                        embeds: [readyEmbed],
-                        components: [buttonRow]
-                    });
+            if (!suppressReadyNotice && session.interactionToken && botState.client.application) {
+                const sessionAgeMs = Date.now() - new Date(session.createdAt).getTime();
+                const interactionTokenLikelyExpired = Number.isFinite(sessionAgeMs) && sessionAgeMs > (14 * 60 * 1000);
+                if (interactionTokenLikelyExpired) {
+                    storage.updateSession(session.sessionId, { interactionToken: '' });
+                } else {
+                    try {
+                        const webhook = new WebhookClient({ id: botState.client.application.id, token: session.interactionToken });
+                        await webhook.editMessage('@original', {
+                            embeds: [readyEmbed],
+                            components: [buttonRow]
+                        });
 
-                } catch (error) {
-                    console.error('Failed to update ephemeral message:', error);
+                        // Token is one-shot for this UX flow; clear it after successful use.
+                        storage.updateSession(session.sessionId, { interactionToken: '' });
+
+                    } catch (error) {
+                        if (isInvalidWebhookTokenError(error)) {
+                            // Token expired/invalid: clear it so reconnects don't keep retrying/log-spamming.
+                            storage.updateSession(session.sessionId, { interactionToken: '' });
+                            console.warn(`[handleSessionReady] Ephemeral token expired for session ${session.sessionId}; skipping ephemeral update.`);
+                        } else {
+                            console.error('Failed to update ephemeral message:', error);
+                        }
+                    }
                 }
             }
         }

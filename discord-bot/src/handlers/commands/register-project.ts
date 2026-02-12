@@ -82,6 +82,7 @@ export async function handleRegisterProject(interaction: ChatInputCommandInterac
         // Trigger a sync for this project
         const sessionSync = getSessionSyncService();
         if (sessionSync) {
+            await sessionSync.ensureProjectStateForRunner(runnerId, path);
             await sessionSync.syncProjectSessions(runnerId, path);
         }
 

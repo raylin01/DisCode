@@ -48,6 +48,14 @@ import {
   handleResumeCodex,
 } from './handlers/index.js';
 
+function isUnknownInteraction(error: any): boolean {
+  return error?.code === 10062 || error?.rawError?.code === 10062;
+}
+
+function isAlreadyAcknowledged(error: any): boolean {
+  return error?.code === 40060 || error?.rawError?.code === 40060;
+}
+
 // Load configuration
 const config = getConfig();
 const DISCORD_TOKEN = config.discordToken;
@@ -104,6 +112,11 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
         await handleButtonInteraction(interaction);
         return;
       }
+      // Handle string select menu interactions through the same router
+      if (interaction.isStringSelectMenu()) {
+        await handleButtonInteraction(interaction);
+        return;
+      }
       // Handle modal submissions
       if (interaction.isModalSubmit()) {
         await handleModalSubmit(interaction);
@@ -113,6 +126,9 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
     }
   } catch (error) {
     console.error('Error handling interaction:', error);
+    if (isUnknownInteraction(error) || isAlreadyAcknowledged(error)) {
+      return;
+    }
     try {
         if ((interaction as any).replied || (interaction as any).deferred) {
             await (interaction as any).followUp({ content: '❌ Interaction failed.', flags: 64 });
@@ -260,6 +276,9 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
     }
   } catch (error) {
     console.error(`Error handling command ${commandName}:`, error);
+    if (isUnknownInteraction(error) || isAlreadyAcknowledged(error)) {
+      return;
+    }
     
     // Check if we can still reply
     if (interaction.replied || interaction.deferred) {
@@ -269,6 +288,9 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
                 flags: 64
             });
         } catch (followUpError) {
+             if (isUnknownInteraction(followUpError) || isAlreadyAcknowledged(followUpError)) {
+                return;
+             }
              console.error('Failed to follow up with error:', followUpError);
         }
     } else {
@@ -278,6 +300,9 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
                 flags: 64
             });
         } catch (replyError) {
+             if (isUnknownInteraction(replyError) || isAlreadyAcknowledged(replyError)) {
+                return;
+             }
              console.error('Failed to reply with error:', replyError);
         }
     }
@@ -333,6 +358,9 @@ botState.client.on(Events.MessageCreate, async (message) => {
         const syncEntry = sessionSync.getSessionByThreadId(message.channel.id);
         if (syncEntry) {
           // It's a synced session. Let's auto-resume it!
+          const syncedCliType = syncEntry.session.cliType === 'codex' ? 'codex' : 'claude';
+          const syncedPlugin = syncedCliType === 'codex' ? 'codex-sdk' : 'claude-sdk';
+          const externalSessionId = syncEntry.session.externalSessionId;
           
           // 1. Verify access
           const runner = storage.getRunner(syncEntry.runnerId);
@@ -355,17 +383,17 @@ botState.client.on(Events.MessageCreate, async (message) => {
 
           // 3. Send START session command (Resume)
           // We need to construct a valid Session object for storage if it doesn't exist
-          let sessionObj = storage.getSession(syncEntry.session.claudeSessionId);
+          let sessionObj = storage.getSession(externalSessionId);
           if (!sessionObj) {
                sessionObj = {
-                  sessionId: syncEntry.session.claudeSessionId,
+                  sessionId: externalSessionId,
                   runnerId: runner.runnerId,
                   channelId: syncEntry.session.threadId || message.channel.id, // thread is channel
                   threadId: syncEntry.session.threadId || message.channel.id,
                   createdAt: new Date().toISOString(),
                   status: 'active',
-                  cliType: 'claude',
-                  plugin: 'claude-sdk',
+                  cliType: syncedCliType,
+                  plugin: syncedPlugin,
                   folderPath: syncEntry.projectPath, // Important for context
                   creatorId: message.author.id,
                   interactionToken: '' // No token as it's auto-resume
@@ -377,17 +405,17 @@ botState.client.on(Events.MessageCreate, async (message) => {
           }
 
           // Mark as owned immediately to stop watcher syncing (bidirectional switch)
-          sessionSync.markSessionAsOwned(syncEntry.session.claudeSessionId);
+          sessionSync.markSessionAsOwned(externalSessionId, syncedCliType);
 
           // Update active sessions state
-          botState.sessionStatuses.set(syncEntry.session.claudeSessionId, 'working');
+          botState.sessionStatuses.set(externalSessionId, 'working');
 
           // Send start/resume command
           const startOptions = buildSessionStartOptions(
               runner,
               undefined,
-              { resumeSessionId: syncEntry.session.claudeSessionId },
-              'claude'
+              { resumeSessionId: externalSessionId },
+              syncedCliType
           );
           sessionObj.options = startOptions;
           storage.updateSession(sessionObj.sessionId, sessionObj);
@@ -395,10 +423,10 @@ botState.client.on(Events.MessageCreate, async (message) => {
           ws.send(JSON.stringify({
               type: 'session_start',
               data: {
-                  sessionId: syncEntry.session.claudeSessionId,
+                  sessionId: externalSessionId,
                   runnerId: runner.runnerId,
-                  cliType: 'claude',
-                  plugin: 'claude-sdk',
+                  cliType: syncedCliType,
+                  plugin: syncedPlugin,
                   folderPath: syncEntry.projectPath,
                   resume: true,
                   options: startOptions
@@ -416,7 +444,7 @@ botState.client.on(Events.MessageCreate, async (message) => {
           ws.send(JSON.stringify({
               type: 'user_message',
               data: {
-                  sessionId: syncEntry.session.claudeSessionId,
+                  sessionId: externalSessionId,
                   userId: message.author.id,
                   username: message.author.username,
                   content: message.content,
@@ -426,7 +454,7 @@ botState.client.on(Events.MessageCreate, async (message) => {
           }));
 
           // Clear streaming state
-          botState.streamingMessages.delete(syncEntry.session.claudeSessionId);
+          botState.streamingMessages.delete(externalSessionId);
 
           // Done! Runner plugin will handle queueing the message until ready.
           return;

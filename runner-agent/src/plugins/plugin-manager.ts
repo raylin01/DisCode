@@ -270,6 +270,10 @@ export class PluginManager extends EventEmitter {
             this.emit('approval', data);
         });
 
+        (plugin as any).on('approval_canceled', (data: { sessionId: string; requestId?: string }) => {
+            this.emit('approval_canceled', data);
+        });
+
         plugin.on('status', (data: StatusEvent) => {
             this.emit('status', data);
         });
@@ -301,6 +305,7 @@ export class PluginManager extends EventEmitter {
 
     on(event: 'output', listener: (data: OutputEvent) => void): this;
     on(event: 'approval', listener: (data: ApprovalEvent) => void): this;
+    on(event: 'approval_canceled', listener: (data: { sessionId: string; requestId?: string }) => void): this;
     on(event: 'status', listener: (data: StatusEvent) => void): this;
     on(event: 'error', listener: (data: ErrorEvent) => void): this;
     on(event: 'metadata', listener: (data: MetadataEvent) => void): this;

@@ -4,23 +4,29 @@
  * Handles all button clicks from Discord UI.
  */
 
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } from 'discord.js';
 import * as botState from '../state.js';
 import { storage } from '../storage.js';
 import { buildSessionStartOptions } from '../utils/session-options.js';
 import { createErrorEmbed, createApprovalDecisionEmbed } from '../utils/embeds.js';
 import { handlePermissionButton, rebuildPermissionButtons, handleTellClaudeModal } from './permission-buttons.js';
 import { permissionStateStore } from '../permissions/state-store.js';
+import { attemptPermissionReissue, extractPermissionRequestId } from '../permissions/reissue.js';
 import { handleRunnerConfig, handleConfigAction } from './config.js';
 import { handleSyncProjects } from './commands/sync-projects.js';
 import { getSessionSyncService } from '../services/session-sync.js';
 import { getCategoryManager } from '../services/category-manager.js';
+import { fetchRunnerModels, AUTO_MODEL_VALUE } from '../utils/models.js';
 import { listSessions } from '../../../claude-client/src/sessions.js';
 
 const EPHEMERAL_FLAGS = { flags: 64 };
 
 function isUnknownInteraction(error: any): boolean {
     return error?.code === 10062 || error?.rawError?.code === 10062;
+}
+
+function isAlreadyAcknowledged(error: any): boolean {
+    return error?.code === 40060 || error?.rawError?.code === 40060;
 }
 
 async function sendExpiredInteractionNotice(interaction: any, message?: string): Promise<void> {
@@ -33,12 +39,37 @@ async function sendExpiredInteractionNotice(interaction: any, message?: string):
     }
 }
 
+async function reissuePermissionFromInteraction(interaction: any, customId: string, reason: 'interaction_expired' | 'missing_local_state'): Promise<boolean> {
+    const requestId = extractPermissionRequestId(customId);
+    if (!requestId) return false;
+
+    const { requested } = await attemptPermissionReissue({
+        requestId,
+        channelId: interaction?.channelId || interaction?.channel?.id,
+        reason
+    });
+
+    if (!requested || !interaction?.channel?.isTextBased?.()) {
+        return requested;
+    }
+
+    await interaction.channel.send({
+        content: 'That permission interaction expired, so I requested a fresh approval prompt from the runner.'
+    }).catch((error: any) => console.error('[Buttons] Failed to send permission reissue notice:', error));
+
+    return requested;
+}
+
 async function safeDeferReply(interaction: any, fallbackMessage?: string): Promise<boolean> {
     if (interaction.deferred || interaction.replied) return true;
     try {
         await interaction.deferReply(EPHEMERAL_FLAGS);
         return true;
     } catch (error) {
+        if (isAlreadyAcknowledged(error)) {
+            // Another path acknowledged this interaction first.
+            return true;
+        }
         if (isUnknownInteraction(error)) {
             await sendExpiredInteractionNotice(interaction, fallbackMessage);
             return false;
@@ -49,8 +80,48 @@ async function safeDeferReply(interaction: any, fallbackMessage?: string): Promi
 
 async function safeEditReply(interaction: any, payload: any, fallbackMessage?: string): Promise<void> {
     try {
-        await interaction.editReply(payload);
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply(payload);
+            return;
+        }
+
+        // If not acknowledged yet, use update for component interactions, otherwise reply.
+        if (interaction.isButton?.() || interaction.isStringSelectMenu?.()) {
+            const originalUpdate = (interaction as any).__discodeOriginalUpdate || interaction.update;
+            await originalUpdate(payload);
+            return;
+        }
+
+        const originalReply = (interaction as any).__discodeOriginalReply || interaction.reply;
+        await originalReply(payload);
     } catch (error) {
+        if ((error as any)?.code === 'InteractionNotReplied') {
+            // Try to acknowledge as a fresh response if local state is stale.
+            try {
+                if (interaction.isButton?.() || interaction.isStringSelectMenu?.()) {
+                    const originalUpdate = (interaction as any).__discodeOriginalUpdate || interaction.update;
+                    await originalUpdate(payload);
+                } else {
+                    const originalReply = (interaction as any).__discodeOriginalReply || interaction.reply;
+                    await originalReply(payload);
+                }
+                return;
+            } catch (fallbackError) {
+                if (isAlreadyAcknowledged(fallbackError)) {
+                    await interaction.followUp?.(payload).catch(() => {});
+                    return;
+                }
+                if (isUnknownInteraction(fallbackError)) {
+                    await sendExpiredInteractionNotice(interaction, fallbackMessage);
+                    return;
+                }
+                throw fallbackError;
+            }
+        }
+        if (isAlreadyAcknowledged(error)) {
+            await interaction.followUp?.(payload).catch(() => {});
+            return;
+        }
         if (isUnknownInteraction(error)) {
             await sendExpiredInteractionNotice(interaction, fallbackMessage);
             return;
@@ -70,6 +141,13 @@ async function safeReply(interaction: any, payload: any, fallbackMessage?: strin
         const originalReply = (interaction as any).__discodeOriginalReply || interaction.reply;
         await originalReply(payload);
     } catch (error) {
+        if (isAlreadyAcknowledged(error)) {
+            // Fallback when interaction was acknowledged elsewhere.
+            if (interaction.followUp) {
+                await interaction.followUp(payload).catch(() => {});
+            }
+            return;
+        }
         if (isUnknownInteraction(error)) {
             await sendExpiredInteractionNotice(interaction, fallbackMessage);
             return;
@@ -84,6 +162,10 @@ async function safeDeferUpdate(interaction: any, fallbackMessage?: string): Prom
         await interaction.deferUpdate();
         return true;
     } catch (error) {
+        if (isAlreadyAcknowledged(error)) {
+            // Another path acknowledged this interaction first.
+            return true;
+        }
         if (isUnknownInteraction(error)) {
             await sendExpiredInteractionNotice(interaction, fallbackMessage);
             return false;
@@ -101,6 +183,10 @@ async function safeUpdate(interaction: any, payload: any, fallbackMessage?: stri
             await interaction.editReply(payload);
         }
     } catch (error) {
+        if (isAlreadyAcknowledged(error)) {
+            await interaction.editReply(payload).catch(() => {});
+            return;
+        }
         if (isUnknownInteraction(error)) {
             await sendExpiredInteractionNotice(interaction, fallbackMessage);
             return;
@@ -111,10 +197,18 @@ async function safeUpdate(interaction: any, payload: any, fallbackMessage?: stri
 
 async function safeImmediateUpdate(interaction: any, payload: any, fallbackMessage?: string): Promise<boolean> {
     try {
-        const originalUpdate = (interaction as any).__discodeOriginalUpdate || interaction.update;
-        await originalUpdate(payload);
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply(payload);
+        } else {
+            const originalUpdate = (interaction as any).__discodeOriginalUpdate || interaction.update;
+            await originalUpdate(payload);
+        }
         return true;
     } catch (error) {
+        if (isAlreadyAcknowledged(error)) {
+            await interaction.editReply(payload).catch(() => {});
+            return true;
+        }
         if (isUnknownInteraction(error)) {
             await sendExpiredInteractionNotice(interaction, fallbackMessage);
             return false;
@@ -156,22 +250,37 @@ function patchInteraction(interaction: any): void {
 }
 
 function getAutoDeferMode(customId: string): 'reply' | 'update' | null {
-    if (customId.startsWith('prompt_')) return null;
-    if (customId.startsWith('other_')) return null;
-    if (customId.startsWith('tell_')) return null;
-    if (customId === 'session_custom_folder') return null;
-    if (customId === 'session_start') return null;
-    if (customId.startsWith('session_settings_modal:')) return null;
-    if (customId.startsWith('config:')) return null;
-    if (customId.startsWith('runner_config:')) return null;
+    const isConfigModal = customId.startsWith('config:') && customId.split(':')[2] === 'modal';
+    const isModalTrigger =
+        customId.startsWith('prompt_') ||
+        customId.startsWith('other_') ||
+        customId.startsWith('tell_') ||
+        customId.startsWith('perm_tell_') ||
+        customId === 'session_custom_folder' ||
+        customId.startsWith('session_settings_modal:') ||
+        isConfigModal;
+
+    if (isModalTrigger) return null;
 
     if (customId.startsWith('new_session:')) return 'reply';
     if (customId.startsWith('list_sessions:')) return 'reply';
     if (customId.startsWith('sync_sessions:')) return 'reply';
+    if (customId.startsWith('sync_projects:')) return 'reply';
+    if (customId.startsWith('runner_stats:')) return 'reply';
+    if (customId.startsWith('create_folder_')) return 'reply';
 
+    if (customId.startsWith('runner_config:')) return 'update';
+    if (customId.startsWith('config:')) return 'update';
+    if (customId.startsWith('perm_')) return 'update';
+    if (customId.startsWith('allow_')) return 'update';
+    if (customId.startsWith('deny_')) return 'update';
+    if (customId.startsWith('scope_')) return 'update';
+    if (customId.startsWith('option_')) return 'update';
+    if (customId.startsWith('multiselect_')) return 'update';
     if (customId.startsWith('session_')) return 'update';
 
-    return null;
+    // Default to update-defer for unknown buttons so single-clicks still get acknowledged.
+    return 'update';
 }
 
 function inferCliTypeFromInteraction(interaction: any, plugin: string): 'claude' | 'gemini' | 'codex' | 'terminal' | null {
@@ -224,6 +333,163 @@ function inferSessionFromReviewEmbed(interaction: any): Partial<any> | null {
     return Object.keys(inferred).length > 0 ? inferred : null;
 }
 
+function truncateForDiscord(value: string, max: number): string {
+    if (value.length <= max) return value;
+    return `${value.slice(0, Math.max(0, max - 1))}…`;
+}
+
+function isModelSelectableCli(cliType: string | undefined): cliType is 'claude' | 'codex' {
+    return cliType === 'claude' || cliType === 'codex';
+}
+
+async function handleSessionModelPicker(interaction: any, userId: string, forceRefresh: boolean = false): Promise<void> {
+    const state = await resolveSessionCreationState(interaction, userId);
+    if (!state || !state.runnerId || !state.cliType) {
+        await interaction.editReply({
+            embeds: [createErrorEmbed('Session Expired', 'Please restart with /create-session.')],
+            components: []
+        });
+        return;
+    }
+
+    if (!isModelSelectableCli(state.cliType)) {
+        await interaction.editReply({
+            embeds: [createErrorEmbed('Model Selection Unavailable', `Model picker is only available for Claude and Codex sessions.`)],
+            components: [
+                new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('session_review')
+                        .setLabel('Back')
+                        .setStyle(ButtonStyle.Secondary)
+                )
+            ]
+        });
+        return;
+    }
+
+    const runner = storage.getRunner(state.runnerId);
+    if (!runner) {
+        await interaction.editReply({
+            embeds: [createErrorEmbed('Runner Not Found', 'Runner no longer exists.')],
+            components: []
+        });
+        return;
+    }
+
+    const result = await fetchRunnerModels(state.runnerId, state.cliType, { forceRefresh, limit: 100 });
+    if (result.error) {
+        await interaction.editReply({
+            embeds: [createErrorEmbed('Model Fetch Failed', result.error)],
+            components: [
+                new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('session_pick_model_refresh')
+                        .setLabel('Retry')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('session_review')
+                        .setLabel('Back')
+                        .setStyle(ButtonStyle.Secondary)
+                )
+            ]
+        });
+        return;
+    }
+
+    const currentOverride = state.options?.model;
+    const runnerDefault = state.cliType === 'claude'
+        ? runner.config?.claudeDefaults?.model
+        : runner.config?.codexDefaults?.model;
+
+    const options = [
+        new StringSelectMenuOptionBuilder()
+            .setLabel('Auto (use runner default)')
+            .setValue(AUTO_MODEL_VALUE)
+            .setDescription('Do not set a per-session model override.')
+            .setDefault(!currentOverride),
+        ...result.models.slice(0, 24).map(model => {
+            const option = new StringSelectMenuOptionBuilder()
+                .setLabel(truncateForDiscord(model.label || model.id, 100))
+                .setValue(model.id)
+                .setDefault(currentOverride === model.id);
+
+            const description = model.description
+                ? truncateForDiscord(model.description, 100)
+                : (model.isDefault ? 'Marked default by CLI.' : `Model ID: ${model.id}`);
+            option.setDescription(description);
+            return option;
+        })
+    ];
+
+    if (currentOverride && !result.models.some(model => model.id === currentOverride)) {
+        if (options.length >= 25) {
+            options.pop();
+        }
+        options.push(
+            new StringSelectMenuOptionBuilder()
+                .setLabel(truncateForDiscord(`Current override: ${currentOverride}`, 100))
+                .setValue(currentOverride)
+                .setDescription('Current override is not in the fetched catalog.')
+                .setDefault(true)
+        );
+    }
+
+    const embed = new EmbedBuilder()
+        .setColor(0x0099FF)
+        .setTitle(`Select ${state.cliType.toUpperCase()} Model`)
+        .setDescription(
+            `Runner: \`${runner.name}\`\n` +
+            `Per-session override: \`${currentOverride || 'Auto'}\`\n` +
+            `Runner default: \`${runnerDefault || 'Auto'}\`\n` +
+            `Available models: **${result.models.length}**${result.models.length > 24 ? ' (showing first 24)' : ''}`
+        );
+
+    const selectRow = new ActionRowBuilder<StringSelectMenuBuilder>()
+        .addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId('session_select_model')
+                .setPlaceholder('Choose model override…')
+                .addOptions(options)
+        );
+
+    const actionsRow = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('session_pick_model_refresh')
+                .setLabel('Refresh')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('session_review')
+                .setLabel('Back to Review')
+                .setStyle(ButtonStyle.Primary)
+        );
+
+    await interaction.editReply({ embeds: [embed], components: [selectRow, actionsRow] });
+}
+
+async function handleSessionModelSelected(interaction: any, userId: string): Promise<void> {
+    const state = await resolveSessionCreationState(interaction, userId);
+    if (!state) {
+        await interaction.editReply({
+            embeds: [createErrorEmbed('Session Expired', 'Please restart with /create-session.')],
+            components: []
+        });
+        return;
+    }
+
+    if (!state.options) state.options = {};
+
+    const selected = interaction.values?.[0];
+    if (!selected || selected === AUTO_MODEL_VALUE) {
+        delete state.options.model;
+    } else {
+        state.options.model = selected;
+    }
+
+    botState.sessionCreationState.set(userId, state);
+    await handleSessionReview(interaction, userId);
+}
+
 /**
  * Main button interaction dispatcher
  */
@@ -244,13 +510,19 @@ export async function handleButtonInteraction(interaction: any): Promise<void> {
             interaction,
             'Buttons expired. Please use the latest dashboard message or run /create-session.'
         );
-        if (!acknowledged) return;
+        if (!acknowledged) {
+            await reissuePermissionFromInteraction(interaction, customId, 'interaction_expired');
+            return;
+        }
     } else if (autoDefer === 'update') {
         const acknowledged = await safeDeferUpdate(
             interaction,
             'Buttons expired. Please use the latest session prompt or run /create-session.'
         );
-        if (!acknowledged) return;
+        if (!acknowledged) {
+            await reissuePermissionFromInteraction(interaction, customId, 'interaction_expired');
+            return;
+        }
     }
 
     // Handle prompt buttons (open modal)
@@ -368,6 +640,26 @@ export async function handleButtonInteraction(interaction: any): Promise<void> {
 
     if (customId === 'session_customize') {
         await handleCustomizeSettings(interaction, userId);
+        return;
+    }
+
+    if (customId === 'session_pick_model') {
+        await handleSessionModelPicker(interaction, userId, false);
+        return;
+    }
+
+    if (customId === 'session_pick_model_refresh') {
+        await handleSessionModelPicker(interaction, userId, true);
+        return;
+    }
+
+    if (customId === 'session_select_model') {
+        await handleSessionModelSelected(interaction, userId);
+        return;
+    }
+
+    if (customId === 'session_review') {
+        await handleSessionReview(interaction, userId);
         return;
     }
 
@@ -542,8 +834,15 @@ async function handleOptionButton(interaction: any, userId: string, customId: st
 
     const pending = botState.pendingApprovals.get(requestId);
     if (!pending) {
+        const { requested } = await attemptPermissionReissue({
+            requestId,
+            channelId: interaction?.channelId || interaction?.channel?.id,
+            reason: 'missing_local_state'
+        });
         await interaction.reply({
-            embeds: [createErrorEmbed('Expired', 'This approval request has expired.')],
+            embeds: [createErrorEmbed('Expired', requested
+                ? 'This approval request expired locally. I asked the runner to re-send it.'
+                : 'This approval request has expired.')],
             flags: 64
         });
         return;
@@ -592,9 +891,6 @@ async function handleOptionButton(interaction: any, userId: string, customId: st
  * Handle approval buttons (allow/deny/modify/allow_all)
  */
 async function handleApprovalButton(interaction: any, userId: string, customId: string): Promise<void> {
-    // Defer immediately to prevent 3-second Discord timeout
-    await interaction.deferUpdate().catch(() => {});
-    
     if (customId.startsWith('allow_all_')) {
         const requestId = customId.replace('allow_all_', '');
         await handleAllowAll(interaction, userId, requestId);
@@ -613,7 +909,7 @@ async function handleApprovalButton(interaction: any, userId: string, customId: 
     if (state) {
         if (state.status === 'completed') {
              // Already handled, just ensure UI is clean
-             await interaction.editReply({ components: [] }).catch(() => {});
+             await safeUpdate(interaction, { components: [] }).catch(() => {});
              return;
         }
         pending = state.request;
@@ -624,8 +920,15 @@ async function handleApprovalButton(interaction: any, userId: string, customId: 
 
     if (!pending) {
         console.log(`[DEBUG] Approval not found!`);
-        await interaction.editReply({
-            embeds: [createErrorEmbed('Expired', 'This approval request has expired.')],
+        const { requested } = await attemptPermissionReissue({
+            requestId,
+            channelId: interaction?.channelId || interaction?.channel?.id,
+            reason: 'missing_local_state'
+        });
+        await safeUpdate(interaction, {
+            embeds: [createErrorEmbed('Expired', requested
+                ? 'This approval request expired locally. I asked the runner to re-send it.'
+                : 'This approval request has expired.')],
             components: []
         }).catch((e: any) => console.error('[DEBUG] Failed to editReply:', e.message));
         return;
@@ -665,7 +968,7 @@ async function handleApprovalButton(interaction: any, userId: string, customId: 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(resultButton);
     const embed = createApprovalDecisionEmbed(allow, pending.toolName, interaction.user.username, undefined, pending.toolInput as Record<string, any>);
 
-    await interaction.editReply({
+    await safeUpdate(interaction, {
         embeds: [embed],
         components: [row]
     });
@@ -688,7 +991,6 @@ async function handleApprovalButton(interaction: any, userId: string, customId: 
  * Handle Allow All button
  */
 async function handleAllowAll(interaction: any, userId: string, requestId: string): Promise<void> {
-    // Note: deferUpdate already called by handleApprovalButton
     // Try new store first (supports soft-delete/completion state)
     const state = permissionStateStore.get(requestId);
     let pending: any = null;
@@ -696,7 +998,7 @@ async function handleAllowAll(interaction: any, userId: string, requestId: strin
     if (state) {
         if (state.status === 'completed') {
              // Already handled, just ensure UI is clean
-             await interaction.editReply({ components: [] }).catch(() => {});
+             await safeUpdate(interaction, { components: [] }).catch(() => {});
              return;
         }
         pending = state.request;
@@ -707,8 +1009,15 @@ async function handleAllowAll(interaction: any, userId: string, requestId: strin
 
     if (!pending) {
         console.log(`[DEBUG] AllowAll not found!`);
-        await interaction.editReply({
-            embeds: [createErrorEmbed('Expired', 'This approval request has expired.')],
+        const { requested } = await attemptPermissionReissue({
+            requestId,
+            channelId: interaction?.channelId || interaction?.channel?.id,
+            reason: 'missing_local_state'
+        });
+        await safeUpdate(interaction, {
+            embeds: [createErrorEmbed('Expired', requested
+                ? 'This approval request expired locally. I asked the runner to re-send it.'
+                : 'This approval request has expired.')],
             components: []
         }).catch((e: any) => console.error('[DEBUG] Failed to editReply:', e.message));
         return;
@@ -716,7 +1025,7 @@ async function handleAllowAll(interaction: any, userId: string, requestId: strin
 
     const runner = storage.getRunner(pending.runnerId);
     if (!runner || !storage.canUserAccessRunner(userId, pending.runnerId)) {
-        await interaction.editReply({
+        await safeUpdate(interaction, {
             embeds: [createErrorEmbed('Unauthorized', 'You are not authorized to approve this request.')],
             components: []
         }).catch((e: any) => console.error('[DEBUG] Failed to editReply:', e.message));
@@ -758,7 +1067,7 @@ async function handleAllowAll(interaction: any, userId: string, requestId: strin
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(resultButton);
     const embed = createApprovalDecisionEmbed(true, pending.toolName, interaction.user.username, 'auto-approved for session');
 
-    await interaction.editReply({
+    await safeUpdate(interaction, {
         embeds: [embed],
         components: [row]
     });
@@ -821,8 +1130,15 @@ async function handleScopeButton(interaction: any, userId: string, requestId: st
 async function handleTellClaude(interaction: any, userId: string, requestId: string): Promise<void> {
     const pending = botState.pendingApprovals.get(requestId);
     if (!pending) {
+        const { requested } = await attemptPermissionReissue({
+            requestId,
+            channelId: interaction?.channelId || interaction?.channel?.id,
+            reason: 'missing_local_state'
+        });
         await interaction.reply({
-            embeds: [createErrorEmbed('Expired', 'This approval request has expired.')],
+            embeds: [createErrorEmbed('Expired', requested
+                ? 'This approval request expired locally. I asked the runner to re-send it.'
+                : 'This approval request has expired.')],
             flags: 64
         });
         return;
@@ -1429,10 +1745,14 @@ async function handleSessionCancel(interaction: any, userId: string): Promise<vo
 // ===================================
 
 export async function handleSessionReview(interaction: any, userId: string): Promise<void> {
-    const state = botState.sessionCreationState.get(userId);
+    const state = await resolveSessionCreationState(interaction, userId);
     if (!state || !state.runnerId || !state.cliType || !state.folderPath) {
+        const missing: string[] = [];
+        if (!state?.runnerId) missing.push('runner');
+        if (!state?.cliType) missing.push('cli');
+        if (!state?.folderPath) missing.push('folder');
         await interaction.reply({
-            embeds: [createErrorEmbed('Session Error', 'Missing required session information.')],
+            embeds: [createErrorEmbed('Session Error', `Missing required session information${missing.length ? `: ${missing.join(', ')}` : ''}.`)],
             flags: 64
         });
         return;
@@ -1523,16 +1843,31 @@ export async function handleSessionReview(interaction: any, userId: string): Pro
                 .setEmoji('❌')
         );
 
-    if (interaction.isButton()) {
+    const modelRows: ActionRowBuilder<ButtonBuilder>[] = [];
+    if (state.cliType === 'claude' || state.cliType === 'codex') {
+        modelRows.push(
+            new ActionRowBuilder<ButtonBuilder>().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('session_pick_model')
+                    .setLabel('Pick Model')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setEmoji('🧠')
+            )
+        );
+    }
+
+    const components = [row, ...modelRows];
+
+    if (interaction.isButton?.() || interaction.isStringSelectMenu?.()) {
         await interaction.update({
             embeds: [embed],
-            components: [row]
+            components
         });
     } else {
         // From modal or other source
         await interaction.reply({
             embeds: [embed],
-            components: [row]
+            components
         });
     }
 }
@@ -1822,29 +2157,15 @@ async function handleSessionSettingsModal(interaction: any, userId: string, cust
 }
 
 async function handleStartSession(interaction: any, userId: string): Promise<void> {
-    let state = botState.sessionCreationState.get(userId);
-    if (!state || !state.runnerId || !state.cliType || !state.folderPath) {
-        await recoverSessionCreationState(interaction, userId);
-        state = botState.sessionCreationState.get(userId) ?? state;
-
-        if (state) {
-            const inferred = inferSessionFromReviewEmbed(interaction);
-            if (inferred) {
-                state = { ...state, ...inferred };
-            }
-            if (!state.projectChannelId) {
-                const projectChannelId = await getProjectChannelIdFromContext(interaction);
-                if (projectChannelId) {
-                    (state as any).projectChannelId = projectChannelId;
-                }
-            }
-            botState.sessionCreationState.set(userId, state);
-        }
-    }
+    const state = await resolveSessionCreationState(interaction, userId);
 
     if (!state || !state.runnerId || !state.cliType || !state.folderPath) {
+        const missing: string[] = [];
+        if (!state?.runnerId) missing.push('runner');
+        if (!state?.cliType) missing.push('cli');
+        if (!state?.folderPath) missing.push('folder');
         await interaction.reply({
-            embeds: [createErrorEmbed('Session Error', 'Missing required session information.')],
+            embeds: [createErrorEmbed('Session Error', `Missing required session information${missing.length ? `: ${missing.join(', ')}` : ''}.`)],
             flags: 64
         });
         return;
@@ -2022,9 +2343,17 @@ async function handleStartSession(interaction: any, userId: string): Promise<voi
  */
 async function handleMultiSelectToggle(interaction: any, userId: string, customId: string): Promise<void> {
     // Format: multiselect_<requestId>_<optionNumber>
-    const parts = customId.split('_');
-    const requestId = parts[1];
-    const optionNumber = parts[2];
+    const prefix = 'multiselect_';
+    const lastUnderscoreIndex = customId.lastIndexOf('_');
+    if (!customId.startsWith(prefix) || lastUnderscoreIndex <= prefix.length) {
+        await interaction.reply({
+            embeds: [createErrorEmbed('Invalid Action', 'Could not parse multi-select response.')],
+            flags: 64
+        });
+        return;
+    }
+    const requestId = customId.substring(prefix.length, lastUnderscoreIndex);
+    const optionNumber = customId.substring(lastUnderscoreIndex + 1);
 
     const multiSelect = botState.multiSelectState.get(requestId);
     if (!multiSelect) {
@@ -2038,8 +2367,15 @@ async function handleMultiSelectToggle(interaction: any, userId: string, customI
 
     const pending = botState.pendingApprovals.get(requestId);
     if (!pending) {
+        const { requested } = await attemptPermissionReissue({
+            requestId,
+            channelId: interaction?.channelId || interaction?.channel?.id,
+            reason: 'missing_local_state'
+        });
         await interaction.reply({
-            embeds: [createErrorEmbed('Expired', 'This approval request has expired.')],
+            embeds: [createErrorEmbed('Expired', requested
+                ? 'This approval request expired locally. I asked the runner to re-send it.'
+                : 'This approval request has expired.')],
             flags: 64
         });
         return;
@@ -2116,8 +2452,15 @@ async function handleMultiSelectSubmit(interaction: any, userId: string, customI
 
     const pending = botState.pendingApprovals.get(requestId);
     if (!pending) {
+        const { requested } = await attemptPermissionReissue({
+            requestId,
+            channelId: interaction?.channelId || interaction?.channel?.id,
+            reason: 'missing_local_state'
+        });
         await interaction.reply({
-            embeds: [createErrorEmbed('Expired', 'This approval request has expired.')],
+            embeds: [createErrorEmbed('Expired', requested
+                ? 'This approval request expired locally. I asked the runner to re-send it.'
+                : 'This approval request has expired.')],
             flags: 64
         });
         return;
@@ -2208,8 +2551,15 @@ async function handleOtherButton(interaction: any, userId: string, customId: str
     const pending = botState.pendingApprovals.get(requestId);
 
     if (!multiSelect && !pending) {
+        const { requested } = await attemptPermissionReissue({
+            requestId,
+            channelId: interaction?.channelId || interaction?.channel?.id,
+            reason: 'missing_local_state'
+        });
         await interaction.reply({
-            embeds: [createErrorEmbed('Expired', 'This question has expired.')],
+            embeds: [createErrorEmbed('Expired', requested
+                ? 'This question expired locally. I asked the runner to re-send it.'
+                : 'This question has expired.')],
             flags: 64
         });
         return;
@@ -2365,7 +2715,7 @@ async function handleNewSessionButton(interaction: any, userId: string, projectP
             }
             return;
         }
-        await interaction.editReply(payload);
+        await safeEditReply(interaction, payload);
         return;
     }
 
@@ -2429,7 +2779,7 @@ async function handleNewSessionButton(interaction: any, userId: string, projectP
             }
             return;
         }
-        await interaction.editReply(payload);
+        await safeEditReply(interaction, payload);
         return;
     }
 
@@ -2569,6 +2919,44 @@ async function recoverSessionCreationState(interaction: any, userId: string) {
         folderPath: projectPath,
         projectChannelId
     };
+    botState.sessionCreationState.set(userId, state);
+    return state;
+}
+
+async function resolveSessionCreationState(interaction: any, userId: string): Promise<any | null> {
+    let state = botState.sessionCreationState.get(userId) as any;
+
+    if (!state || !state.runnerId) {
+        state = await recoverSessionCreationState(interaction, userId);
+    }
+
+    if (!state) return null;
+
+    const inferred = inferSessionFromReviewEmbed(interaction);
+    if (inferred) {
+        state = { ...state, ...inferred };
+    }
+
+    if (!state.runnerId) {
+        const runnerId = await getRunnerIdFromContext(interaction);
+        if (runnerId) state.runnerId = runnerId;
+    }
+
+    if (!state.folderPath) {
+        const projectPath = await getProjectPathFromContext(interaction);
+        if (projectPath) state.folderPath = projectPath;
+    }
+
+    if (!state.cliType && state.plugin) {
+        const inferredCli = inferCliTypeFromInteraction(interaction, state.plugin);
+        if (inferredCli) state.cliType = inferredCli;
+    }
+
+    if (!state.projectChannelId) {
+        const projectChannelId = await getProjectChannelIdFromContext(interaction);
+        if (projectChannelId) state.projectChannelId = projectChannelId;
+    }
+
     botState.sessionCreationState.set(userId, state);
     return state;
 }

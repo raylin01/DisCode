@@ -1,0 +1,26 @@
+{
+  "name": "gemini-client",
+  "version": "0.1.0",
+  "description": "A standalone Node.js client for controlling Gemini CLI with session resume support",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "gemini",
+    "google",
+    "ai",
+    "cli",
+    "client",
+    "sdk"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

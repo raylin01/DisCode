@@ -60,7 +60,7 @@ export interface RunnerInfo {
     };
     projects?: Record<string, { channelId: string; lastSync?: string; dashboardMessageId?: string }>;
     // Persist session->thread mapping to prevent duplicates on restart
-    sessions?: Record<string, { threadId: string; projectPath: string; lastSync?: string }>;
+    sessions?: Record<string, { threadId: string; projectPath: string; lastSync?: string; cliType?: 'claude' | 'codex' }>;
   };
 }
 
@@ -106,7 +106,7 @@ export interface ApprovalResponse {
 
 // WebSocket messages
 export interface WebSocketMessage {
-  type: 'approval_request' | 'approval_response' | 'heartbeat' | 'register' | 'session_start' | 'session_ready' | 'session_end' | 'output' | 'user_message' | 'list_terminals' | 'terminal_list' | 'watch_terminal' | 'session_discovered' | 'sync_session_discovered' | 'sync_session_updated' | 'status' | 'action_item' | 'metadata' | 'discord_action' | 'assistant_message' | 'assistant_output' | 'spawn_thread' | 'tool_execution' | 'tool_result' | 'result' | 'sync_projects' | 'sync_projects_response' | 'sync_projects_progress' | 'sync_projects_complete' | 'sync_sessions' | 'sync_sessions_response' | 'sync_sessions_complete' | 'sync_status_request' | 'sync_status_response' | 'permission_decision' | 'permission_decision_ack' | 'session_control' | 'sync_session_messages' | 'runner_config_update' | 'runner_config_updated' | 'runner_health_request' | 'runner_health_response' | 'runner_logs_request' | 'runner_logs_response' | 'codex_thread_list_request' | 'codex_thread_list_response';
+  type: 'approval_request' | 'approval_response' | 'heartbeat' | 'register' | 'session_start' | 'session_ready' | 'session_end' | 'output' | 'user_message' | 'list_terminals' | 'terminal_list' | 'watch_terminal' | 'session_discovered' | 'sync_session_discovered' | 'sync_session_updated' | 'status' | 'action_item' | 'metadata' | 'discord_action' | 'assistant_message' | 'assistant_output' | 'spawn_thread' | 'tool_execution' | 'tool_result' | 'result' | 'sync_projects' | 'sync_projects_response' | 'sync_projects_progress' | 'sync_projects_complete' | 'sync_sessions' | 'sync_sessions_response' | 'sync_sessions_complete' | 'sync_status_request' | 'sync_status_response' | 'permission_decision' | 'permission_decision_ack' | 'permission_sync_request' | 'session_control' | 'sync_session_messages' | 'runner_config_update' | 'runner_config_updated' | 'runner_health_request' | 'runner_health_response' | 'runner_logs_request' | 'runner_logs_response' | 'codex_thread_list_request' | 'codex_thread_list_response' | 'model_list_request' | 'model_list_response';
   data: unknown;
 }
 
@@ -136,6 +136,37 @@ export interface CodexThreadListResponse extends WebSocketMessage {
       modelProvider?: string;
       path?: string | null;
     }>;
+    nextCursor?: string | null;
+    error?: string;
+  };
+}
+
+export interface RunnerModelInfo {
+  id: string;
+  label: string;
+  description?: string;
+  isDefault?: boolean;
+}
+
+export interface ModelListRequest extends WebSocketMessage {
+  type: 'model_list_request';
+  data: {
+    runnerId: string;
+    cliType: 'claude' | 'codex';
+    requestId?: string;
+    cursor?: string | null;
+    limit?: number | null;
+  };
+}
+
+export interface ModelListResponse extends WebSocketMessage {
+  type: 'model_list_response';
+  data: {
+    runnerId: string;
+    cliType: 'claude' | 'codex';
+    requestId?: string;
+    models?: RunnerModelInfo[];
+    defaultModel?: string | null;
     nextCursor?: string | null;
     error?: string;
   };
@@ -211,6 +242,7 @@ export interface SyncSessionsResponseMessage extends WebSocketMessage {
         sessions: {
             sessionId: string;
             projectPath: string;
+            cliType?: 'claude' | 'codex';
             firstPrompt: string;
             created: string;
             messageCount: number;
@@ -240,6 +272,7 @@ export interface SyncSessionMessagesMessage extends WebSocketMessage {
     runnerId: string;
     sessionId: string;
     projectPath: string;
+    cliType?: 'claude' | 'codex';
     requestId?: string;
   };
 }
@@ -289,6 +322,7 @@ export interface SyncSessionDiscoveredMessage extends WebSocketMessage {
         session: {
             sessionId: string;
             projectPath: string;
+            cliType?: 'claude' | 'codex';
             firstPrompt: string;
             created: string;
             messageCount: number;
@@ -305,6 +339,7 @@ export interface SyncSessionUpdatedMessage extends WebSocketMessage {
         session: {
             sessionId: string;
             projectPath: string;
+            cliType?: 'claude' | 'codex';
             messageCount: number;
         };
         newMessages: any[]; // The new messages to post
@@ -367,12 +402,22 @@ export interface PermissionDecisionAckMessage extends WebSocketMessage {
   };
 }
 
+export interface PermissionSyncRequestMessage extends WebSocketMessage {
+  type: 'permission_sync_request';
+  data: {
+    runnerId?: string;
+    requestId?: string;
+    sessionId?: string;
+    reason?: string;
+  };
+}
+
 export interface HeartbeatMessage extends WebSocketMessage {
   type: 'heartbeat';
   data: {
     runnerId: string;
     runnerName?: string;
-    cliTypes?: ('claude' | 'gemini')[];
+    cliTypes?: ('claude' | 'gemini' | 'codex')[];
     defaultWorkspace?: string;
     timestamp: string;
   };
@@ -383,7 +428,7 @@ export interface RegisterMessage extends WebSocketMessage {
   data: {
     runnerName: string;
     token: string;
-    cliTypes: ('claude' | 'gemini')[];
+    cliTypes: ('claude' | 'gemini' | 'codex')[];
     defaultWorkspace?: string;
   };
 }

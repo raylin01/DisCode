@@ -6,11 +6,13 @@
  */
 
 import type { PluginSession } from '../plugins/index.js';
+import type { PendingApprovalRequestInfo } from '../types.js';
 import type { WebSocketManager } from '../websocket.js';
 
 export interface PermissionDecisionHandlerDeps {
     cliSessions: Map<string, PluginSession>;
     wsManager: WebSocketManager;
+    pendingApprovalRequests: Map<string, PendingApprovalRequestInfo>;
 }
 
 export interface PermissionDecisionData {
@@ -29,7 +31,7 @@ export async function handlePermissionDecision(
     data: PermissionDecisionData,
     deps: PermissionDecisionHandlerDeps
 ): Promise<void> {
-    const { cliSessions, wsManager } = deps;
+    const { cliSessions, wsManager, pendingApprovalRequests } = deps;
     const { requestId, behavior, scope, updatedPermissions, customMessage } = data;
 
     console.log(`[PermissionDecision] Received decision for request ${requestId}: ${behavior}`);
@@ -42,18 +44,18 @@ export async function handlePermissionDecision(
     // The discord-bot creates requestId as: sessionId + '-' + timestamp
     // Ideally use the explicit sessionId if provided
     let sessionId = data.sessionId;
-    
+
     if (!sessionId) {
         // Fallback: This is risky for UUIDs but kept for legacy
         sessionId = requestId.split('-')[0];
-        // If it looks like a short hash (8 chars), it might be right. 
+        // If it looks like a short hash (8 chars), it might be right.
         // If it's part of a UUID (8 chars), it might conform to short ID lookup logic?
     }
-    
+
     // Try explicit lookup first (full ID)
     let session = cliSessions.get(sessionId);
-    
-    // If not found, tries by short ID if sessionId is length 8? 
+
+    // If not found, tries by short ID if sessionId is length 8?
     // Or if split returned just one part.
     if (!session && sessionId && sessionId.length === 8) {
          // Maybe iteration happens elsewhere? No.
@@ -61,11 +63,26 @@ export async function handlePermissionDecision(
 
     if (!session) {
         console.error(`[PermissionDecision] Session not found for requestId: ${requestId}`);
+
+        // Send negative acknowledgment
+        wsManager.send({
+            type: 'permission_decision_ack',
+            data: {
+                requestId,
+                sessionId: sessionId || '',
+                success: false,
+                error: 'Session not found',
+                timestamp: new Date().toISOString()
+            }
+        });
         return;
     }
 
     // Check if this is a ClaudeSDKPlugin session with sendPermissionDecision method
     if ('sendPermissionDecision' in session && typeof session.sendPermissionDecision === 'function') {
+        let success = false;
+        let error: string | undefined;
+
         try {
             await (session as any).sendPermissionDecision(requestId, {
                 behavior,
@@ -75,11 +92,41 @@ export async function handlePermissionDecision(
                 message: customMessage
             });
 
+            success = true;
             console.log(`[PermissionDecision] Sent decision to session ${sessionId}`);
-        } catch (error) {
+        } catch (err) {
+            error = err instanceof Error ? err.message : String(err);
             console.error(`[PermissionDecision] Failed to send decision to session ${sessionId}:`, error);
+        }
+
+        // Send acknowledgment back to bot
+        wsManager.send({
+            type: 'permission_decision_ack',
+            data: {
+                requestId,
+                sessionId,
+                success,
+                error,
+                timestamp: new Date().toISOString()
+            }
+        });
+
+        if (success) {
+            pendingApprovalRequests.delete(requestId);
         }
     } else {
         console.error(`[PermissionDecision] Session ${sessionId} does not support sendPermissionDecision`);
+
+        // Send negative acknowledgment
+        wsManager.send({
+            type: 'permission_decision_ack',
+            data: {
+                requestId,
+                sessionId,
+                success: false,
+                error: 'Session does not support sendPermissionDecision',
+                timestamp: new Date().toISOString()
+            }
+        });
     }
 }

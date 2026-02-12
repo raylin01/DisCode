@@ -26,6 +26,7 @@ export async function handleResumeSession(interaction: ChatInputCommandInteracti
     let runnerId: string | null = null;
     let projectPath: string | null = null;
     let resolvedSessionId: string | null = null;
+    let resolvedCliType: 'claude' | 'codex' = 'claude';
 
     // 1. Check if we are in a thread and no explicit ID provided
     if (!targetSessionId && targetThreadId) {
@@ -49,7 +50,8 @@ export async function handleResumeSession(interaction: ChatInputCommandInteracti
                 resumeSource = 'synced_thread';
                 runnerId = syncEntry.runnerId;
                 projectPath = syncEntry.projectPath;
-                resolvedSessionId = syncEntry.session.claudeSessionId;
+                resolvedSessionId = syncEntry.session.externalSessionId;
+                resolvedCliType = syncEntry.session.cliType === 'codex' ? 'codex' : 'claude';
             }
         }
 
@@ -81,6 +83,7 @@ export async function handleResumeSession(interaction: ChatInputCommandInteracti
             runnerId = storedSession.runnerId;
             resolvedSessionId = storedSession.sessionId;
             projectPath = storedSession.folderPath || null;
+            resolvedCliType = storedSession.cliType === 'codex' ? 'codex' : 'claude';
         } else {
              // B. Check Sync Service (by finding it in all projects)
              // This is expensive if we don't have a lookup map, but let's assume valid ID
@@ -126,7 +129,7 @@ export async function handleResumeSession(interaction: ChatInputCommandInteracti
     const sessionSync = getSessionSyncService();
     // 1. Mark as owned to stop file watching sync (avoid double writes/loops)
     if (sessionSync) {
-        sessionSync.markSessionAsOwned(resolvedSessionId);
+        sessionSync.markSessionAsOwned(resolvedSessionId, resolvedCliType);
     }
 
     // 2. Update/Create Storage Entry
@@ -152,8 +155,8 @@ export async function handleResumeSession(interaction: ChatInputCommandInteracti
             threadId: targetThreadId || interaction.channelId, 
             createdAt: now,
             status: 'active',
-            cliType: 'claude', // Assume Claude for synced sessions
-            plugin: 'claude-sdk', // Default to SDK for control
+            cliType: resolvedCliType,
+            plugin: resolvedCliType === 'codex' ? 'codex-sdk' : 'claude-sdk',
             folderPath: projectPath || undefined,
             interactionToken: interaction.token,
             creatorId: userId
@@ -168,7 +171,7 @@ export async function handleResumeSession(interaction: ChatInputCommandInteracti
             runner,
             undefined,
             { resumeSessionId: resolvedSessionId },
-            'claude'
+            resolvedCliType
         );
         sessionObj.options = startOptions;
         storage.updateSession(sessionObj.sessionId, sessionObj);
@@ -178,8 +181,8 @@ export async function handleResumeSession(interaction: ChatInputCommandInteracti
             data: {
                 sessionId: resolvedSessionId,
                 runnerId: runnerId,
-                cliType: 'claude',
-                plugin: 'claude-sdk',
+                cliType: resolvedCliType,
+                plugin: resolvedCliType === 'codex' ? 'codex-sdk' : 'claude-sdk',
                 folderPath: projectPath,
                 resume: true, // Explicitly flag as resume
                 options: startOptions

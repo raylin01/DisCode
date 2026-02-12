@@ -38,5 +38,10 @@ export async function handleSyncSessionMessages(
 ): Promise<void> {
     const syncService = getSyncService();
     if (!syncService) return;
-    void syncService.handleSyncSessionMessages(data.sessionId, data.projectPath, data.requestId);
+    void syncService.handleSyncSessionMessages(
+        data.sessionId,
+        data.projectPath,
+        data.requestId,
+        data.cliType || 'claude'
+    );
 }

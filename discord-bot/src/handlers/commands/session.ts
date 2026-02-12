@@ -10,6 +10,7 @@ import { buildSessionStartOptions } from '../../utils/session-options.js';
 import { storage } from '../../storage.js';
 import { createErrorEmbed, createInfoEmbed, createSuccessEmbed } from '../../utils/embeds.js';
 import { getCategoryManager } from '../../services/category-manager.js';
+import { getSessionSyncService } from '../../services/session-sync.js';
 import type { RunnerInfo, Session } from '../../../../shared/types.ts';
 
 async function resolveProjectContext(interaction: any): Promise<{
@@ -338,11 +339,35 @@ export async function handleEndSession(interaction: any, userId: string): Promis
     if (!sessionId) {
         const channel = interaction.channel;
         if (channel && channel.isThread()) {
-            const allSessions = Object.values(storage.data.sessions);
-            const session = allSessions.find(s => s.threadId === channel.id && s.status === 'active');
+            const sessionsInThread = storage.getSessionsByThreadId(channel.id);
+            const session = sessionsInThread.find(s => s.status === 'active');
 
             if (session) {
                 targetSessionId = session.sessionId;
+            } else if (sessionsInThread.length > 0) {
+                const latestSession = sessionsInThread[0];
+                await interaction.reply({
+                    embeds: [createInfoEmbed(
+                        'Session Already Ended',
+                        `The most recent session in this thread (\`${latestSession.sessionId}\`) is already ended.`
+                    )],
+                    flags: 64
+                });
+                return;
+            }
+
+            if (!targetSessionId) {
+                const syncedEntry = getSessionSyncService()?.getSessionByThreadId(channel.id);
+                if (syncedEntry) {
+                    await interaction.reply({
+                        embeds: [createInfoEmbed(
+                            'No Active Discord Session',
+                            'This is a synced thread. Use `/resume` to take control before using `/end-session`.'
+                        )],
+                        flags: 64
+                    });
+                    return;
+                }
             }
         }
 
@@ -370,6 +395,14 @@ export async function handleEndSession(interaction: any, userId: string): Promis
     if (!runner || !storage.canUserAccessRunner(userId, session.runnerId)) {
         await interaction.reply({
             embeds: [createErrorEmbed('Access Denied', 'You do not have permission to end this session.')],
+            flags: 64
+        });
+        return;
+    }
+
+    if (session.status !== 'active') {
+        await interaction.reply({
+            embeds: [createInfoEmbed('Session Already Ended', `Session \`${targetSessionId}\` is already ended.`)],
             flags: 64
         });
         return;

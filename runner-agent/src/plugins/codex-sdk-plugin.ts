@@ -30,7 +30,9 @@ import {
   ToolRequestUserInputResponse,
   DynamicToolCallResponse,
   ThreadListParams,
-  ThreadListResponse
+  ThreadListResponse,
+  ModelListParams,
+  ModelListResponse
 } from '../../../codex-client/src/index.js';
 
 class CodexSDKSession extends EventEmitter implements PluginSession {
@@ -63,6 +65,8 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
     kind: 'command' | 'file';
     proposedAmendment?: string[] | null;
   }>();
+
+  private static readonly DEFAULT_DENY_MESSAGE = 'The user does not want to proceed with this tool use.';
 
   private pendingQuestion: {
     requestId: string | number;
@@ -250,6 +254,25 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
     this.status = 'working';
   }
 
+  async sendPermissionDecision(requestId: string, decision: {
+    behavior: 'allow' | 'deny';
+    scope?: 'session' | 'localSettings' | 'userSettings' | 'projectSettings';
+    updatedPermissions?: any[];
+    message?: string;
+  }): Promise<void> {
+    const pending = this.pendingApprovals.get(requestId);
+    if (!pending) return;
+
+    const optionNumber = this.resolveDecisionOption(pending, decision);
+    const denyMessage = decision.message || CodexSDKSession.DEFAULT_DENY_MESSAGE;
+
+    await this.sendApproval(
+      optionNumber,
+      decision.behavior === 'deny' ? denyMessage : undefined,
+      requestId
+    );
+  }
+
   async close(): Promise<void> {
     if (this.threadId && this.activeTurnId) {
       try {
@@ -291,6 +314,40 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
       default:
         return 'decline';
     }
+  }
+
+  private resolveDecisionOption(
+    pending: {
+      kind: 'command' | 'file';
+      proposedAmendment?: string[] | null;
+    },
+    decision: {
+      behavior: 'allow' | 'deny';
+      scope?: 'session' | 'localSettings' | 'userSettings' | 'projectSettings';
+      updatedPermissions?: any[];
+    }
+  ): string {
+    if (decision.behavior === 'deny') {
+      return pending.kind === 'command' ? '4' : '3';
+    }
+
+    const hasPersistentIntent = Boolean(decision.scope && decision.scope !== 'session')
+      || Boolean(decision.updatedPermissions && decision.updatedPermissions.length > 0);
+
+    if (pending.kind === 'command') {
+      if (hasPersistentIntent && pending.proposedAmendment && pending.proposedAmendment.length > 0) {
+        return '3'; // acceptWithExecpolicyAmendment
+      }
+      if (decision.scope === 'session' || hasPersistentIntent) {
+        return '2'; // acceptForSession
+      }
+      return '1'; // accept once
+    }
+
+    if (decision.scope === 'session' || hasPersistentIntent) {
+      return '2'; // acceptForSession
+    }
+    return '1'; // accept once
   }
 
   handleNotification(notification: CodexServerNotification): void {
@@ -366,12 +423,6 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
       proposedAmendment: params.proposedExecpolicyAmendment ?? null
     });
 
-    const options = ['Allow', 'Allow for session'];
-    if (params.proposedExecpolicyAmendment) {
-      options.push('Always allow');
-    }
-    options.push('Deny');
-
     const context = params.command ? `${params.command}${params.cwd ? `\nCWD: ${params.cwd}` : ''}` : params.reason ?? 'Command approval requested';
 
     this.status = 'waiting';
@@ -388,7 +439,15 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
         reason: params.reason,
         commandActions: params.commandActions
       },
-      options,
+      options: [],
+      suggestions: [{
+        type: 'addRules',
+        rules: [{
+          toolName: 'CommandExecution',
+          ruleContent: params.command || params.reason || 'command'
+        }]
+      }],
+      decisionReason: params.reason || undefined,
       detectedAt: new Date()
     });
   }
@@ -401,7 +460,6 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
       kind: 'file'
     });
 
-    const options = ['Allow', 'Allow for session', 'Deny'];
     const context = params.reason ?? 'File change approval requested';
 
     this.status = 'waiting';
@@ -416,7 +474,16 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
         reason: params.reason,
         grantRoot: params.grantRoot
       },
-      options,
+      options: [],
+      suggestions: [{
+        type: 'addRules',
+        rules: [{
+          toolName: 'FileChange',
+          ruleContent: params.grantRoot || params.reason || 'file-change'
+        }]
+      }],
+      blockedPath: params.grantRoot || undefined,
+      decisionReason: params.reason || undefined,
       detectedAt: new Date()
     });
   }
@@ -641,5 +708,20 @@ export class CodexSDKPlugin extends BasePlugin {
     }
 
     return this.client.listThreads(params);
+  }
+
+  async listModels(cliPath: string, params: ModelListParams = {}): Promise<ModelListResponse> {
+    if (!cliPath) {
+      throw new Error('Codex CLI path not provided');
+    }
+
+    if (!this.clientPath || this.clientPath !== cliPath) {
+      await this.client.shutdown();
+      this.client = new CodexClient({ codexPath: cliPath });
+      this.attachClientListeners();
+      this.clientPath = cliPath;
+    }
+
+    return this.client.listModels(params);
   }
 }

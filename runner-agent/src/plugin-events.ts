@@ -6,11 +6,29 @@
 
 import type { PluginManager } from './plugins/index.js';
 import type { WebSocketManager } from './websocket.js';
+import type { PendingApprovalRequestInfo } from './types.js';
+
+const PENDING_APPROVAL_TTL_MS = parseInt(process.env.DISCODE_PENDING_APPROVAL_TTL_MS || String(30 * 60 * 1000), 10);
+
+function pruneExpiredPendingApprovals(pendingApprovalRequests?: Map<string, PendingApprovalRequestInfo>): void {
+    if (!pendingApprovalRequests) return;
+    const cutoff = Date.now() - PENDING_APPROVAL_TTL_MS;
+    for (const [requestId, pending] of pendingApprovalRequests.entries()) {
+        if (pending.firstSeenAt < cutoff) {
+            pendingApprovalRequests.delete(requestId);
+        }
+    }
+}
 
 export function wirePluginEvents(
     pluginManager: PluginManager,
-    wsManager: WebSocketManager
+    wsManager: WebSocketManager,
+    options?: {
+        pendingApprovalRequests?: Map<string, PendingApprovalRequestInfo>;
+    }
 ): void {
+    const pendingApprovalRequests = options?.pendingApprovalRequests;
+
     // Output events -> Discord
     pluginManager.on('output', (data) => {
         if (wsManager.isConnected) {
@@ -31,26 +49,41 @@ export function wirePluginEvents(
     pluginManager.on('approval', (data) => {
         if (wsManager.isConnected) {
             const requestId = data.requestId || `${data.sessionId}-${Date.now()}`;
-            const message = {
-                type: 'approval_request' as const,
-                data: {
-                    runnerId: wsManager.runnerId,
-                    sessionId: data.sessionId,
-                    requestId,
-                    toolName: data.tool,
-                    toolInput: data.toolInput ?? data.context,
-                    options: data.options?.map((o: any) => o.label || o),
-                    timestamp: data.detectedAt.toISOString(),
-                    // Multi-select and Other option support for AskUserQuestion
-                    isMultiSelect: data.isMultiSelect,
-                    hasOther: data.hasOther,
-                    suggestions: data.suggestions,
-                    blockedPath: data.blockedPath,
-                    decisionReason: data.decisionReason
-                }
+            const approvalData = {
+                runnerId: wsManager.runnerId,
+                sessionId: data.sessionId,
+                requestId,
+                toolName: data.tool,
+                toolInput: data.toolInput ?? data.context,
+                options: data.options?.map((o: any) => o.label || o),
+                timestamp: data.detectedAt.toISOString(),
+                isMultiSelect: data.isMultiSelect,
+                hasOther: data.hasOther,
+                suggestions: data.suggestions,
+                blockedPath: data.blockedPath,
+                decisionReason: data.decisionReason
             };
-            wsManager.send(message);
+
+            if (pendingApprovalRequests) {
+                pruneExpiredPendingApprovals(pendingApprovalRequests);
+                pendingApprovalRequests.set(requestId, {
+                    ...approvalData,
+                    firstSeenAt: Date.now(),
+                    lastSentAt: Date.now(),
+                    resendCount: 0
+                });
+            }
+
+            wsManager.send({
+                type: 'approval_request',
+                data: approvalData
+            });
         }
+    });
+
+    pluginManager.on('approval_canceled', (data: { requestId?: string }) => {
+        if (!pendingApprovalRequests || !data?.requestId) return;
+        pendingApprovalRequests.delete(data.requestId);
     });
 
     // Status changes -> Discord

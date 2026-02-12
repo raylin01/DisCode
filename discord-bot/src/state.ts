@@ -135,8 +135,22 @@ export const pendingRunnerConfigUpdates = new Map<string, NodeJS.Timeout>();
 export const pendingRunnerHealthRequests = new Map<string, { resolve: (data: any | null) => void; timeout: NodeJS.Timeout }>();
 export const pendingRunnerLogsRequests = new Map<string, { resolve: (data: any | null) => void; timeout: NodeJS.Timeout }>();
 export const pendingCodexThreadListRequests = new Map<string, { resolve: (data: any | null) => void; timeout: NodeJS.Timeout }>();
+export const pendingModelListRequests = new Map<string, { resolve: (data: any | null) => void; timeout: NodeJS.Timeout }>();
+
+export interface RunnerModelCacheEntry {
+    runnerId: string;
+    cliType: 'claude' | 'codex';
+    models: Array<{ id: string; label: string; description?: string; isDefault?: boolean }>;
+    defaultModel?: string | null;
+    nextCursor?: string | null;
+    fetchedAt: number;
+}
+export const runnerModelCache = new Map<string, RunnerModelCacheEntry>();
 
 // Project dashboard bump tracking (channelId -> last bump timestamp ms)
 export const projectDashboardBumps = new Map<string, number>();
 
 export const codexThreadCache = new Map<string, { runnerId: string; cwd?: string; preview?: string; updatedAt?: number; createdAt?: number; lastSeen: number }>();
+
+// One-shot suppression for reconnect reattach flows (sessionId -> suppress next session_ready post)
+export const suppressSessionReadyNotification = new Set<string>();

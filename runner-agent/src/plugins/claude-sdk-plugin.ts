@@ -17,7 +17,6 @@ import {
     PluginType
 } from './base.js';
 import { SkillManager } from '../utils/skill-manager.js';
-import { getConfig } from '../config.js';
 
 // Import from our new library
 import { 
@@ -30,7 +29,8 @@ import {
     PermissionScope,
     ToolUseStartEvent,
     ToolResultEvent,
-    ResultMessage
+    ResultMessage,
+    ClaudeSupportedModel
 } from '../../../claude-client/src/index.js';
 
 // ============================================================================
@@ -367,6 +367,10 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             for (const [approvalId, pending] of this.pendingPermissions.entries()) {
                 if (pending.sdkRequestId === req.request_id) {
                     this.pendingPermissions.delete(approvalId);
+                    this.plugin.emit('approval_canceled', {
+                        sessionId: this.sessionId,
+                        requestId: approvalId
+                    });
                     break;
                 }
             }
@@ -960,5 +964,49 @@ export class ClaudeSDKPlugin extends BasePlugin {
         this.sessions.set(session.sessionId, session);
         await session.start();
         return session;
+    }
+
+    async listModels(
+        claudePath: string,
+        cwd: string = process.cwd()
+    ): Promise<{ models: ClaudeSupportedModel[]; defaultModel: string | null }> {
+        if (!claudePath) {
+            throw new Error('Claude CLI path not provided');
+        }
+
+        const probeClient = new ClaudeClient({
+            cwd,
+            claudePath,
+            continueConversation: false,
+            persistSession: false,
+            includePartialMessages: false,
+            permissionPromptTool: false
+        });
+
+        try {
+            await probeClient.start();
+            const result = await probeClient.listSupportedModels(12000);
+            const models = [...result.models];
+
+            if (result.defaultModel) {
+                const existing = models.find(model => model.id === result.defaultModel);
+                if (existing) {
+                    existing.isDefault = true;
+                } else {
+                    models.push({
+                        id: result.defaultModel,
+                        label: result.defaultModel,
+                        isDefault: true
+                    });
+                }
+            }
+
+            return {
+                models,
+                defaultModel: result.defaultModel
+            };
+        } finally {
+            probeClient.kill();
+        }
     }
 }

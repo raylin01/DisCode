@@ -15,6 +15,24 @@ export interface PendingApproval {
     reject: (error: Error) => void;
 }
 
+export interface PendingApprovalRequestInfo {
+    requestId: string;
+    runnerId: string;
+    sessionId: string;
+    toolName: string;
+    toolInput: unknown;
+    options?: string[];
+    isMultiSelect?: boolean;
+    hasOther?: boolean;
+    suggestions?: unknown[];
+    blockedPath?: string;
+    decisionReason?: string;
+    timestamp: string;
+    firstSeenAt: number;
+    lastSentAt: number;
+    resendCount: number;
+}
+
 export interface PendingMessage {
     userId: string;
     username: string;

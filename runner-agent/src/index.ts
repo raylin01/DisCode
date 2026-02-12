@@ -18,7 +18,7 @@ import { handleWebSocketMessage } from './handlers/index.js';
 import { wirePluginEvents } from './plugin-events.js';
 import { AssistantManager } from './assistant-manager.js';
 import { getSyncService } from './services/sync-service.js';
-import type { SessionMetadata, PendingApproval, PendingMessage, CliPaths } from './types.js';
+import type { SessionMetadata, PendingApproval, PendingMessage, CliPaths, PendingApprovalRequestInfo } from './types.js';
 
 // Load configuration
 const config = getConfig();
@@ -32,6 +32,7 @@ const cliPaths: CliPaths = {
 
 // State stores
 const pendingApprovals = new Map<string, PendingApproval>();
+const pendingApprovalRequests = new Map<string, PendingApprovalRequestInfo>();
 const pendingMessages = new Map<string, PendingMessage[]>();
 const cliSessions = new Map<string, PluginSession>();
 const sessionMetadata = new Map<string, SessionMetadata>();
@@ -55,6 +56,7 @@ wsManager.on('message', async (message: WebSocketMessage) => {
       cliSessions,
       sessionMetadata,
       pendingApprovals,
+      pendingApprovalRequests,
       pendingMessages,
       cliPaths,
       assistantManager
@@ -110,7 +112,7 @@ async function startup(): Promise<void> {
     console.log('  ✓ PluginManager initialized');
 
     // Wire plugin events to WebSocket
-    wirePluginEvents(pluginManager, wsManager);
+    wirePluginEvents(pluginManager, wsManager, { pendingApprovalRequests });
 
     // Initialize AssistantManager if enabled
     if (config.assistant.enabled) {
@@ -124,7 +126,7 @@ async function startup(): Promise<void> {
       console.log(`  ✓ AssistantManager initialized (enabled: ${assistantManager.isEnabled()})`);
     }
     // Initialize SyncService
-    const syncService = getSyncService(wsManager);
+    const syncService = getSyncService(wsManager, { codexPath: cliPaths.codex });
     if (syncService) {
         console.log('  ✓ SyncService initialized');
         // Initial projects will be synced on Bot request or heartbeat
