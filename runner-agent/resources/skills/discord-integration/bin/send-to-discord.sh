@@ -12,6 +12,7 @@ TITLE=""
 COLOR=""
 DESCRIPTION=""
 FILE_PATH=""
+POSITIONAL=()
 
 # Parse arguments
 while [[ "$#" -gt 0 ]]; do
@@ -20,10 +21,37 @@ while [[ "$#" -gt 0 ]]; do
         --color) COLOR="$2"; shift ;;
         --description) DESCRIPTION="$2"; shift ;;
         --file|-f) FILE_PATH="$2"; shift ;;
-        *) CONTENT="$1" ;;
+        --) shift; break ;;
+        *) POSITIONAL+=("$1") ;;
     esac
     shift
 done
+
+while [[ "$#" -gt 0 ]]; do
+    POSITIONAL+=("$1")
+    shift
+done
+
+# Backward-compatible positional parsing:
+# - If --file is omitted and first positional arg is a real file path, treat it as attachment.
+# - Remaining positional args become the content message.
+if [[ ${#POSITIONAL[@]} -gt 0 ]]; then
+    if [[ -z "$FILE_PATH" && -f "${POSITIONAL[0]}" ]]; then
+        FILE_PATH="${POSITIONAL[0]}"
+        if [[ ${#POSITIONAL[@]} -gt 1 ]]; then
+            CONTENT="${POSITIONAL[@]:1}"
+        fi
+    else
+        CONTENT="${POSITIONAL[*]}"
+    fi
+fi
+
+# If embed description is actually a file path (common accidental usage),
+# promote it to attachment automatically.
+if [[ -z "$FILE_PATH" && -n "$DESCRIPTION" && -f "$DESCRIPTION" ]]; then
+    FILE_PATH="$DESCRIPTION"
+    DESCRIPTION=""
+fi
 
 if [ -z "$CONTENT" ] && [ -z "$TITLE" ] && [ -z "$DESCRIPTION" ] && [ -z "$FILE_PATH" ]; then
     echo "Usage: $0 [--title \"Title\"] [--color \"Red\"] \"Message content\""
@@ -245,4 +273,3 @@ else
     echo "Error: Neither python3 nor node is available to run this script."
     exit 1
 fi
-

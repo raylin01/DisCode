@@ -81,6 +81,8 @@ Use this to communicate with the user. **You must provide content OR embed detai
 /path/to/bin/send-to-discord.sh --file "path/to/file.png" "Here is the file you requested."
 ```
 
+If a file path is passed accidentally as the first argument (or in `--description`), the script auto-detects it and uploads the file instead of posting the path text.
+
 #### Rich Embed (Status Updates)
 
 **REQUIRED for embeds:** You must provide `--title` AND `--description`. Color is optional.

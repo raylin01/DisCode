@@ -41,6 +41,8 @@ Communicate directly with users in the Discord channel tied to this session.
 /path/to/bin/send-to-discord.sh --file "path/to/image.png" "Here is the image."
 ```
 
+If you accidentally pass a file path as the first argument (or as `--description`), the script will auto-detect it and upload the file instead of sending the path text.
+
 ---
 
 ## Quick Reference
