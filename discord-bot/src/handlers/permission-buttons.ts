@@ -8,8 +8,6 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 import * as botState from '../state.js';
 
-console.log('[DEBUG] permission-buttons.ts LOADED - Unified UI Version');
-
 import { storage } from '../storage.js';
 import { createErrorEmbed, createApprovalDecisionEmbed } from '../utils/embeds.js';
 import { permissionStateStore, type PermissionRequest } from '../permissions/state-store.js';

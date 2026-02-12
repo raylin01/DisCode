@@ -7,6 +7,10 @@
 
 import type { PendingApprovalRequestInfo } from '../types.js';
 import type { WebSocketManager } from '../websocket.js';
+import {
+    pruneExpiredPendingApprovalRequests,
+    toApprovalRequestPayload
+} from '../permissions/pending-requests.js';
 
 export interface PermissionSyncHandlerDeps {
     wsManager: WebSocketManager;
@@ -19,23 +23,12 @@ export interface PermissionSyncRequestData {
     reason?: string;
 }
 
-const PENDING_APPROVAL_TTL_MS = parseInt(process.env.DISCODE_PENDING_APPROVAL_TTL_MS || String(30 * 60 * 1000), 10);
-
-function pruneExpiredPendingRequests(pendingApprovalRequests: Map<string, PendingApprovalRequestInfo>): void {
-    const cutoff = Date.now() - PENDING_APPROVAL_TTL_MS;
-    for (const [requestId, pending] of pendingApprovalRequests.entries()) {
-        if (pending.firstSeenAt < cutoff) {
-            pendingApprovalRequests.delete(requestId);
-        }
-    }
-}
-
 export async function handlePermissionSyncRequest(
     data: PermissionSyncRequestData | undefined,
     deps: PermissionSyncHandlerDeps
 ): Promise<void> {
     const { wsManager, pendingApprovalRequests } = deps;
-    pruneExpiredPendingRequests(pendingApprovalRequests);
+    pruneExpiredPendingApprovalRequests(pendingApprovalRequests);
 
     const requestId = data?.requestId;
     const sessionId = data?.sessionId;
@@ -48,20 +41,7 @@ export async function handlePermissionSyncRequest(
 
         wsManager.send({
             type: 'approval_request',
-            data: {
-                runnerId: pending.runnerId,
-                sessionId: pending.sessionId,
-                requestId: pending.requestId,
-                toolName: pending.toolName,
-                toolInput: pending.toolInput,
-                options: pending.options,
-                isMultiSelect: pending.isMultiSelect,
-                hasOther: pending.hasOther,
-                suggestions: pending.suggestions,
-                blockedPath: pending.blockedPath,
-                decisionReason: pending.decisionReason,
-                timestamp: new Date().toISOString()
-            }
+            data: toApprovalRequestPayload(pending)
         });
 
         pending.lastSentAt = Date.now();

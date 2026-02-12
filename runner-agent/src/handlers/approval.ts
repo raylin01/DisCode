@@ -9,6 +9,7 @@ import type { PendingApproval } from '../types.js';
 import type { PendingApprovalRequestInfo } from '../types.js';
 import type { WebSocketManager } from '../websocket.js';
 import type { AssistantManager } from '../assistant-manager.js';
+import { resolveSessionIdForRequest } from './approval-request-utils.js';
 
 export interface ApprovalHandlerDeps {
     pendingApprovals: Map<string, PendingApproval>;
@@ -16,6 +17,23 @@ export interface ApprovalHandlerDeps {
     cliSessions: Map<string, PluginSession>;
     wsManager: WebSocketManager;
     assistantManager: AssistantManager | null;
+}
+
+type ApprovalTarget = Pick<PluginSession, 'sendApproval'>;
+
+function getApprovalTarget(
+    sessionId: string,
+    cliSessions: Map<string, PluginSession>,
+    assistantManager: AssistantManager | null
+): ApprovalTarget | undefined {
+    const session = cliSessions.get(sessionId);
+    if (session) return session;
+
+    if (assistantManager && assistantManager.getSessionId() === sessionId) {
+        return assistantManager;
+    }
+
+    return undefined;
 }
 
 export async function handleApprovalResponse(
@@ -29,7 +47,8 @@ export async function handleApprovalResponse(
     },
     deps: ApprovalHandlerDeps
 ): Promise<void> {
-    const { pendingApprovals, pendingApprovalRequests, cliSessions, wsManager } = deps;
+    const { pendingApprovals, pendingApprovalRequests, cliSessions, wsManager, assistantManager } = deps;
+    const sessionId = resolveSessionIdForRequest(data, pendingApprovalRequests);
 
     // Flow 1: HTTP approval (legacy, for PrintPlugin)
     if (data.requestId) {
@@ -44,63 +63,44 @@ export async function handleApprovalResponse(
         pendingApprovalRequests.delete(data.requestId);
     }
 
-    // Recover sessionId from requestId if missing (Runner generates requestId as `${sessionId}-${timestamp}`)
-    let sessionId = data.sessionId;
-    if (!sessionId && data.requestId && data.requestId.includes('-')) {
-        const lastDashIndex = data.requestId.lastIndexOf('-');
-        // Basic validation: ensure we have a timestamp part and the rest looks like a UUID (or at least substantial)
-        if (lastDashIndex > 0 && lastDashIndex < data.requestId.length - 1) {
-             const probableSessionId = data.requestId.substring(0, lastDashIndex);
-             // Verify if this session actually exists
-             if (cliSessions.has(probableSessionId) || (deps.assistantManager && deps.assistantManager.getSessionId() === probableSessionId)) {
-                 sessionId = probableSessionId;
-                 console.log(`[Approval] Recovered sessionId ${sessionId} from requestId ${data.requestId}`);
-             }
+    if (!sessionId) {
+        if (data.requestId) {
+            console.warn(`[Approval] Could not resolve session for requestId ${data.requestId}`);
         }
+        return;
     }
 
     // Flow 2: TmuxPlugin/SDK approval (Discord buttons)
-    if (sessionId) {
-        const derivedAllow =
-            data.approved ??
-            data.allow ??
-            (data.optionNumber ? data.optionNumber === '1' || data.optionNumber === '3' : false);
-        console.log(`[Approval] Received approval response for session ${sessionId}: ${derivedAllow ? 'APPROVED' : 'DENIED'}, Option: ${data.optionNumber}, Message: ${data.message || 'none'}`);
+    const derivedAllow =
+        data.approved ??
+        data.allow ??
+        (data.optionNumber ? data.optionNumber === '1' || data.optionNumber === '3' : false);
+    console.log(`[Approval] Received approval response for session ${sessionId}: ${derivedAllow ? 'APPROVED' : 'DENIED'}, option=${data.optionNumber || 'auto'}, message=${data.message || 'none'}`);
 
-        let approvalSession: { sendApproval: (opt: string, message?: string, requestId?: string) => Promise<void> } | undefined = cliSessions.get(sessionId);
+    const approvalTarget = getApprovalTarget(sessionId, cliSessions, assistantManager);
 
-        // Use assistant manager if session not found in standard sessions
-        const { assistantManager } = deps;
-        if (!approvalSession && assistantManager && assistantManager.getSessionId() === sessionId) {
-            approvalSession = assistantManager;
-        }
+    if (!approvalTarget) {
+        console.error(`[Approval] Session ${sessionId} not found for approval response`);
+        return;
+    }
 
-        if (approvalSession) {
-            // Map boolean to option number if not provided
-            // 1 = Yes (approve), 2 = No (deny), 3 = Always
-            const option = data.optionNumber || (derivedAllow ? '1' : '2');
-            try {
-                console.log(`[Approval] Dispatching to session ${sessionId}: option=${option}, message=${data.message || 'none'}`);
-                // Pass option number and optional custom message (for "Other" option)
-                await approvalSession.sendApproval(option, data.message, data.requestId);
-                console.log(`[Approval] Sent option ${option} to session ${sessionId}`);
+    // Map boolean to option number if not provided:
+    // 1 = Yes (approve), 2 = No (deny), 3 = Always
+    const option = data.optionNumber || (derivedAllow ? '1' : '2');
 
-                // Send status update to Discord - mark as 'working' since approval was handled
-                wsManager.send({
-                    type: 'status',
-                    data: {
-                        runnerId: wsManager.runnerId,
-                        sessionId: data.sessionId,
-                        status: 'working',
-                        currentTool: undefined
-                    }
-                });
-                console.log(`[Approval] Sent status update (working) for session ${data.sessionId}`);
-            } catch (error) {
-                console.error(`[Approval] Failed to send option ${option} to session ${data.sessionId}:`, error);
+    try {
+        await approvalTarget.sendApproval(option, data.message, data.requestId);
+
+        wsManager.send({
+            type: 'status',
+            data: {
+                runnerId: wsManager.runnerId,
+                sessionId,
+                status: 'working',
+                currentTool: undefined
             }
-        } else {
-            console.error(`Session ${data.sessionId} not found for approval response`);
-        }
+        });
+    } catch (error) {
+        console.error(`[Approval] Failed to send option ${option} to session ${sessionId}:`, error);
     }
 }

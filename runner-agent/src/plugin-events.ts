@@ -7,18 +7,7 @@
 import type { PluginManager } from './plugins/index.js';
 import type { WebSocketManager } from './websocket.js';
 import type { PendingApprovalRequestInfo } from './types.js';
-
-const PENDING_APPROVAL_TTL_MS = parseInt(process.env.DISCODE_PENDING_APPROVAL_TTL_MS || String(30 * 60 * 1000), 10);
-
-function pruneExpiredPendingApprovals(pendingApprovalRequests?: Map<string, PendingApprovalRequestInfo>): void {
-    if (!pendingApprovalRequests) return;
-    const cutoff = Date.now() - PENDING_APPROVAL_TTL_MS;
-    for (const [requestId, pending] of pendingApprovalRequests.entries()) {
-        if (pending.firstSeenAt < cutoff) {
-            pendingApprovalRequests.delete(requestId);
-        }
-    }
-}
+import { pruneExpiredPendingApprovalRequests } from './permissions/pending-requests.js';
 
 export function wirePluginEvents(
     pluginManager: PluginManager,
@@ -65,7 +54,7 @@ export function wirePluginEvents(
             };
 
             if (pendingApprovalRequests) {
-                pruneExpiredPendingApprovals(pendingApprovalRequests);
+                pruneExpiredPendingApprovalRequests(pendingApprovalRequests);
                 pendingApprovalRequests.set(requestId, {
                     ...approvalData,
                     firstSeenAt: Date.now(),

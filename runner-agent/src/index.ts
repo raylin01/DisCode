@@ -185,12 +185,3 @@ process.on('SIGINT', async () => {
     process.exit(0);
   });
 });
-
-// Start assistant when WebSocket connects
-// Start assistant when WebSocket connects
-// wsManager.on('connected', async () => {
-//   if (assistantManager && assistantManager.isEnabled() && !assistantManager.isRunning()) {
-//     console.log('[AssistantManager] Starting assistant session on connect...');
-//     await assistantManager.start();
-//   }
-// });

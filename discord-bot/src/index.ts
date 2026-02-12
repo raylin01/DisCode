@@ -12,6 +12,7 @@ import * as botState from './state.js';
 import { initCategoryManager, getCategoryManager } from './services/category-manager.js';
 import { initSessionSyncService, getSessionSyncService } from './services/session-sync.js';
 import { buildSessionStartOptions } from './utils/session-options.js';
+import { isAlreadyAcknowledged, isUnknownInteraction } from './handlers/interaction-safety.js';
 import {
   createWebSocketServer,
   handleButtonInteraction,
@@ -47,14 +48,6 @@ import {
   handleCodexThreads,
   handleResumeCodex,
 } from './handlers/index.js';
-
-function isUnknownInteraction(error: any): boolean {
-  return error?.code === 10062 || error?.rawError?.code === 10062;
-}
-
-function isAlreadyAcknowledged(error: any): boolean {
-  return error?.code === 40060 || error?.rawError?.code === 40060;
-}
 
 // Load configuration
 const config = getConfig();
