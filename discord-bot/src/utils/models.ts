@@ -19,6 +19,10 @@ export interface FetchRunnerModelsResult {
 
 const MODEL_CACHE_TTL_MS = 2 * 60 * 1000;
 export const AUTO_MODEL_VALUE = '__auto__';
+const DEFAULT_MODEL_FETCH_TIMEOUT_MS = 25000;
+const MIN_MODEL_FETCH_TIMEOUT_MS = 5000;
+
+const inFlightModelFetches = new Map<string, Promise<FetchRunnerModelsResult>>();
 
 function normalizeModelList(models: any[]): RunnerModelOption[] {
     const normalized: RunnerModelOption[] = [];
@@ -64,9 +68,21 @@ export async function fetchRunnerModels(
 ): Promise<FetchRunnerModelsResult> {
     const forceRefresh = options?.forceRefresh === true;
     const cacheKey = `${runnerId}:${cliType}`;
+    const limit = options?.limit ?? 100;
+    const cursor = options?.cursor ?? null;
+    const requestKey = `${cacheKey}:${limit}:${cursor ?? ''}:${forceRefresh ? '1' : '0'}`;
     const cache = botState.runnerModelCache.get(cacheKey);
     const now = Date.now();
-    if (!forceRefresh && cache && now - cache.fetchedAt < MODEL_CACHE_TTL_MS) {
+    if (!forceRefresh && cache && !cursor) {
+        // Serve cached catalog immediately; refresh in background if stale.
+        if (now - cache.fetchedAt >= MODEL_CACHE_TTL_MS && !cursor) {
+            void fetchRunnerModels(runnerId, cliType, {
+                forceRefresh: true,
+                limit,
+                cursor,
+                timeoutMs: options?.timeoutMs
+            }).catch(() => {});
+        }
         return {
             models: cache.models,
             defaultModel: cache.defaultModel ?? null,
@@ -74,71 +90,93 @@ export async function fetchRunnerModels(
         };
     }
 
-    const runner = storage.getRunner(runnerId);
-    if (!runner) {
-        return {
-            models: [],
-            defaultModel: null,
-            nextCursor: null,
-            error: 'Runner not found.'
-        };
+    const inFlight = inFlightModelFetches.get(requestKey);
+    if (inFlight) {
+        return inFlight;
     }
 
-    const ws = botState.runnerConnections.get(runnerId);
-    if (!ws) {
-        return {
-            models: [],
-            defaultModel: null,
-            nextCursor: null,
-            error: 'Runner is offline.'
-        };
-    }
+    const fetchPromise = (async (): Promise<FetchRunnerModelsResult> => {
+        const runner = storage.getRunner(runnerId);
+        if (!runner) {
+            return {
+                models: [],
+                defaultModel: null,
+                nextCursor: null,
+                error: 'Runner not found.'
+            };
+        }
 
-    const requestId = `models_${runnerId}_${cliType}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const timeoutMs = Math.max(3000, options?.timeoutMs || 12000);
+        const ws = botState.runnerConnections.get(runnerId);
+        if (!ws) {
+            return {
+                models: [],
+                defaultModel: null,
+                nextCursor: null,
+                error: 'Runner is offline.'
+            };
+        }
 
-    const data = await new Promise<any | null>((resolve) => {
-        const timeout = setTimeout(() => {
-            botState.pendingModelListRequests.delete(requestId);
-            resolve(null);
-        }, timeoutMs);
+        const requestId = `models_${runnerId}_${cliType}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const timeoutMs = Math.max(MIN_MODEL_FETCH_TIMEOUT_MS, options?.timeoutMs || DEFAULT_MODEL_FETCH_TIMEOUT_MS);
 
-        botState.pendingModelListRequests.set(requestId, { resolve, timeout });
-        ws.send(JSON.stringify({
-            type: 'model_list_request',
-            data: {
-                runnerId,
-                cliType,
-                requestId,
-                limit: options?.limit ?? 100,
-                cursor: options?.cursor ?? null
+        const data = await new Promise<any | null>((resolve) => {
+            const timeout = setTimeout(() => {
+                botState.pendingModelListRequests.delete(requestId);
+                resolve(null);
+            }, timeoutMs);
+
+            botState.pendingModelListRequests.set(requestId, { resolve, timeout });
+            ws.send(JSON.stringify({
+                type: 'model_list_request',
+                data: {
+                    runnerId,
+                    cliType,
+                    requestId,
+                    limit,
+                    cursor
+                }
+            }));
+        });
+
+        if (!data) {
+            if (cache && !cursor) {
+                return {
+                    models: cache.models,
+                    defaultModel: cache.defaultModel ?? null,
+                    nextCursor: cache.nextCursor ?? null
+                };
             }
-        }));
-    });
+            return {
+                models: [],
+                defaultModel: null,
+                nextCursor: null,
+                error: 'Runner timed out while fetching models.'
+            };
+        }
 
-    if (!data) {
+        if (data.error) {
+            return {
+                models: [],
+                defaultModel: null,
+                nextCursor: null,
+                error: String(data.error)
+            };
+        }
+
+        const models = normalizeModelList(Array.isArray(data.models) ? data.models : []);
         return {
-            models: [],
-            defaultModel: null,
-            nextCursor: null,
-            error: 'Runner timed out while fetching models.'
+            models,
+            defaultModel: typeof data.defaultModel === 'string' ? data.defaultModel : null,
+            nextCursor: typeof data.nextCursor === 'string' ? data.nextCursor : null
         };
-    }
+    })();
 
-    if (data.error) {
-        return {
-            models: [],
-            defaultModel: null,
-            nextCursor: null,
-            error: String(data.error)
-        };
+    inFlightModelFetches.set(requestKey, fetchPromise);
+    try {
+        return await fetchPromise;
+    } finally {
+        if (inFlightModelFetches.get(requestKey) === fetchPromise) {
+            inFlightModelFetches.delete(requestKey);
+        }
     }
-
-    const models = normalizeModelList(Array.isArray(data.models) ? data.models : []);
-    return {
-        models,
-        defaultModel: typeof data.defaultModel === 'string' ? data.defaultModel : null,
-        nextCursor: typeof data.nextCursor === 'string' ? data.nextCursor : null
-    };
 }
-

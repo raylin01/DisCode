@@ -189,11 +189,11 @@ export async function handleResumeCodex(interaction: ChatInputCommandInteraction
         reason: 'Resume Codex thread'
     });
 
-    await thread.members.add(interaction.user.id, 'Session owner');
+    await thread.members.add(interaction.user.id);
     for (const authUserId of resolvedRunner.authorizedUsers) {
         if (authUserId && authUserId !== interaction.user.id) {
             try {
-                await thread.members.add(authUserId, 'Authorized user');
+                await thread.members.add(authUserId);
             } catch {
                 // ignore
             }

@@ -13,6 +13,7 @@ import { createErrorEmbed, createApprovalDecisionEmbed } from '../utils/embeds.j
 import { permissionStateStore, type PermissionRequest } from '../permissions/state-store.js';
 import { buildAlwaysButtonText } from '../permissions/ui-state.js';
 import { attemptPermissionReissue } from '../permissions/reissue.js';
+import { safeEditReply, safeReply } from './interaction-safety.js';
 
 /**
  * Create a "Processing..." embed
@@ -54,13 +55,13 @@ export function createTimeoutEmbed(): EmbedBuilder {
 async function safePermissionReply(interaction: any, payload: any): Promise<void> {
     try {
         if (interaction.deferred || interaction.replied) {
-            await interaction.editReply(payload);
+            await safeEditReply(interaction, payload);
             return;
         }
-        await interaction.reply(payload);
+        await safeReply(interaction, payload);
     } catch (error: any) {
         if (error?.code === 40060 || error?.rawError?.code === 40060) {
-            await interaction.editReply(payload).catch(() => {});
+            await safeEditReply(interaction, payload).catch(() => {});
             return;
         }
         throw error;
@@ -116,7 +117,7 @@ async function handlePermApprove(interaction: any, userId: string, requestId: st
             channelId: interaction?.channelId || interaction?.channel?.id,
             reason: 'missing_local_state'
         });
-        await interaction.editReply({
+        await safeEditReply(interaction, {
             embeds: [createErrorEmbed('Expired', requested
                 ? 'This permission request expired locally. I asked the runner to re-send it.'
                 : 'This permission request has expired.')],
@@ -126,7 +127,7 @@ async function handlePermApprove(interaction: any, userId: string, requestId: st
     }
 
     if (state.status === 'completed') {
-        await interaction.editReply({ components: [] }).catch(() => {});
+        await safeEditReply(interaction, { components: [] }).catch(() => {});
         return;
     }
 
@@ -141,7 +142,7 @@ async function handlePermApprove(interaction: any, userId: string, requestId: st
     }
 
     // Update UI to "Processing..." FIRST
-    await interaction.editReply({
+    await safeEditReply(interaction, {
         embeds: [createProcessingEmbed(request.toolName)],
         components: []
     }).catch((err: any) => console.error('[Permission] Failed to show processing:', err));
@@ -149,7 +150,7 @@ async function handlePermApprove(interaction: any, userId: string, requestId: st
     // Send approval decision to runner-agent
     const ws = botState.runnerConnections.get(runner.runnerId);
     if (!ws) {
-        await interaction.editReply({
+        await safeEditReply(interaction, {
             embeds: [createErrorEmbed('Offline', 'Runner is offline')],
             components: []
         });
@@ -180,7 +181,7 @@ async function handlePermApprove(interaction: any, userId: string, requestId: st
 
         console.log(`[Permission] Timeout waiting for confirmation for ${requestId}`);
 
-        await interaction.editReply({
+        await safeEditReply(interaction, {
             embeds: [createTimeoutEmbed()],
             components: []
         }).catch((err: any) => console.error('[Permission] Failed to show timeout:', err));
@@ -210,7 +211,7 @@ async function handlePermAlways(interaction: any, userId: string, requestId: str
             channelId: interaction?.channelId || interaction?.channel?.id,
             reason: 'missing_local_state'
         });
-        await interaction.editReply({
+        await safeEditReply(interaction, {
             embeds: [createErrorEmbed('Expired', requested
                 ? 'This permission request expired locally. I asked the runner to re-send it.'
                 : 'This permission request has expired.')],
@@ -220,7 +221,7 @@ async function handlePermAlways(interaction: any, userId: string, requestId: str
     }
 
     if (state.status === 'completed') {
-         await interaction.editReply({ components: [] }).catch(() => {});
+         await safeEditReply(interaction, { components: [] }).catch(() => {});
          return;
     }
 
@@ -229,7 +230,7 @@ async function handlePermAlways(interaction: any, userId: string, requestId: str
 
     const runner = storage.getRunner(request.runnerId);
     if (!runner || !storage.canUserAccessRunner(userId, runner.runnerId)) {
-        await interaction.editReply({
+        await safeEditReply(interaction, {
             embeds: [createErrorEmbed('Unauthorized', `You are not authorized to approve this request.\nRunner: ${runner ? runner.runnerId : 'Unknown'}\nUser: ${userId}`)],
             components: []
         }).catch((e: any) => console.error('[DEBUG] Failed to editReply:', e.message));
@@ -237,7 +238,7 @@ async function handlePermAlways(interaction: any, userId: string, requestId: str
     }
 
     // Update UI to "Processing..." FIRST
-    await interaction.editReply({
+    await safeEditReply(interaction, {
         embeds: [createProcessingEmbed(request.toolName)],
         components: []
     }).catch((err: any) => console.error('[Permission] Failed to show processing:', err));
@@ -245,7 +246,7 @@ async function handlePermAlways(interaction: any, userId: string, requestId: str
     // Send approval with scope to runner-agent
     const ws = botState.runnerConnections.get(runner.runnerId);
     if (!ws) {
-        await interaction.editReply({
+        await safeEditReply(interaction, {
             embeds: [createErrorEmbed('Offline', 'Runner is offline')],
             components: []
         });
@@ -279,7 +280,7 @@ async function handlePermAlways(interaction: any, userId: string, requestId: str
         console.log(`[Permission] Timeout waiting for confirmation for ${requestId}`);
 
         // No confirmation received
-        await interaction.editReply({
+        await safeEditReply(interaction, {
             embeds: [createTimeoutEmbed()],
             components: []
         }).catch((err: any) => console.error('[Permission] Failed to show timeout:', err));
@@ -310,7 +311,7 @@ async function handlePermDeny(interaction: any, userId: string, requestId: strin
             channelId: interaction?.channelId || interaction?.channel?.id,
             reason: 'missing_local_state'
         });
-        await interaction.editReply({
+        await safeEditReply(interaction, {
             embeds: [createErrorEmbed('Expired', requested
                 ? 'This permission request expired locally. I asked the runner to re-send it.'
                 : 'This permission request has expired.')],
@@ -320,14 +321,14 @@ async function handlePermDeny(interaction: any, userId: string, requestId: strin
     }
 
     if (state.status === 'completed') {
-         await interaction.editReply({ components: [] }).catch(() => {});
+         await safeEditReply(interaction, { components: [] }).catch(() => {});
          return;
     }
 
     const { request } = state;
     const runner = storage.getRunner(request.runnerId);
     if (!runner || !storage.canUserAccessRunner(userId, runner.runnerId)) {
-        await interaction.editReply({
+        await safeEditReply(interaction, {
             embeds: [createErrorEmbed('Unauthorized', `You are not authorized to respond to this request.\nRunner: ${runner ? runner.runnerId : 'Unknown'}\nUser: ${userId}`)],
             components: []
         }).catch((e: any) => console.error('[DEBUG] Failed to editReply:', e.message));
@@ -335,7 +336,7 @@ async function handlePermDeny(interaction: any, userId: string, requestId: strin
     }
 
     // Update UI to "Processing..." FIRST
-    await interaction.editReply({
+    await safeEditReply(interaction, {
         embeds: [createProcessingEmbed(request.toolName)],
         components: []
     }).catch((err: any) => console.error('[Permission] Failed to show processing:', err));
@@ -343,7 +344,7 @@ async function handlePermDeny(interaction: any, userId: string, requestId: strin
     // Send denial to runner-agent
     const ws = botState.runnerConnections.get(runner.runnerId);
     if (!ws) {
-        await interaction.editReply({
+        await safeEditReply(interaction, {
             embeds: [createErrorEmbed('Offline', 'Runner is offline')],
             components: []
         });
@@ -374,7 +375,7 @@ async function handlePermDeny(interaction: any, userId: string, requestId: strin
 
         console.log(`[Permission] Timeout waiting for confirmation for ${requestId}`);
 
-        await interaction.editReply({
+        await safeEditReply(interaction, {
             embeds: [createTimeoutEmbed()],
             components: []
         }).catch((err: any) => console.error('[Permission] Failed to show timeout:', err));
@@ -405,7 +406,7 @@ async function handlePermScope(interaction: any, userId: string, requestId: stri
             channelId: interaction?.channelId || interaction?.channel?.id,
             reason: 'missing_local_state'
         });
-        await interaction.editReply({
+        await safeEditReply(interaction, {
             embeds: [createErrorEmbed('Expired', requested
                 ? 'This permission request expired locally. I asked the runner to re-send it.'
                 : 'This permission request has expired.')],
@@ -443,7 +444,7 @@ async function handlePermScope(interaction: any, userId: string, requestId: stri
         .setColor('Yellow')
         .setTimestamp(new Date(request.timestamp));
 
-    await interaction.editReply({
+    await safeEditReply(interaction, {
         embeds: [embed],
         components
     });
@@ -501,6 +502,11 @@ export async function handleTellClaudeModal(interaction: any): Promise<void> {
         } catch (error: any) {
             if (error?.code === 40060 || error?.rawError?.code === 40060) {
                 // Already acknowledged by another handler path; continue.
+                try {
+                    interaction.deferred = true;
+                } catch {
+                    // Ignore if property is read-only.
+                }
             } else
             if (error?.code === 10062 || error?.rawError?.code === 10062) {
                 console.warn('[Permission] Tell-Claude modal expired before defer');
@@ -523,7 +529,7 @@ export async function handleTellClaudeModal(interaction: any): Promise<void> {
             channelId: interaction?.channelId || interaction?.channel?.id,
             reason: 'missing_local_state'
         });
-        await interaction.editReply({
+        await safeEditReply(interaction, {
             embeds: [createErrorEmbed('Expired', requested
                 ? 'This permission request expired locally. I asked the runner to re-send it.'
                 : 'This permission request has expired.')],
@@ -533,14 +539,14 @@ export async function handleTellClaudeModal(interaction: any): Promise<void> {
     }
 
     if (state.status === 'completed') {
-        await interaction.editReply({ components: [] }).catch(() => {});
+        await safeEditReply(interaction, { components: [] }).catch(() => {});
         return;
     }
 
     const { request } = state;
     const runner = storage.getRunner(request.runnerId);
     if (!runner || !storage.canUserAccessRunner(interaction.user.id, runner.runnerId)) {
-        await interaction.editReply({
+        await safeEditReply(interaction, {
             embeds: [createErrorEmbed('Unauthorized', `You are not authorized to respond to this request.\nRunner: ${runner ? runner.runnerId : 'Unknown'}\nUser: ${interaction.user.id}`)],
             components: []
         }).catch((e: any) => console.error('[DEBUG] Failed to editReply:', e.message));
@@ -587,7 +593,7 @@ export async function handleTellClaudeModal(interaction: any): Promise<void> {
         });
     }
 
-    await interaction.editReply({
+    await safeEditReply(interaction, {
         embeds: [embed],
         components: [row]
     });

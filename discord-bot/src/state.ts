@@ -24,23 +24,9 @@ export function setBotReady(ready: boolean): void {
 // Active WebSocket connections (runnerId -> ws)
 export const runnerConnections = new Map<string, any>();
 
-// Pending approvals (requestId -> approval info)
-export interface PendingApproval {
-    userId?: string;
-    channelId: string;
-    messageId: string;
-    runnerId: string;
-    sessionId: string;
-    toolName: string;
-    toolInput: unknown;
-    requestId?: string;
-    timestamp?: Date;
-    // Multi-select and Other option support for AskUserQuestion
-    options?: string[]; // Available options
-    isMultiSelect?: boolean; // Whether this is a multi-select question
-    hasOther?: boolean; // Whether this has an "Other" option
-}
-export const pendingApprovals = new Map<string, PendingApproval>();
+
+// Pending approvals now use unified permissionStateStore (see permissions/state-store.ts)
+
 
 // Allowed tools per session (sessionId -> Set of toolNames that are auto-approved)
 export const allowedTools = new Map<string, Set<string>>();
@@ -63,7 +49,7 @@ export interface SessionCreationState {
     step: 'select_runner' | 'select_cli' | 'select_plugin' | 'select_folder' | 'complete';
     runnerId?: string;
     cliType?: 'claude' | 'gemini' | 'codex' | 'terminal';
-    plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk' | 'codex-sdk';
+    plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk' | 'codex-sdk' | 'gemini-sdk';
     folder?: string; // Pre-selected folder (for "New Session" button)
     folderPath?: string;
     options?: {
@@ -80,6 +66,7 @@ export interface SessionCreationState {
         [key: string]: any;
     };
     messageId?: string;
+    projectChannelId?: string;
 }
 export const sessionCreationState = new Map<string, SessionCreationState>();
 
@@ -146,9 +133,6 @@ export interface RunnerModelCacheEntry {
     fetchedAt: number;
 }
 export const runnerModelCache = new Map<string, RunnerModelCacheEntry>();
-
-// Project dashboard bump tracking (channelId -> last bump timestamp ms)
-export const projectDashboardBumps = new Map<string, number>();
 
 export const codexThreadCache = new Map<string, { runnerId: string; cwd?: string; preview?: string; updatedAt?: number; createdAt?: number; lastSeen: number }>();
 

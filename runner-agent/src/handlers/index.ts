@@ -255,11 +255,13 @@ export async function handleWebSocketMessage(
         }
 
         case 'model_list_request': {
-            await handleModelListRequest(message.data as any, {
+            void handleModelListRequest(message.data as any, {
                 wsManager: deps.wsManager,
                 config: deps.config,
                 cliPaths: deps.cliPaths,
                 pluginManager: deps.pluginManager
+            }).catch((error) => {
+                console.error('[ModelList] Failed to handle model_list_request:', error);
             });
             break;
         }

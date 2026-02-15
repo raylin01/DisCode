@@ -138,6 +138,8 @@ export class AssistantManager extends EventEmitter {
                 ? (this.deps.config.claudeDefaults || {})
                 : this.cliType === 'codex'
                 ? (this.deps.config.codexDefaults || {})
+                : this.cliType === 'gemini'
+                ? (this.deps.config.geminiDefaults || {})
                 : {};
 
             // Create the session via PluginManager

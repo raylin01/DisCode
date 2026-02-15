@@ -30,6 +30,26 @@ function truncateForDiscord(value: string, max: number): string {
     return `${value.slice(0, Math.max(0, max - 1))}…`;
 }
 
+const defaultModelPickerRequests = new Map<string, string>();
+
+function getDefaultModelPickerRequestKey(
+    interaction: any,
+    userId: string,
+    runnerId: string,
+    cliType: 'claude' | 'codex'
+): string {
+    const messageId = interaction?.message?.id || 'no-message';
+    return `${userId}:${messageId}:${runnerId}:${cliType}`;
+}
+
+async function editOrUpdateInteraction(interaction: any, payload: any): Promise<void> {
+    if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(payload);
+    } else {
+        await interaction.update(payload);
+    }
+}
+
 async function showDefaultModelPicker(
     interaction: any,
     userId: string,
@@ -52,12 +72,25 @@ async function showDefaultModelPicker(
         return;
     }
 
-    const result = await fetchRunnerModels(runnerId, cliType, { forceRefresh, limit: 100 });
-    if (result.error) {
-        await interaction.editReply({
-            embeds: [createErrorEmbed('Model Fetch Failed', result.error)],
+    const requestKey = getDefaultModelPickerRequestKey(interaction, userId, runnerId, cliType);
+    const requestToken = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    defaultModelPickerRequests.set(requestKey, requestToken);
+
+    try {
+        const loadingEmbed = new EmbedBuilder()
+            .setColor(0x5ca1e6)
+            .setTitle(cliType === 'claude' ? 'Loading Claude Models' : 'Loading Codex Models')
+            .setDescription(`Runner: \`${runner.name}\`\nFetching available models from this runner...`);
+
+        await editOrUpdateInteraction(interaction, {
+            embeds: [loadingEmbed],
             components: [
                 new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:models:${cliType}:refresh`)
+                        .setLabel('Fetching...')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(true),
                     new ButtonBuilder()
                         .setCustomId(`config:${runnerId}:section:${cliType === 'claude' ? 'claude' : 'codex'}`)
                         .setLabel('Back')
@@ -65,81 +98,111 @@ async function showDefaultModelPicker(
                 )
             ]
         });
-        return;
-    }
 
-    const currentModel = cliType === 'claude'
-        ? runner.config?.claudeDefaults?.model
-        : runner.config?.codexDefaults?.model;
-
-    const options = [
-        new StringSelectMenuOptionBuilder()
-            .setLabel('Auto (CLI default)')
-            .setValue(AUTO_MODEL_VALUE)
-            .setDescription('Use the CLI default model when spawning sessions.')
-            .setDefault(!currentModel),
-        ...result.models.slice(0, 24).map(model => {
-            const option = new StringSelectMenuOptionBuilder()
-                .setLabel(truncateForDiscord(model.label || model.id, 100))
-                .setValue(model.id)
-                .setDefault(currentModel === model.id);
-
-            const description = model.description
-                ? truncateForDiscord(model.description, 100)
-                : (model.isDefault ? 'Marked as default by CLI.' : `Model ID: ${model.id}`);
-            option.setDescription(description);
-            return option;
-        })
-    ];
-
-    if (currentModel && currentModel !== AUTO_MODEL_VALUE && !result.models.some(model => model.id === currentModel)) {
-        const customLabel = truncateForDiscord(`Current: ${currentModel}`, 100);
-        if (options.length >= 25) {
-            options.pop();
+        const result = await fetchRunnerModels(runnerId, cliType, { forceRefresh, limit: 100 });
+        if (defaultModelPickerRequests.get(requestKey) !== requestToken) {
+            return;
         }
-        options.push(
+
+        if (result.error) {
+            const errorText = result.error === 'Runner timed out while fetching models.'
+                ? `${result.error} The CLI may still be warming up.`
+                : result.error;
+            await editOrUpdateInteraction(interaction, {
+                embeds: [createErrorEmbed('Model Fetch Failed', errorText)],
+                components: [
+                    new ActionRowBuilder<ButtonBuilder>().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`config:${runnerId}:models:${cliType}:refresh`)
+                            .setLabel('Retry')
+                            .setStyle(ButtonStyle.Secondary),
+                        new ButtonBuilder()
+                            .setCustomId(`config:${runnerId}:section:${cliType === 'claude' ? 'claude' : 'codex'}`)
+                            .setLabel('Back')
+                            .setStyle(ButtonStyle.Secondary)
+                    )
+                ]
+            });
+            return;
+        }
+
+        const currentModel = cliType === 'claude'
+            ? runner.config?.claudeDefaults?.model
+            : runner.config?.codexDefaults?.model;
+
+        const options = [
             new StringSelectMenuOptionBuilder()
-                .setLabel(customLabel)
-                .setValue(currentModel)
-                .setDescription('Current model is not in the fetched catalog.')
-                .setDefault(true)
-        );
+                .setLabel('Auto (CLI default)')
+                .setValue(AUTO_MODEL_VALUE)
+                .setDescription('Use the CLI default model when spawning sessions.')
+                .setDefault(!currentModel),
+            ...result.models.slice(0, 24).map(model => {
+                const option = new StringSelectMenuOptionBuilder()
+                    .setLabel(truncateForDiscord(model.label || model.id, 100))
+                    .setValue(model.id)
+                    .setDefault(currentModel === model.id);
+
+                const description = model.description
+                    ? truncateForDiscord(model.description, 100)
+                    : (model.isDefault ? 'Marked as default by CLI.' : `Model ID: ${model.id}`);
+                option.setDescription(description);
+                return option;
+            })
+        ];
+
+        if (currentModel && currentModel !== AUTO_MODEL_VALUE && !result.models.some(model => model.id === currentModel)) {
+            const customLabel = truncateForDiscord(`Current: ${currentModel}`, 100);
+            if (options.length >= 25) {
+                options.pop();
+            }
+            options.push(
+                new StringSelectMenuOptionBuilder()
+                    .setLabel(customLabel)
+                    .setValue(currentModel)
+                    .setDescription('Current model is not in the fetched catalog.')
+                    .setDefault(true)
+            );
+        }
+
+        const embed = new EmbedBuilder()
+            .setColor(0x5ca1e6)
+            .setTitle(cliType === 'claude' ? 'Select Default Claude Model' : 'Select Default Codex Model')
+            .setDescription(
+                `Runner: \`${runner.name}\`\n` +
+                `Current default: \`${currentModel || 'Auto'}\`\n` +
+                `Available models: **${result.models.length}**${result.models.length > 24 ? ' (showing first 24)' : ''}`
+            )
+            .addFields({
+                name: 'Spawn Behavior',
+                value: 'This default model is used when new sessions are created unless overridden per-session.'
+            });
+
+        const selectRow = new ActionRowBuilder<StringSelectMenuBuilder>()
+            .addComponents(
+                new StringSelectMenuBuilder()
+                    .setCustomId(`config:${runnerId}:selectModel:${cliType}`)
+                    .setPlaceholder('Choose default model…')
+                    .addOptions(options)
+            );
+
+        const actionRow = new ActionRowBuilder<ButtonBuilder>()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`config:${runnerId}:models:${cliType}:refresh`)
+                    .setLabel('Refresh')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId(`config:${runnerId}:section:${cliType === 'claude' ? 'claude' : 'codex'}`)
+                    .setLabel('Back')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+        await editOrUpdateInteraction(interaction, { embeds: [embed], components: [selectRow, actionRow] });
+    } finally {
+        if (defaultModelPickerRequests.get(requestKey) === requestToken) {
+            defaultModelPickerRequests.delete(requestKey);
+        }
     }
-
-    const embed = new EmbedBuilder()
-        .setColor(0x5ca1e6)
-        .setTitle(cliType === 'claude' ? 'Select Default Claude Model' : 'Select Default Codex Model')
-        .setDescription(
-            `Runner: \`${runner.name}\`\n` +
-            `Current default: \`${currentModel || 'Auto'}\`\n` +
-            `Available models: **${result.models.length}**${result.models.length > 24 ? ' (showing first 24)' : ''}`
-        )
-        .addFields({
-            name: 'Spawn Behavior',
-            value: 'This default model is used when new sessions are created unless overridden per-session.'
-        });
-
-    const selectRow = new ActionRowBuilder<StringSelectMenuBuilder>()
-        .addComponents(
-            new StringSelectMenuBuilder()
-                .setCustomId(`config:${runnerId}:selectModel:${cliType}`)
-                .setPlaceholder('Choose default model…')
-                .addOptions(options)
-        );
-
-    const actionRow = new ActionRowBuilder<ButtonBuilder>()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId(`config:${runnerId}:models:${cliType}:refresh`)
-                .setLabel('Refresh')
-                .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId(`config:${runnerId}:section:${cliType === 'claude' ? 'claude' : 'codex'}`)
-                .setLabel('Back')
-                .setStyle(ButtonStyle.Secondary)
-        );
-
-    await interaction.editReply({ embeds: [embed], components: [selectRow, actionRow] });
 }
 
 export async function handleRunnerConfig(
@@ -173,6 +236,7 @@ export async function handleRunnerConfig(
         yoloMode: false,
         claudeDefaults: {},
         codexDefaults: {},
+        geminiDefaults: {},
         presets: {}
     };
 
@@ -180,13 +244,20 @@ export async function handleRunnerConfig(
     if (!runner.config) {
         runner.config = config;
         storage.updateRunner(runnerId, runner);
-    } else if (!runner.config.claudeDefaults) {
+    }
+    if (!runner.config.claudeDefaults) {
         runner.config.claudeDefaults = {};
         storage.updateRunner(runnerId, runner);
-    } else if (!runner.config.codexDefaults) {
+    }
+    if (!runner.config.codexDefaults) {
         runner.config.codexDefaults = {};
         storage.updateRunner(runnerId, runner);
-    } else if (!runner.config.presets) {
+    }
+    if (!runner.config.geminiDefaults) {
+        runner.config.geminiDefaults = {};
+        storage.updateRunner(runnerId, runner);
+    }
+    if (!runner.config.presets) {
         runner.config.presets = {};
         storage.updateRunner(runnerId, runner);
     }
@@ -598,7 +669,8 @@ export async function handleConfigAction(interaction: any, userId: string, custo
 
         sendRunnerConfigUpdate(runnerId, {
             claudeDefaults: runner.config?.claudeDefaults,
-            codexDefaults: runner.config?.codexDefaults
+            codexDefaults: runner.config?.codexDefaults,
+            geminiDefaults: runner.config?.geminiDefaults
         });
 
         await handleRunnerConfig(
@@ -674,7 +746,8 @@ export async function handleConfigAction(interaction: any, userId: string, custo
 
         sendRunnerConfigUpdate(runnerId, {
             claudeDefaults: runner.config?.claudeDefaults,
-            codexDefaults: runner.config?.codexDefaults
+            codexDefaults: runner.config?.codexDefaults,
+            geminiDefaults: runner.config?.geminiDefaults
         });
         
         // Determine current section to stay on
@@ -772,14 +845,14 @@ async function handleConfigModal(
 
 function sendRunnerConfigUpdate(
     runnerId: string,
-    defaults: { claudeDefaults?: Record<string, any>; codexDefaults?: Record<string, any> }
+    defaults: { claudeDefaults?: Record<string, any>; codexDefaults?: Record<string, any>; geminiDefaults?: Record<string, any> }
 ): void {
     const ws = botState.runnerConnections.get(runnerId);
     if (!ws) {
         console.warn(`[RunnerConfig] Runner ${runnerId} not connected; cannot update defaults.`);
         return;
     }
-    if (!defaults.claudeDefaults && !defaults.codexDefaults) {
+    if (!defaults.claudeDefaults && !defaults.codexDefaults && !defaults.geminiDefaults) {
         console.warn(`[RunnerConfig] No defaults to update for ${runnerId}`);
         return;
     }
@@ -795,6 +868,7 @@ function sendRunnerConfigUpdate(
             runnerId,
             ...(defaults.claudeDefaults ? { claudeDefaults: defaults.claudeDefaults } : {}),
             ...(defaults.codexDefaults ? { codexDefaults: defaults.codexDefaults } : {}),
+            ...(defaults.geminiDefaults ? { geminiDefaults: defaults.geminiDefaults } : {}),
             requestId
         }
     }));

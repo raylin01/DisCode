@@ -27,6 +27,7 @@ export interface RunnerConfig {
   yoloMode?: boolean; // If true, auto-approve commands
   claudeDefaults?: Record<string, any>;
   codexDefaults?: Record<string, any>;
+  geminiDefaults?: Record<string, any>;
   presets?: Record<string, any>;
 }
 
@@ -73,7 +74,7 @@ export interface Session {
   createdAt: string;
   status: 'active' | 'ended';
   cliType: 'claude' | 'gemini' | 'codex' | 'generic';
-  plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk' | 'codex-sdk'; // Plugin type used for this session
+  plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk' | 'codex-sdk' | 'gemini-sdk'; // Plugin type used for this session
   folderPath?: string; // Optional custom working folder
   interactionToken?: string; // Token to update the ephemeral "Initializing" message
   creatorId?: string; // ID of the user who created the session
@@ -467,9 +468,9 @@ export interface SessionStartMessage extends WebSocketMessage {
   data: {
     sessionId: string;
     runnerId: string;
-    cliType: 'claude' | 'gemini';
+    cliType: 'claude' | 'gemini' | 'codex' | 'terminal' | 'generic';
     folderPath?: string;
-    plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk' | 'codex-sdk';
+    plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk' | 'codex-sdk' | 'gemini-sdk';
   };
 }
 

@@ -77,8 +77,8 @@ async function sendSessionControl(
         )
         .setTimestamp();
 
-    if (session.plugin && session.plugin !== 'claude-sdk') {
-        embed.setDescription('⚠️ This control is only supported on `claude-sdk` sessions. Other plugins may ignore it.');
+    if (session.plugin && !['claude-sdk', 'codex-sdk', 'gemini-sdk'].includes(session.plugin)) {
+        embed.setDescription('⚠️ This control is only supported on SDK sessions (`claude-sdk`, `codex-sdk`, `gemini-sdk`). Other plugins may ignore it.');
     }
 
     await interaction.reply({

@@ -28,6 +28,7 @@ import { PrintPlugin } from './print-plugin.js';
 import { StreamPlugin } from './stream-plugin.js';
 import { ClaudeSDKPlugin } from './claude-sdk-plugin.js';
 import { CodexSDKPlugin } from './codex-sdk-plugin.js';
+import { GeminiSDKPlugin } from './gemini-sdk-plugin.js';
 
 // ============================================================================
 // Types
@@ -58,7 +59,7 @@ export class PluginManager extends EventEmitter {
         this.defaultPlugin = config?.defaultPlugin || envPlugin || 'tmux';
 
         // Determine which plugins to enable
-        const enabledPlugins = config?.enabledPlugins || ['tmux', 'print', 'stream', 'claude-sdk', 'codex-sdk'];
+        const enabledPlugins = config?.enabledPlugins || ['tmux', 'print', 'stream', 'claude-sdk', 'codex-sdk', 'gemini-sdk'];
 
         // Create plugin instances
         if (enabledPlugins.includes('tmux')) {
@@ -75,6 +76,9 @@ export class PluginManager extends EventEmitter {
         }
         if (enabledPlugins.includes('codex-sdk')) {
             this.plugins.set('codex-sdk', new CodexSDKPlugin());
+        }
+        if (enabledPlugins.includes('gemini-sdk')) {
+            this.plugins.set('gemini-sdk', new GeminiSDKPlugin());
         }
         // Future: if (enabledPlugins.includes('pty')) { ... }
 

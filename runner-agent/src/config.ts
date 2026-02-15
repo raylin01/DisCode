@@ -55,6 +55,8 @@ export interface RunnerConfig {
     claudeDefaults?: Partial<PluginOptions>;
     // Codex default session options
     codexDefaults?: Partial<PluginOptions>;
+    // Gemini default session options
+    geminiDefaults?: Partial<PluginOptions>;
 }
 
 interface FileConfig {
@@ -72,6 +74,7 @@ interface FileConfig {
     assistant?: Partial<AssistantConfig>;
     claudeDefaults?: Partial<PluginOptions>;
     codexDefaults?: Partial<PluginOptions>;
+    geminiDefaults?: Partial<PluginOptions>;
 }
 
 export function loadConfigFile(): FileConfig {
@@ -171,7 +174,7 @@ export function loadConfig(): RunnerConfig {
     );
 
     if (cliTypes.length === 0) {
-        console.error('At least one valid CLI type must be specified (claude, gemini)');
+        console.error('At least one valid CLI type must be specified (claude, gemini, codex)');
         process.exit(1);
     }
 
@@ -245,7 +248,8 @@ export function loadConfig(): RunnerConfig {
 
         // Claude defaults (session options)
         claudeDefaults: normalizedDefaults.options,
-        codexDefaults: fileConfig.codexDefaults || {}
+        codexDefaults: fileConfig.codexDefaults || {},
+        geminiDefaults: fileConfig.geminiDefaults || {}
     };
 }
 

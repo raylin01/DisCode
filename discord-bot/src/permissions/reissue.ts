@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import * as botState from '../state.js';
 import { storage } from '../storage.js';
 import { permissionStateStore } from './state-store.js';
@@ -15,6 +17,62 @@ interface ReissueOptions {
   reason?: ReissueReason;
 }
 
+const STORAGE_PATH = process.env.DISCODE_STORAGE_PATH || './data';
+const PERMISSION_REISSUE_LOCK_DIR = path.join(STORAGE_PATH, 'permission-reissue-locks');
+const PERMISSION_REISSUE_COOLDOWN_MS = parseInt(process.env.DISCODE_PERMISSION_REISSUE_COOLDOWN_MS || '5000', 10);
+let lastPermissionReissueCleanup = 0;
+
+function ensurePermissionReissueLockDir(): void {
+  if (!fs.existsSync(PERMISSION_REISSUE_LOCK_DIR)) {
+    fs.mkdirSync(PERMISSION_REISSUE_LOCK_DIR, { recursive: true });
+  }
+}
+
+function cleanupPermissionReissueLocks(nowMs: number): void {
+  if (nowMs - lastPermissionReissueCleanup < 60000) return;
+  lastPermissionReissueCleanup = nowMs;
+
+  try {
+    ensurePermissionReissueLockDir();
+    const files = fs.readdirSync(PERMISSION_REISSUE_LOCK_DIR);
+    for (const file of files) {
+      if (!file.endsWith('.lock')) continue;
+      const lockPath = path.join(PERMISSION_REISSUE_LOCK_DIR, file);
+      try {
+        const stat = fs.statSync(lockPath);
+        if (nowMs - stat.mtimeMs > PERMISSION_REISSUE_COOLDOWN_MS) {
+          fs.unlinkSync(lockPath);
+        }
+      } catch {
+        // Ignore per-file cleanup failures.
+      }
+    }
+  } catch {
+    // Ignore cleanup failures to avoid blocking reissue flow.
+  }
+}
+
+function tryClaimPermissionReissue(requestId: string, reason: ReissueReason): boolean {
+  const nowMs = Date.now();
+  cleanupPermissionReissueLocks(nowMs);
+
+  try {
+    ensurePermissionReissueLockDir();
+    const safeReason = reason.replace(/[^a-z0-9_-]/gi, '_');
+    const safeRequestId = requestId.replace(/[^a-z0-9_-]/gi, '_');
+    const lockPath = path.join(PERMISSION_REISSUE_LOCK_DIR, `${safeRequestId}__${safeReason}.lock`);
+    fs.writeFileSync(lockPath, String(nowMs), { flag: 'wx' });
+    return true;
+  } catch (error: any) {
+    if (error?.code === 'EEXIST') {
+      return false;
+    }
+    console.error('[Permissions] Failed to claim permission reissue lock:', error);
+    // Fail open so lock issues do not block reissue.
+    return true;
+  }
+}
+
 function inferSessionIdFromRequestId(requestId: string): string | null {
   const match = requestId.match(/^(.+)-\d{13}(?:-[a-f0-9]{8})?$/i);
   return match ? match[1] : null;
@@ -30,11 +88,6 @@ function gatherCandidateRunnerIds(requestId: string, options?: ReissueOptions): 
   const requestState = permissionStateStore.get(requestId);
   if (requestState?.request?.runnerId) {
     runnerIds.add(requestState.request.runnerId);
-  }
-
-  const pending = botState.pendingApprovals.get(requestId);
-  if (pending?.runnerId) {
-    runnerIds.add(pending.runnerId);
   }
 
   const inferredSessionId = inferSessionIdFromRequestId(requestId);
@@ -61,8 +114,14 @@ function gatherCandidateRunnerIds(requestId: string, options?: ReissueOptions): 
   return Array.from(runnerIds);
 }
 
-export async function attemptPermissionReissue(options: ReissueOptions): Promise<{ requested: boolean; targetRunnerIds: string[] }> {
+export async function attemptPermissionReissue(options: ReissueOptions): Promise<{ requested: boolean; targetRunnerIds: string[]; deduped: boolean }> {
   const { requestId } = options;
+  const reason = options.reason || 'manual';
+
+  if (!tryClaimPermissionReissue(requestId, reason)) {
+    return { requested: true, targetRunnerIds: [], deduped: true };
+  }
+
   const targetRunnerIds = gatherCandidateRunnerIds(requestId, options);
 
   let requested = false;
@@ -75,13 +134,13 @@ export async function attemptPermissionReissue(options: ReissueOptions): Promise
       data: {
         runnerId,
         requestId,
-        reason: options.reason || 'manual'
+        reason
       }
     }));
     requested = true;
   }
 
-  return { requested, targetRunnerIds };
+  return { requested, targetRunnerIds, deduped: false };
 }
 
 export function extractPermissionRequestId(customId: string): string | null {

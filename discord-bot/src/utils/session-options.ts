@@ -19,6 +19,7 @@ export function buildSessionStartOptions(
     const options: Record<string, any> = {
         ...(cliType === 'claude' ? (runner?.config?.claudeDefaults || {}) : {}),
         ...(cliType === 'codex' ? (runner?.config?.codexDefaults || {}) : {}),
+        ...(cliType === 'gemini' ? (runner?.config?.geminiDefaults || {}) : {}),
         ...(stateOptions || {}),
         ...(overrides || {})
     };

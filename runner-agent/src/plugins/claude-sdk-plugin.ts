@@ -985,7 +985,7 @@ export class ClaudeSDKPlugin extends BasePlugin {
 
         try {
             await probeClient.start();
-            const result = await probeClient.listSupportedModels(12000);
+            const result = await probeClient.listSupportedModels(25000);
             const models = [...result.models];
 
             if (result.defaultModel) {

@@ -13,6 +13,7 @@ export interface RunnerConfigUpdateData {
     runnerId: string;
     claudeDefaults?: Record<string, any>;
     codexDefaults?: Record<string, any>;
+    geminiDefaults?: Record<string, any>;
     requestId?: string;
 }
 
@@ -27,7 +28,8 @@ export async function handleRunnerConfigUpdate(
 
     const hasClaudeDefaults = !!data.claudeDefaults && typeof data.claudeDefaults === 'object';
     const hasCodexDefaults = !!data.codexDefaults && typeof data.codexDefaults === 'object';
-    if (!hasClaudeDefaults && !hasCodexDefaults) {
+    const hasGeminiDefaults = !!data.geminiDefaults && typeof data.geminiDefaults === 'object';
+    if (!hasClaudeDefaults && !hasCodexDefaults && !hasGeminiDefaults) {
         console.warn('[RunnerConfig] No defaults provided; ignoring update.');
         return;
     }
@@ -47,10 +49,14 @@ export async function handleRunnerConfigUpdate(
     if (hasCodexDefaults) {
         deps.config.codexDefaults = data.codexDefaults || {};
     }
+    if (hasGeminiDefaults) {
+        deps.config.geminiDefaults = data.geminiDefaults || {};
+    }
 
     saveConfigFile({
         ...(hasClaudeDefaults ? { claudeDefaults } : {}),
-        ...(hasCodexDefaults ? { codexDefaults: data.codexDefaults } : {})
+        ...(hasCodexDefaults ? { codexDefaults: data.codexDefaults } : {}),
+        ...(hasGeminiDefaults ? { geminiDefaults: data.geminiDefaults } : {})
     });
 
     deps.wsManager.send({
@@ -59,6 +65,7 @@ export async function handleRunnerConfigUpdate(
             runnerId: deps.wsManager.runnerId,
             ...(hasClaudeDefaults ? { claudeDefaults } : {}),
             ...(hasCodexDefaults ? { codexDefaults: data.codexDefaults } : {}),
+            ...(hasGeminiDefaults ? { geminiDefaults: data.geminiDefaults } : {}),
             warnings,
             requestId: data.requestId
         }

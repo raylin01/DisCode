@@ -11,7 +11,7 @@ import { EventEmitter } from 'events';
 // Types
 // ============================================================================
 
-export type PluginType = 'tmux' | 'print' | 'pty' | 'stream' | 'claude-sdk' | 'codex-sdk';
+export type PluginType = 'tmux' | 'print' | 'pty' | 'stream' | 'claude-sdk' | 'codex-sdk' | 'gemini-sdk';
 export type SessionStatus = 'idle' | 'working' | 'waiting' | 'offline' | 'error';
 
 export interface SessionConfig {
@@ -100,6 +100,12 @@ export interface PluginOptions {
     personality?: Record<string, any>;
     /** Codex output schema */
     outputSchema?: Record<string, any> | string;
+    /** Gemini approval mode */
+    approvalMode?: 'default' | 'auto_edit' | 'yolo';
+    /** Gemini allowed MCP server names */
+    allowedMcpServerNames?: string[];
+    /** Gemini extensions */
+    extensions?: string[];
     /** Include partial messages */
     includePartialMessages?: boolean;
     /** Use permission prompt tool over stdio */

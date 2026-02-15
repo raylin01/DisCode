@@ -434,6 +434,12 @@ export class SessionSyncService extends EventEmitter {
             const cliType = this.resolveSyncedCliType(session);
             const sessionKey = this.toSessionKey(session.sessionId, cliType);
             if (this.ownedSessions.has(sessionKey)) continue;
+            const localSession = storage.getSession(session.sessionId);
+            if (localSession && localSession.runnerId === runnerId && localSession.status === 'active') {
+                this.markSessionAsOwned(session.sessionId, cliType);
+                console.log(`[SessionSync] Skipping synced session ${sessionKey}; already active in Discord storage.`);
+                continue;
+            }
             await this.syncSessionToDiscord(
                 runnerId,
                 normalizedProjectPath,
@@ -713,6 +719,12 @@ export class SessionSyncService extends EventEmitter {
         const sessionKey = this.toSessionKey(session.sessionId, cliType);
         const projectPath = this.normalizeProjectPath(session.projectPath);
         console.log(`[SessionSync] Session discovered on runner ${runnerId}: ${sessionKey}`);
+        const localSession = storage.getSession(session.sessionId);
+        if (localSession && localSession.runnerId === runnerId && localSession.status === 'active') {
+            this.markSessionAsOwned(session.sessionId, cliType);
+            console.log(`[SessionSync] Skipping discovered session ${sessionKey}; already active in Discord storage.`);
+            return;
+        }
         if (this.ownedSessions.has(sessionKey)) return;
         await this.ensureProjectState(runnerId, projectPath);
         await this.syncSessionToDiscord(runnerId, projectPath, { ...session, cliType, projectPath }, session.messages);

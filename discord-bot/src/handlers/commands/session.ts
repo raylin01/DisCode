@@ -11,7 +11,47 @@ import { storage } from '../../storage.js';
 import { createErrorEmbed, createInfoEmbed, createSuccessEmbed } from '../../utils/embeds.js';
 import { getCategoryManager } from '../../services/category-manager.js';
 import { getSessionSyncService } from '../../services/session-sync.js';
+import { permissionStateStore } from '../../permissions/state-store.js';
 import type { RunnerInfo, Session } from '../../../../shared/types.ts';
+
+async function resolveRunnerIdFromChannelContext(interaction: any, sourceChannel?: any): Promise<string | undefined> {
+    const categoryManager = getCategoryManager();
+    if (!categoryManager) return undefined;
+
+    let channel = sourceChannel ?? interaction?.channel;
+    if (!channel && interaction?.channelId) {
+        try {
+            channel = await interaction.client.channels.fetch(interaction.channelId);
+        } catch (e) {
+            return undefined;
+        }
+    }
+
+    if (channel?.isThread?.()) {
+        try {
+            channel = channel.parent || (channel.parentId ? await interaction.client.channels.fetch(channel.parentId) : channel);
+        } catch (e) {
+            return undefined;
+        }
+    }
+
+    if (!channel) return undefined;
+
+    const byChannel = categoryManager.getRunnerByChannelId(channel.id);
+    if (byChannel) return byChannel;
+
+    if (channel.parentId) {
+        const byCategory = categoryManager.getRunnerByCategoryId(channel.parentId);
+        if (byCategory) return byCategory;
+    }
+
+    if (channel.parentId) {
+        const fallbackRunner = Object.values(storage.data.runners).find(r => r.discordState?.categoryId === channel.parentId);
+        if (fallbackRunner) return fallbackRunner.runnerId;
+    }
+
+    return undefined;
+}
 
 async function resolveProjectContext(interaction: any): Promise<{
     runnerId?: string;
@@ -41,11 +81,23 @@ async function resolveProjectContext(interaction: any): Promise<{
     if (!channel) return {};
 
     const projectInfo = categoryManager.getProjectByChannelId(channel.id);
-    if (!projectInfo) return {};
+    if (projectInfo) {
+        return {
+            runnerId: projectInfo.runnerId,
+            projectPath: projectInfo.projectPath,
+            projectChannelId: channel.id
+        };
+    }
+
+    const runnerId = await resolveRunnerIdFromChannelContext(interaction, channel);
+    if (!runnerId) return {};
+
+    const runner = storage.getRunner(runnerId);
+    const projectPath = Object.entries(runner?.discordState?.projects || {}).find(([, data]) => data.channelId === channel.id)?.[0];
 
     return {
-        runnerId: projectInfo.runnerId,
-        projectPath: projectInfo.projectPath,
+        runnerId,
+        ...(projectPath ? { projectPath } : {}),
         projectChannelId: channel.id
     };
 }
@@ -126,6 +178,10 @@ export async function handleCreateSession(interaction: any, userId: string): Pro
             } else if (cliType === 'gemini') {
                 pluginButtons.push(
                     new ButtonBuilder()
+                        .setCustomId('session_plugin_gemini-sdk')
+                        .setLabel('Gemini SDK')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
                         .setCustomId('session_plugin_tmux')
                         .setLabel('Interactive (Tmux)')
                         .setStyle(ButtonStyle.Success),
@@ -135,8 +191,8 @@ export async function handleCreateSession(interaction: any, userId: string): Pro
                         .setStyle(ButtonStyle.Secondary),
                     new ButtonBuilder()
                         .setCustomId('session_plugin_stream')
-                        .setLabel('Streaming')
-                        .setStyle(ButtonStyle.Primary)
+                        .setLabel('Stream Fallback')
+                        .setStyle(ButtonStyle.Secondary)
                 );
             } else if (cliType === 'codex') {
                 pluginButtons.push(
@@ -172,7 +228,11 @@ export async function handleCreateSession(interaction: any, userId: string): Pro
                 .addFields(
                     { name: 'Interactive (Tmux)', value: 'Full terminal interaction with approval workflows', inline: false },
                     { name: 'Basic (Print)', value: 'Simple output logging, less interactive', inline: false },
-                    { name: 'Claude SDK', value: 'Native SDK integration with bidirectional JSON protocol', inline: false }
+                    {
+                        name: cliType === 'gemini' ? 'Gemini SDK' : cliType === 'codex' ? 'Codex SDK' : 'Claude SDK',
+                        value: 'Native SDK integration with persistent session resume support.',
+                        inline: false
+                    }
                 );
 
             await interaction.reply({
@@ -300,7 +360,7 @@ export async function handleStatus(interaction: any, userId: string): Promise<vo
         let statusText = 'Ready';
 
         const currentStatus = botState.sessionStatuses.get(session.sessionId);
-        const isWaitingForApproval = Array.from(botState.pendingApprovals.values()).some(p => p.sessionId === session.sessionId);
+        const isWaitingForApproval = permissionStateStore.getBySessionId(session.sessionId).length > 0;
 
         if (isWaitingForApproval || currentStatus === 'waiting') {
             statusEmoji = '🟡';
@@ -391,7 +451,19 @@ export async function handleEndSession(interaction: any, userId: string): Promis
         return;
     }
 
-    const runner = storage.getRunner(session.runnerId);
+    let runner = storage.getRunner(session.runnerId);
+    if (!runner) {
+        const fallbackRunnerId = await resolveRunnerIdFromChannelContext(interaction, interaction.channel);
+        if (fallbackRunnerId) {
+            const fallbackRunner = storage.getRunner(fallbackRunnerId);
+            if (fallbackRunner) {
+                runner = fallbackRunner;
+                session.runnerId = fallbackRunner.runnerId;
+                storage.updateSession(session.sessionId, { runnerId: fallbackRunner.runnerId });
+            }
+        }
+    }
+
     if (!runner || !storage.canUserAccessRunner(userId, session.runnerId)) {
         await interaction.reply({
             embeds: [createErrorEmbed('Access Denied', 'You do not have permission to end this session.')],
@@ -408,10 +480,15 @@ export async function handleEndSession(interaction: any, userId: string): Promis
         return;
     }
 
-    await endSession(targetSessionId, userId);
+    const runnerNotified = await endSession(targetSessionId, userId);
 
     await interaction.reply({
-        embeds: [createSuccessEmbed('Session Ended', `Session \`${targetSessionId}\` has been ended and the thread archived.`)],
+        embeds: [createSuccessEmbed(
+            'Session Ended',
+            runnerNotified
+                ? `Session \`${targetSessionId}\` has been ended and the thread archived.`
+                : `Session \`${targetSessionId}\` was ended locally and the thread archived (runner was offline).`
+        )],
         flags: 64
     });
 }
@@ -419,17 +496,19 @@ export async function handleEndSession(interaction: any, userId: string): Promis
 /**
  * End a session and cleanup
  */
-export async function endSession(sessionId: string, userId: string): Promise<void> {
+export async function endSession(sessionId: string, userId: string): Promise<boolean> {
     const session = storage.getSession(sessionId);
-    if (!session) return;
+    if (!session) return false;
 
     // Notify runner to stop watching
+    let runnerNotified = false;
     const ws = botState.runnerConnections.get(session.runnerId);
     if (ws) {
         ws.send(JSON.stringify({
             type: 'session_end',
             data: { sessionId }
         }));
+        runnerNotified = true;
     }
 
     // Update session status
@@ -462,6 +541,7 @@ export async function endSession(sessionId: string, userId: string): Promise<voi
     }
 
     console.log(`Session ${sessionId} ended by ${userId}`);
+    return runnerNotified;
 }
 
 /**
@@ -511,7 +591,18 @@ export async function handleRespawnSession(interaction: any, userId: string): Pr
     }
 
     // Get the runner
-    const runner = storage.getRunner(lastSession.runnerId);
+    let runner = storage.getRunner(lastSession.runnerId);
+    if (!runner) {
+        const fallbackRunnerId = await resolveRunnerIdFromChannelContext(interaction, channel);
+        if (fallbackRunnerId) {
+            const fallbackRunner = storage.getRunner(fallbackRunnerId);
+            if (fallbackRunner) {
+                runner = fallbackRunner;
+                lastSession.runnerId = fallbackRunner.runnerId;
+                storage.updateSession(lastSession.sessionId, { runnerId: fallbackRunner.runnerId });
+            }
+        }
+    }
 
     if (!runner) {
         await interaction.reply({
@@ -568,6 +659,11 @@ export async function handleRespawnSession(interaction: any, userId: string): Pr
     };
 
     storage.createSession(newSession);
+
+    if (lastSession.cliType === 'claude' || lastSession.cliType === 'codex') {
+        getSessionSyncService()?.markSessionAsOwned(newSessionId, lastSession.cliType);
+        console.log(`[Respawn] Marked session as owned for sync suppression: ${lastSession.cliType}:${newSessionId}`);
+    }
 
     // Send initializing message
     await interaction.reply({

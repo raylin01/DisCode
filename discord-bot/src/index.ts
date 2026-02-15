@@ -5,6 +5,8 @@
  * Handler logic is in handlers/ directory.
  */
 
+import fs from 'fs';
+import path from 'path';
 import { REST, Routes, SlashCommandBuilder, Events } from 'discord.js';
 import { storage } from './storage.js';
 import { getConfig } from './config.js';
@@ -54,7 +56,59 @@ const config = getConfig();
 const DISCORD_TOKEN = config.discordToken;
 const DISCORD_CLIENT_ID = config.discordClientId;
 const WS_PORT = config.wsPort;
-const PROJECT_DASHBOARD_REFRESH_MS = parseInt(process.env.DISCODE_PROJECT_DASHBOARD_REFRESH_MS || '600000');
+const STORAGE_PATH = process.env.DISCODE_STORAGE_PATH || './data';
+const INTERACTION_LOCK_DIR = path.join(STORAGE_PATH, 'interaction-locks');
+const INTERACTION_LOCK_TTL_MS = parseInt(process.env.DISCODE_INTERACTION_LOCK_TTL_MS || '900000');
+let lastInteractionLockCleanup = 0;
+
+function ensureInteractionLockDir(): void {
+  if (!fs.existsSync(INTERACTION_LOCK_DIR)) {
+    fs.mkdirSync(INTERACTION_LOCK_DIR, { recursive: true });
+  }
+}
+
+function cleanupInteractionLocks(nowMs: number): void {
+  if (nowMs - lastInteractionLockCleanup < 60000) return;
+  lastInteractionLockCleanup = nowMs;
+
+  try {
+    ensureInteractionLockDir();
+    const files = fs.readdirSync(INTERACTION_LOCK_DIR);
+    for (const file of files) {
+      if (!file.endsWith('.lock')) continue;
+      const lockPath = path.join(INTERACTION_LOCK_DIR, file);
+      try {
+        const stat = fs.statSync(lockPath);
+        if (nowMs - stat.mtimeMs > INTERACTION_LOCK_TTL_MS) {
+          fs.unlinkSync(lockPath);
+        }
+      } catch {
+        // Ignore per-file cleanup failures.
+      }
+    }
+  } catch {
+    // Ignore cleanup failures to avoid breaking interaction flow.
+  }
+}
+
+function tryClaimInteraction(interactionId: string): boolean {
+  const nowMs = Date.now();
+  cleanupInteractionLocks(nowMs);
+
+  try {
+    ensureInteractionLockDir();
+    const lockPath = path.join(INTERACTION_LOCK_DIR, `${interactionId}.lock`);
+    fs.writeFileSync(lockPath, String(nowMs), { flag: 'wx' });
+    return true;
+  } catch (error: any) {
+    if (error?.code === 'EEXIST') {
+      return false;
+    }
+    console.error('[Interaction] Failed to claim interaction lock:', error);
+    // Fail open so a lock issue doesn't block bot behavior.
+    return true;
+  }
+}
 
 // Create WebSocket server
 createWebSocketServer(WS_PORT);
@@ -72,32 +126,14 @@ botState.client.once(Events.ClientReady, async () => {
       await reconcileRunnerCategories();
   }
 
-  // Periodically refresh project dashboards to keep buttons fresh
-  if (categoryManager) {
-      setInterval(async () => {
-          const sessionSync = getSessionSyncService();
-          const projects = categoryManager.listProjects();
-          const now = Date.now();
-          for (const project of projects) {
-              const lastBump = botState.projectDashboardBumps.get(project.channelId) || 0;
-              if (now - lastBump < PROJECT_DASHBOARD_REFRESH_MS) continue;
-              const stats = sessionSync?.getProjectStats(project.runnerId, project.projectPath) || {
-                  totalSessions: 0,
-                  activeSessions: 0,
-                  pendingActions: 0
-              };
-              try {
-                  await categoryManager.bumpProjectDashboard(project.runnerId, project.projectPath, stats);
-                  botState.projectDashboardBumps.set(project.channelId, now);
-              } catch (e) {
-                  // ignore refresh errors
-              }
-          }
-      }, PROJECT_DASHBOARD_REFRESH_MS);
-  }
 });
 
 botState.client.on(Events.InteractionCreate, async (interaction) => {
+  if (!tryClaimInteraction(interaction.id)) {
+    console.warn(`[Interaction] Duplicate interaction detected, skipping ${interaction.id}`);
+    return;
+  }
+
   try {
     if (!interaction.isChatInputCommand()) {
       // Handle button interactions
@@ -118,10 +154,14 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
   } catch (error) {
-    console.error('Error handling interaction:', error);
-    if (isUnknownInteraction(error) || isAlreadyAcknowledged(error)) {
+    if (isUnknownInteraction(error)) {
       return;
     }
+    if (isAlreadyAcknowledged(error)) {
+      console.warn('[Interaction] Non-command interaction was already acknowledged. Skipping duplicate response.');
+      return;
+    }
+    console.error('Error handling interaction:', error);
     try {
         if ((interaction as any).replied || (interaction as any).deferred) {
             await (interaction as any).followUp({ content: '❌ Interaction failed.', flags: 64 });
@@ -268,10 +308,14 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
         });
     }
   } catch (error) {
-    console.error(`Error handling command ${commandName}:`, error);
-    if (isUnknownInteraction(error) || isAlreadyAcknowledged(error)) {
+    if (isUnknownInteraction(error)) {
       return;
     }
+    if (isAlreadyAcknowledged(error)) {
+      console.warn(`[Interaction] Command ${commandName} was already acknowledged. Possible duplicate handler or bot instance.`);
+      return;
+    }
+    console.error(`Error handling command ${commandName}:`, error);
     
     // Check if we can still reply
     if (interaction.replied || interaction.deferred) {
@@ -306,37 +350,6 @@ botState.client.on(Events.InteractionCreate, async (interaction) => {
 botState.client.on(Events.MessageCreate, async (message) => {
   // Ignore bot messages
   if (message.author.bot) return;
-
-  // Bump project controls in project channels (not threads)
-  if (!message.channel.isThread()) {
-    const categoryManager = getCategoryManager();
-    if (categoryManager) {
-      const projectInfo = categoryManager.getProjectByChannelId(message.channel.id);
-      if (projectInfo) {
-        const now = Date.now();
-        const lastBump = botState.projectDashboardBumps.get(message.channel.id) || 0;
-        if (now - lastBump > 30000) {
-          botState.projectDashboardBumps.set(message.channel.id, now);
-          const sessionSync = getSessionSyncService();
-          const stats = sessionSync?.getProjectStats(projectInfo.runnerId, projectInfo.projectPath) || {
-            totalSessions: 0,
-            activeSessions: 0,
-            pendingActions: 0
-          };
-          try {
-            await categoryManager.bumpProjectDashboard(
-              projectInfo.runnerId,
-              projectInfo.projectPath,
-              stats,
-              message.channel as any
-            );
-          } catch (e) {
-            // ignore bump errors
-          }
-        }
-      }
-    }
-  }
 
   // Handle thread messages (existing logic)
   if (message.channel.isThread()) {
@@ -501,6 +514,31 @@ botState.client.on(Events.MessageCreate, async (message) => {
       // Ignore reaction errors
     }
     return;
+  }
+
+  // Handle messages in project channels — bump the project dashboard
+  const categoryManager = getCategoryManager();
+  if (categoryManager) {
+    const projectInfo = categoryManager.getProjectByChannelId(message.channel.id);
+    if (projectInfo) {
+      const { runnerId, projectPath } = projectInfo;
+      const sessions = storage.getRunnerSessions(runnerId);
+      const projectSessions = sessions.filter(s => s.folderPath === projectPath);
+      const activeSessions = projectSessions.filter(s => s.status === 'active').length;
+      const { permissionStateStore } = await import('./permissions/state-store.js');
+      const pendingActions = permissionStateStore.getByRunnerId(runnerId)
+        .filter(s => {
+          const session = storage.getSession(s.request.sessionId);
+          return session?.folderPath === projectPath;
+        }).length;
+
+      await categoryManager.bumpProjectDashboard(runnerId, projectPath, {
+        totalSessions: projectSessions.length,
+        activeSessions,
+        pendingActions
+      }, message.channel as any);
+      return;
+    }
   }
 
   // Handle main channel messages for assistant (new logic)
@@ -737,7 +775,7 @@ async function registerCommands(): Promise<void> {
 
     new SlashCommandBuilder()
       .setName('set-model')
-      .setDescription('Set model for a session (claude-sdk only)')
+      .setDescription('Set model for an SDK session')
       .addStringOption(option =>
         option.setName('model')
           .setDescription('Model name (e.g. claude-sonnet-4-5)')
@@ -751,7 +789,7 @@ async function registerCommands(): Promise<void> {
 
     new SlashCommandBuilder()
       .setName('set-permission-mode')
-      .setDescription('Set permission mode for a session (claude-sdk only)')
+      .setDescription('Set permission mode for an SDK session')
       .addStringOption(option =>
         option.setName('mode')
           .setDescription('Permission mode')
@@ -769,7 +807,7 @@ async function registerCommands(): Promise<void> {
 
     new SlashCommandBuilder()
       .setName('set-thinking-tokens')
-      .setDescription('Set max thinking tokens for a session (claude-sdk only)')
+      .setDescription('Set max thinking tokens for a session (Claude SDK)')
       .addIntegerOption(option =>
         option.setName('max_tokens')
           .setDescription('Maximum thinking tokens')

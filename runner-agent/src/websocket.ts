@@ -21,6 +21,7 @@ export interface WebSocketManagerConfig {
     assistantEnabled: boolean;
     claudeDefaults?: Record<string, any>;
     codexDefaults?: Record<string, any>;
+    geminiDefaults?: Record<string, any>;
 }
 
 export class WebSocketManager extends EventEmitter {
@@ -65,7 +66,8 @@ export class WebSocketManager extends EventEmitter {
                     defaultWorkspace: this.config.defaultWorkspace,
                     assistantEnabled: this.config.assistantEnabled,
                     claudeDefaults: this.config.claudeDefaults,
-                    codexDefaults: this.config.codexDefaults
+                    codexDefaults: this.config.codexDefaults,
+                    geminiDefaults: this.config.geminiDefaults
                 }
             });
 
@@ -206,6 +208,7 @@ export function createWebSocketManager(config: RunnerConfig): WebSocketManager {
         reconnectDelay: config.reconnectDelay,
         assistantEnabled: config.assistant.enabled,
         claudeDefaults: config.claudeDefaults || {},
-        codexDefaults: config.codexDefaults || {}
+        codexDefaults: config.codexDefaults || {},
+        geminiDefaults: config.geminiDefaults || {}
     });
 }

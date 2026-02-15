@@ -5,7 +5,7 @@
 export interface SessionMetadata {
     sessionId: string;
     cliType: 'claude' | 'gemini' | 'codex' | 'terminal' | 'generic';
-    plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk' | 'codex-sdk';
+    plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk' | 'codex-sdk' | 'gemini-sdk';
     folderPath?: string;
     runnerId: string;
 }

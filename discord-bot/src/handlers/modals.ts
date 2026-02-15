@@ -12,6 +12,7 @@ import { createErrorEmbed } from '../utils/embeds.js';
 import { getOrCreateRunnerChannel } from '../utils/channels.js';
 import { handleSessionReview } from './buttons.js';
 import { handleTellClaudeModal } from './permission-buttons.js';
+import { permissionStateStore } from '../permissions/state-store.js';
 import type { Session } from '../../../shared/types.ts';
 
 /**
@@ -584,8 +585,8 @@ async function handleUnifiedTellClaudeModal(interaction: any, userId: string, cu
     const requestId = customId.replace('tell_modal_', '');
     const instructions = interaction.fields.getTextInputValue('tell_input');
 
-    const pending = botState.pendingApprovals.get(requestId);
-    if (!pending) {
+    const state = permissionStateStore.get(requestId);
+    if (!state) {
         await interaction.reply({
             embeds: [createErrorEmbed('Expired', 'This approval request has expired.')],
             flags: 64
@@ -593,6 +594,7 @@ async function handleUnifiedTellClaudeModal(interaction: any, userId: string, cu
         return;
     }
 
+    const pending = state.request;
     const runner = storage.getRunner(pending.runnerId);
     if (!runner || !storage.canUserAccessRunner(userId, pending.runnerId)) {
         await interaction.reply({
@@ -644,7 +646,7 @@ async function handleUnifiedTellClaudeModal(interaction: any, userId: string, cu
     } else {
         botState.streamingMessages.delete(pending.sessionId);
     }
-    botState.pendingApprovals.delete(requestId);
+    permissionStateStore.complete(requestId);
 }
 
 /**
@@ -679,7 +681,8 @@ async function handleOtherModal(interaction: any, userId: string, customId: stri
     const otherValue = interaction.fields.getTextInputValue('other_input');
 
     const multiSelect = botState.multiSelectState.get(requestId);
-    const pending = botState.pendingApprovals.get(requestId);
+    const state = permissionStateStore.get(requestId);
+    const pending = state?.request;
 
     if (!multiSelect && !pending) {
         await interaction.reply({
@@ -768,7 +771,7 @@ async function handleOtherModal(interaction: any, userId: string, customId: stri
         });
 
         // Clean up
-        botState.pendingApprovals.delete(requestId);
+        permissionStateStore.complete(requestId);
         botState.streamingMessages.delete(pending.sessionId);
     }
 }

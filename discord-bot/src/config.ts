@@ -14,6 +14,7 @@ export interface NotificationConfig {
     pingOnApproval: boolean;
     pingOnCompletion: boolean;
     useAtHere: boolean;
+    notifyRunnerOnline: boolean;
 }
 
 export interface SessionDefaults {
@@ -86,6 +87,7 @@ export function loadConfig(): BotConfig {
         pingOnApproval: true,
         pingOnCompletion: true,
         useAtHere: true,
+        notifyRunnerOnline: false,
     };
 
     // Session defaults

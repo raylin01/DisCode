@@ -24,6 +24,7 @@ import {
 } from 'discord.js';
 import { storage } from '../storage.js';
 import * as botState from '../state.js';
+import { permissionStateStore } from '../permissions/state-store.js';
 
 // ============================================================================
 // Types
@@ -320,7 +321,7 @@ export class CategoryManager {
         });
 
         // Post project dashboard
-        const dashboardMessageId = await this.postProjectDashboard(channel, projectPath, {
+        const dashboardMessageId = await this.postProjectDashboard(channel, runnerId, projectPath, {
             totalSessions: 0,
             activeSessions: 0,
             pendingActions: 0
@@ -362,6 +363,26 @@ export class CategoryManager {
             for (const [projectPath, project] of category.projects.entries()) {
                 if (project.channelId === channelId) {
                     return { runnerId, projectPath, project };
+                }
+            }
+        }
+
+        // Storage fallback in case in-memory category cache is stale.
+        for (const [runnerId, runner] of Object.entries(storage.data.runners)) {
+            const projects = runner.discordState?.projects;
+            if (!projects) continue;
+            for (const [projectPath, data] of Object.entries(projects)) {
+                if (data.channelId === channelId) {
+                    return {
+                        runnerId,
+                        projectPath,
+                        project: {
+                            channelId: data.channelId,
+                            projectPath,
+                            dashboardMessageId: data.dashboardMessageId,
+                            lastSync: data.lastSync ? new Date(data.lastSync) : undefined
+                        }
+                    };
                 }
             }
         }
@@ -429,16 +450,35 @@ export class CategoryManager {
      */
     getRunnerByProjectPath(projectPath: string): string | undefined {
         console.log(`[DEBUG] getRunnerByProjectPath: Looking for ${projectPath}`);
+        const matches = new Set<string>();
+
         for (const [runnerId, category] of this.categories) {
             if (category.projects.has(projectPath)) {
-                console.log(`[DEBUG] Found runner ${runnerId} for project ${projectPath}`);
-                return runnerId;
+                matches.add(runnerId);
             }
         }
+
+        // Include persisted state as fallback.
+        for (const [runnerId, runner] of Object.entries(storage.data.runners)) {
+            if (runner.discordState?.projects?.[projectPath]) {
+                matches.add(runnerId);
+            }
+        }
+
+        if (matches.size === 1) {
+            const [runnerId] = Array.from(matches);
+            console.log(`[DEBUG] Found runner ${runnerId} for project ${projectPath}`);
+            return runnerId;
+        }
+
+        if (matches.size > 1) {
+            console.warn(`[DEBUG] Ambiguous runner for project ${projectPath}: ${Array.from(matches).join(', ')}`);
+            return undefined;
+        }
+
         console.log(`[DEBUG] No runner found for project ${projectPath}`);
-        // Log available projects for debugging
         this.categories.forEach((cat, rid) => {
-             console.log(`[DEBUG] Runner ${rid} projects: ${Array.from(cat.projects.keys()).join(', ')}`);
+            console.log(`[DEBUG] Runner ${rid} projects: ${Array.from(cat.projects.keys()).join(', ')}`);
         });
         return undefined;
     }
@@ -458,6 +498,17 @@ export class CategoryManager {
                 if (project.channelId === channelId) {
                     return runnerId;
                 }
+            }
+        }
+
+        // Storage fallback in case category cache is stale.
+        for (const [runnerId, runner] of Object.entries(storage.data.runners)) {
+            const state = runner.discordState;
+            if (!state) continue;
+            if (state.controlChannelId === channelId) return runnerId;
+            const projects = state.projects || {};
+            if (Object.values(projects).some(project => project.channelId === channelId)) {
+                return runnerId;
             }
         }
         return undefined;
@@ -525,6 +576,7 @@ export class CategoryManager {
      */
     async postProjectDashboard(
         channel: TextChannel,
+        runnerId: string,
         projectPath: string,
         stats: ProjectStats
     ): Promise<string | null> {
@@ -567,15 +619,15 @@ export class CategoryManager {
             const row = new ActionRowBuilder<ButtonBuilder>()
                 .addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`list_sessions:${encodeURIComponent(projectPath)}`)
+                        .setCustomId(`list_sessions:${runnerId}:${encodeURIComponent(projectPath)}`)
                         .setLabel('📋 All Sessions')
                         .setStyle(ButtonStyle.Secondary),
                     new ButtonBuilder()
-                        .setCustomId(`new_session:${encodeURIComponent(projectPath)}`)
+                        .setCustomId(`new_session:${runnerId}:${encodeURIComponent(projectPath)}`)
                         .setLabel('➕ New Session')
                         .setStyle(ButtonStyle.Success),
                     new ButtonBuilder()
-                        .setCustomId(`sync_sessions:${encodeURIComponent(projectPath)}`)
+                        .setCustomId(`sync_sessions:${runnerId}:${encodeURIComponent(projectPath)}`)
                         .setLabel('🔄 Sync')
                         .setStyle(ButtonStyle.Secondary)
                 );
@@ -614,7 +666,7 @@ export class CategoryManager {
         if (!targetChannel) return null;
 
         // Post new dashboard
-        const newMessageId = await this.postProjectDashboard(targetChannel, projectPath, stats);
+        const newMessageId = await this.postProjectDashboard(targetChannel, runnerId, projectPath, stats);
         if (!newMessageId) return null;
 
         // Delete previous dashboard (if any)
@@ -783,8 +835,7 @@ export class CategoryManager {
 
             const sessions = storage.getRunnerSessions(runnerId);
             const activeSessions = sessions.filter(s => s.status === 'active').length;
-            const pendingActions = Array.from(botState.pendingApprovals.values())
-                .filter(p => p.runnerId === runnerId).length;
+            const pendingActions = permissionStateStore.getByRunnerId(runnerId).length;
             // Pending actions might need more complex logic (e.g. from session.pendingAction)
             // For now, we count sessions in 'input_needed' status if we track that in Session object
             // Currently Session object has 'status': 'active' | 'ended'.
@@ -797,13 +848,7 @@ export class CategoryManager {
             // But CategoryManager doesn't depend on SessionSyncService (circular dependency risk).
             // We'll stick to active count for now.
             
-            await this.updateStatsChannels(runnerId, activeSessions, pendingActions); 
-            
-            // Also update dashboard
-            const runnerCategory = this.categories.get(runnerId);
-            if (runnerCategory) {
-                await this.postRunnerDashboard(runnerCategory);
-            }
+            await this.updateStatsChannels(runnerId, activeSessions, pendingActions);
         } catch (error) {
             console.error('[CategoryManager] Error updating runner stats:', error);
         }

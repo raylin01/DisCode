@@ -25,6 +25,7 @@ import { getCategoryManager } from '../services/category-manager.js';
 import { getSessionSyncService } from '../services/session-sync.js';
 import { permissionStateStore } from '../permissions/state-store.js';
 import { rebuildPermissionButtons } from './permission-buttons.js';
+import { safeEditReply } from './interaction-safety.js';
 import type { WebSocketMessage, RunnerInfo, Session } from '../../../shared/types.ts';
 
 console.log('[DEBUG] websocket.ts MODULE LOADED - Unified UI Version');
@@ -55,6 +56,7 @@ function applyDefaultRunnerConfig(runner: RunnerInfo): void {
             yoloMode: false,
             claudeDefaults: {},
             codexDefaults: {},
+            geminiDefaults: {},
             presets: {}
         };
         return;
@@ -65,6 +67,7 @@ function applyDefaultRunnerConfig(runner: RunnerInfo): void {
     if (runner.config.yoloMode === undefined) runner.config.yoloMode = false;
     if (runner.config.claudeDefaults === undefined) runner.config.claudeDefaults = {};
     if (runner.config.codexDefaults === undefined) runner.config.codexDefaults = {};
+    if (runner.config.geminiDefaults === undefined) runner.config.geminiDefaults = {};
     if (runner.config.presets === undefined) runner.config.presets = {};
 }
 
@@ -295,32 +298,33 @@ export async function notifyRunnerOnline(runner: RunnerInfo, wasReclaimed: boole
         return;
     }
 
-    try {
-        const channel = await botState.client.channels.fetch(runner.privateChannelId);
-        if (channel && 'send' in channel) {
-            const embed = new EmbedBuilder()
-                .setColor(0x00FF00)
-                .setTitle('🟢 Runner Online')
-                .setDescription(`Runner \`${runner.name}\` is now online and ready.`)
-                .addFields(
-                    { name: 'Status', value: '🟢 Online', inline: true },
-                    { name: 'CLI Types', value: runner.cliTypes.join(', ') || 'N/A', inline: true }
-                )
-                .setTimestamp();
+    if (config.notifications.notifyRunnerOnline) {
+        try {
+            const channel = await botState.client.channels.fetch(runner.privateChannelId);
+            if (channel && 'send' in channel) {
+                const embed = new EmbedBuilder()
+                    .setColor(0x00FF00)
+                    .setTitle('🟢 Runner Online')
+                    .setDescription(`Runner \`${runner.name}\` is now online and ready.`)
+                    .addFields(
+                        { name: 'Status', value: '🟢 Online', inline: true },
+                        { name: 'CLI Types', value: runner.cliTypes.join(', ') || 'N/A', inline: true }
+                    )
+                    .setTimestamp();
 
-            if (wasReclaimed) {
-                embed.addFields({
-                    name: 'Note',
-                    value: 'Runner was restarted and reclaimed from previous offline state.',
-                    inline: false
-                });
+                if (wasReclaimed) {
+                    embed.addFields({
+                        name: 'Note',
+                        value: 'Runner was restarted and reclaimed from previous offline state.',
+                        inline: false
+                    });
+                }
+
+                await channel.send({ embeds: [embed] });
             }
-
-            await channel.send({ embeds: [embed] });
-
+        } catch (error) {
+            console.error('Failed to send runner online notification:', error);
         }
-    } catch (error) {
-        console.error('Failed to send runner online notification:', error);
     }
 
     // Update stats voice channel
@@ -432,7 +436,14 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
             break;
 
         case 'runner_config_updated': {
-            const data = message.data as { runnerId: string; claudeDefaults?: Record<string, any>; codexDefaults?: Record<string, any>; requestId?: string; warnings?: string[] };
+            const data = message.data as {
+                runnerId: string;
+                claudeDefaults?: Record<string, any>;
+                codexDefaults?: Record<string, any>;
+                geminiDefaults?: Record<string, any>;
+                requestId?: string;
+                warnings?: string[];
+            };
             if (data?.requestId) {
                 const timeout = botState.pendingRunnerConfigUpdates.get(data.requestId);
                 if (timeout) {
@@ -443,7 +454,7 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
                     console.warn(`[RunnerConfig] Update warnings: ${data.warnings.join(' ')}`);
                 }
             }
-            if (data?.runnerId && (data.claudeDefaults || data.codexDefaults)) {
+            if (data?.runnerId && (data.claudeDefaults || data.codexDefaults || data.geminiDefaults)) {
                 const runner = storage.getRunner(data.runnerId);
                 if (runner) {
                     runner.config = runner.config || {
@@ -452,13 +463,17 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
                         thinkingLevel: 'low',
                         yoloMode: false,
                         claudeDefaults: {},
-                        codexDefaults: {}
+                        codexDefaults: {},
+                        geminiDefaults: {}
                     };
                     if (data.claudeDefaults) {
                         runner.config.claudeDefaults = { ...data.claudeDefaults };
                     }
                     if (data.codexDefaults) {
                         runner.config.codexDefaults = { ...data.codexDefaults };
+                    }
+                    if (data.geminiDefaults) {
+                        runner.config.geminiDefaults = { ...data.geminiDefaults };
                     }
                     storage.updateRunner(data.runnerId, runner);
                 }
@@ -623,12 +638,16 @@ async function handleRegister(ws: any, data: any): Promise<void> {
         tokenInUse.defaultWorkspace = data.defaultWorkspace;
         tokenInUse.assistantEnabled = data.assistantEnabled ?? tokenInUse.assistantEnabled ?? true;
         if (data.claudeDefaults && typeof data.claudeDefaults === 'object') {
-            tokenInUse.config = tokenInUse.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {} };
+            tokenInUse.config = tokenInUse.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {}, geminiDefaults: {} };
             tokenInUse.config.claudeDefaults = { ...data.claudeDefaults };
         }
         if (data.codexDefaults && typeof data.codexDefaults === 'object') {
-            tokenInUse.config = tokenInUse.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {} };
+            tokenInUse.config = tokenInUse.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {}, geminiDefaults: {} };
             tokenInUse.config.codexDefaults = { ...data.codexDefaults };
+        }
+        if (data.geminiDefaults && typeof data.geminiDefaults === 'object') {
+            tokenInUse.config = tokenInUse.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {}, geminiDefaults: {} };
+            tokenInUse.config.geminiDefaults = { ...data.geminiDefaults };
         }
         applyDefaultRunnerConfig(tokenInUse);
 
@@ -671,12 +690,16 @@ async function handleRegister(ws: any, data: any): Promise<void> {
         // Update assistantEnabled from registration message
         existingRunner.assistantEnabled = data.assistantEnabled ?? true;
         if (data.claudeDefaults && typeof data.claudeDefaults === 'object') {
-            existingRunner.config = existingRunner.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {} };
+            existingRunner.config = existingRunner.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {}, geminiDefaults: {} };
             existingRunner.config.claudeDefaults = { ...data.claudeDefaults };
         }
         if (data.codexDefaults && typeof data.codexDefaults === 'object') {
-            existingRunner.config = existingRunner.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {} };
+            existingRunner.config = existingRunner.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {}, geminiDefaults: {} };
             existingRunner.config.codexDefaults = { ...data.codexDefaults };
+        }
+        if (data.geminiDefaults && typeof data.geminiDefaults === 'object') {
+            existingRunner.config = existingRunner.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {}, geminiDefaults: {} };
+            existingRunner.config.geminiDefaults = { ...data.geminiDefaults };
         }
         applyDefaultRunnerConfig(existingRunner);
 
@@ -727,7 +750,8 @@ async function handleRegister(ws: any, data: any): Promise<void> {
                 thinkingLevel: 'low',
                 yoloMode: false,
                 claudeDefaults: data.claudeDefaults && typeof data.claudeDefaults === 'object' ? { ...data.claudeDefaults } : {},
-                codexDefaults: data.codexDefaults && typeof data.codexDefaults === 'object' ? { ...data.codexDefaults } : {}
+                codexDefaults: data.codexDefaults && typeof data.codexDefaults === 'object' ? { ...data.codexDefaults } : {},
+                geminiDefaults: data.geminiDefaults && typeof data.geminiDefaults === 'object' ? { ...data.geminiDefaults } : {}
             }
         };
         applyDefaultRunnerConfig(newRunner);
@@ -760,13 +784,23 @@ async function handleRegister(ws: any, data: any): Promise<void> {
         if (wsConn) {
             const activeSessions = storage.getRunnerSessions(data.runnerId).filter(s => s.status === 'active');
             for (const session of activeSessions) {
-                if (session.plugin === 'claude-sdk' || session.plugin === 'codex-sdk') {
+                const isSdkSession =
+                    session.plugin === 'claude-sdk' ||
+                    session.plugin === 'codex-sdk' ||
+                    session.plugin === 'gemini-sdk';
+
+                if (isSdkSession) {
                     botState.suppressSessionReadyNotification.add(session.sessionId);
                 }
+
+                const persistedResumeSessionId = typeof (session.options as any)?.resumeSessionId === 'string'
+                    ? (session.options as any).resumeSessionId
+                    : undefined;
+                const resumeSessionId = persistedResumeSessionId || (session.plugin === 'claude-sdk' ? session.sessionId : undefined);
                 const startOptions = buildSessionStartOptions(
                     storage.getRunner(data.runnerId),
                     undefined,
-                    session.cliType === 'claude' ? { resumeSessionId: session.sessionId } : undefined,
+                    resumeSessionId ? { resumeSessionId } : undefined,
                     session.cliType
                 );
                 wsConn.send(JSON.stringify({
@@ -777,7 +811,7 @@ async function handleRegister(ws: any, data: any): Promise<void> {
                         cliType: session.cliType,
                         plugin: session.plugin,
                         folderPath: session.folderPath,
-                        resume: session.cliType === 'claude',
+                        resume: Boolean(resumeSessionId),
                         options: startOptions
                     }
                 }));
@@ -888,24 +922,11 @@ function createQuestionButtons(data: any, requestId: string): { rows: ActionRowB
     return { rows, multiSelectState };
 }
 
-// Track recently processed requests to prevent duplicates
-const recentlyProcessedRequests = new Set<string>();
-
 /**
  * Handle approval request from runner
  */
 async function handleApprovalRequest(ws: any, data: any): Promise<void> {
-    // Deduplicate requests
-    if (data.requestId && recentlyProcessedRequests.has(data.requestId)) {
-        console.log(`[Approval] Skipping duplicate request: ${data.requestId}`);
-        return;
-    }
     console.log(`[DEBUG] handleApprovalRequest called for ${data.requestId} (tool: ${data.toolName})`);
-    if (data.requestId) {
-        recentlyProcessedRequests.add(data.requestId);
-        setTimeout(() => recentlyProcessedRequests.delete(data.requestId), 5000);
-    }
-
 
     const runner = storage.getRunner(data.runnerId);
     if (!runner) {
@@ -1004,21 +1025,7 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
             components: rows
         });
 
-        botState.pendingApprovals.set(data.requestId, {
-            requestId: data.requestId,
-            runnerId: data.runnerId,
-            sessionId: data.sessionId,
-            messageId: message.id,
-            channelId: runner.privateChannelId,
-            toolName: data.toolName,
-            toolInput: data.toolInput,
-            timestamp: new Date(),
-            options: data.options,
-            isMultiSelect: data.isMultiSelect,
-            hasOther: data.hasOther
-        });
-
-        // Also store in new permission state store for new permission buttons
+        // Store in unified permission state store
         permissionStateStore.save({
             requestId: data.requestId,
             sessionId: data.sessionId,
@@ -1031,7 +1038,12 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
             currentScope: 'session',
             blockedPath: data.blockedPath,
             decisionReason: data.decisionReason,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            channelId: runner.privateChannelId,
+            messageId: message.id,
+            options: data.options,
+            isMultiSelect: data.isMultiSelect,
+            hasOther: data.hasOther
         });
 
         return;
@@ -1238,22 +1250,7 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
         components: rows
     });
 
-    botState.pendingApprovals.set(data.requestId, {
-        userId: runner.ownerId,
-        channelId: session.threadId,
-        messageId: message.id,
-        runnerId: data.runnerId,
-        sessionId: data.sessionId,
-        toolName: data.toolName,
-        toolInput: data.toolInput,
-        options: data.options,
-        isMultiSelect: data.isMultiSelect,
-        hasOther: data.hasOther,
-        requestId: data.requestId,
-        timestamp: new Date()
-    });
-
-    // Also store in new permission state store for new permission buttons
+    // Store in unified permission state store
     if (!permissionSaved) {
         permissionStateStore.save({
             requestId: data.requestId,
@@ -1267,7 +1264,13 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
             currentScope: 'session',
             blockedPath: data.blockedPath,
             decisionReason: data.decisionReason,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            channelId: session.threadId,
+            messageId: message.id,
+            userId: runner.ownerId,
+            options: data.options,
+            isMultiSelect: data.isMultiSelect,
+            hasOther: data.hasOther
         });
     }
 
@@ -1455,11 +1458,23 @@ async function handleActionItem(data: any): Promise<void> {
  * Handle metadata from runner
  */
 async function handleMetadata(data: any): Promise<void> {
-    const streaming = botState.streamingMessages.get(data.sessionId);
-    if (!streaming || !data.activity) return;
-
     const session = storage.getSession(data.sessionId);
     if (!session) return;
+
+    if (session.plugin === 'gemini-sdk' && typeof data.mode === 'string' && data.mode.startsWith('session:')) {
+        const resumeSessionId = data.mode.slice('session:'.length).trim();
+        if (resumeSessionId) {
+            const currentResume = (session.options as any)?.resumeSessionId;
+            if (currentResume !== resumeSessionId) {
+                const mergedOptions = { ...(session.options || {}), resumeSessionId };
+                session.options = mergedOptions;
+                storage.updateSession(session.sessionId, { options: mergedOptions });
+            }
+        }
+    }
+
+    const streaming = botState.streamingMessages.get(data.sessionId);
+    if (!streaming || !data.activity) return;
 
     try {
         const thread = await botState.client.channels.fetch(session.threadId);
@@ -1490,7 +1505,7 @@ async function handleSessionReady(data: any): Promise<void> {
         return;
     }
     const suppressReadyNotice = botState.suppressSessionReadyNotification.delete(sessionId)
-        && (session.plugin === 'claude-sdk' || session.plugin === 'codex-sdk');
+        && (session.plugin === 'claude-sdk' || session.plugin === 'codex-sdk' || session.plugin === 'gemini-sdk');
 
     // Mark session as active
     session.status = 'active';
@@ -2208,7 +2223,7 @@ async function handlePermissionDecisionAck(data: any): Promise<void> {
 
         const row = new ActionRowBuilder<ButtonBuilder>().addComponents(resultButton);
 
-        await pending.interaction.editReply({
+        await safeEditReply(pending.interaction, {
             embeds: [embed],
             components: [row]
         }).catch((err: any) => console.error('[PermissionAck] Failed to show success:', err));
@@ -2224,7 +2239,7 @@ async function handlePermissionDecisionAck(data: any): Promise<void> {
             `Runner rejected: ${error || 'Unknown error'}`
         );
 
-        await pending.interaction.editReply({
+        await safeEditReply(pending.interaction, {
             embeds: [errorEmbed],
             components: []
         }).catch((err: any) => console.error('[PermissionAck] Failed to show error:', err));

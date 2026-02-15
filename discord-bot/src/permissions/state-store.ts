@@ -17,6 +17,16 @@ export interface PermissionRequest {
   blockedPath?: string;
   decisionReason?: string;
   timestamp: string;
+  // Channel/message tracking (replaces legacy pendingApprovals)
+  channelId?: string;
+  messageId?: string;
+  userId?: string;
+  // Question support
+  options?: string[];
+  isMultiSelect?: boolean;
+  hasOther?: boolean;
+  // Context for plan mode
+  context?: string;
 }
 
 /**
@@ -139,6 +149,43 @@ export class PermissionStateStore {
    */
   getAll(): Map<string, RequestState> {
     return new Map(this.states);
+  }
+
+  /**
+   * Get pending requests for a specific session
+   */
+  getBySessionId(sessionId: string): RequestState[] {
+    const results: RequestState[] = [];
+    for (const state of this.states.values()) {
+      if (state.request.sessionId === sessionId && state.status === 'pending') {
+        results.push(state);
+      }
+    }
+    return results;
+  }
+
+  /**
+   * Get pending requests for a specific runner
+   */
+  getByRunnerId(runnerId: string): RequestState[] {
+    const results: RequestState[] = [];
+    for (const state of this.states.values()) {
+      if (state.request.runnerId === runnerId && state.status === 'pending') {
+        results.push(state);
+      }
+    }
+    return results;
+  }
+
+  /**
+   * Update channelId and messageId for a request (after message is sent)
+   */
+  setMessageInfo(requestId: string, channelId: string, messageId: string): void {
+    const state = this.states.get(requestId);
+    if (state) {
+      state.request.channelId = channelId;
+      state.request.messageId = messageId;
+    }
   }
 
   /**

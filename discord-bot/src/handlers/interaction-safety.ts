@@ -1,5 +1,13 @@
 const EPHEMERAL_FLAGS = { flags: 64 };
 
+function markInteractionAcknowledged(interaction: any): void {
+    try {
+        interaction.deferred = true;
+    } catch {
+        // Ignore if Discord.js internals make this read-only.
+    }
+}
+
 export function isUnknownInteraction(error: any): boolean {
     return error?.code === 10062 || error?.rawError?.code === 10062;
 }
@@ -22,9 +30,11 @@ export async function safeDeferReply(interaction: any, fallbackMessage?: string)
     if (interaction.deferred || interaction.replied) return true;
     try {
         await interaction.deferReply(EPHEMERAL_FLAGS);
+        markInteractionAcknowledged(interaction);
         return true;
     } catch (error) {
         if (isAlreadyAcknowledged(error)) {
+            markInteractionAcknowledged(interaction);
             return true;
         }
         if (isUnknownInteraction(error)) {
@@ -114,9 +124,11 @@ export async function safeDeferUpdate(interaction: any, fallbackMessage?: string
     if (interaction.deferred || interaction.replied) return true;
     try {
         await interaction.deferUpdate();
+        markInteractionAcknowledged(interaction);
         return true;
     } catch (error) {
         if (isAlreadyAcknowledged(error)) {
+            markInteractionAcknowledged(interaction);
             return true;
         }
         if (isUnknownInteraction(error)) {
@@ -170,34 +182,4 @@ export async function safeImmediateUpdate(interaction: any, payload: any, fallba
     }
 }
 
-export function patchInteraction(interaction: any): void {
-    if (!interaction || (interaction as any).__discodePatched) return;
-    (interaction as any).__discodePatched = true;
 
-    const originalReply = interaction.reply?.bind(interaction);
-    const originalUpdate = interaction.update?.bind(interaction);
-    const originalDeferReply = interaction.deferReply?.bind(interaction);
-    const originalDeferUpdate = interaction.deferUpdate?.bind(interaction);
-
-    (interaction as any).__discodeOriginalReply = originalReply;
-    (interaction as any).__discodeOriginalUpdate = originalUpdate;
-
-    if (originalReply) {
-        interaction.reply = async (payload: any) => safeReply(interaction, payload);
-    }
-    if (originalUpdate) {
-        interaction.update = async (payload: any) => safeUpdate(interaction, payload);
-    }
-    if (originalDeferReply) {
-        interaction.deferReply = async (payload: any) => {
-            if (interaction.deferred || interaction.replied) return;
-            return originalDeferReply(payload);
-        };
-    }
-    if (originalDeferUpdate) {
-        interaction.deferUpdate = async () => {
-            if (interaction.deferred || interaction.replied) return;
-            return originalDeferUpdate();
-        };
-    }
-}
