@@ -14,6 +14,11 @@ claude-code-ext/
 codex-ext/
 *.vsix
 
+# Client packages live as nested repos (not tracked by DisCode)
+claude-client/
+codex-client/
+gemini-client/
+
 # Ignored test documentation
 TEST_PLAN.md
 TESTING_PROGRESS.md
