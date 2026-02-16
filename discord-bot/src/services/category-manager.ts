@@ -64,6 +64,7 @@ export interface ProjectStats {
 export class CategoryManager {
     private client: Client;
     private categories = new Map<string, RunnerCategory>();  // runnerId -> category
+    private lastPublishedRunnerStats = new Map<string, { activeSessions: number; pendingActions: number; memoryMb?: number }>();
     
     constructor(client: Client) {
         this.client = client;
@@ -881,7 +882,18 @@ export class CategoryManager {
             // Get memory from botState (updated via heartbeat)
             const memoryMb = botState.runnerMemoryUsage.get(runnerId);
 
+            const previous = this.lastPublishedRunnerStats.get(runnerId);
+            if (
+                previous &&
+                previous.activeSessions === activeSessions &&
+                previous.pendingActions === pendingActions &&
+                previous.memoryMb === memoryMb
+            ) {
+                return;
+            }
+
             await this.updateStatsChannels(runnerId, activeSessions, pendingActions, memoryMb);
+            this.lastPublishedRunnerStats.set(runnerId, { activeSessions, pendingActions, memoryMb });
         } catch (error) {
             console.error('[CategoryManager] Error updating runner stats:', error);
         }
@@ -920,6 +932,7 @@ export class CategoryManager {
             if (category) await category.delete().catch(() => {});
 
             this.categories.delete(runnerId);
+            this.lastPublishedRunnerStats.delete(runnerId);
             
             // Clear from storage
             storage.updateRunner(runnerId, {

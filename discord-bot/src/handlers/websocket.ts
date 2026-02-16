@@ -349,6 +349,12 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
     const data: any = (message as any).data;
     const messageRunnerId = data?.runnerId;
     const wsRunnerId = (ws as any).runnerId;
+
+    // Log session_ready messages specifically for debugging
+    if (message.type === 'session_ready') {
+        console.log(`[WebSocket] session_ready message received: sessionId=${data?.sessionId}, messageRunnerId=${messageRunnerId}, wsRunnerId=${wsRunnerId}`);
+    }
+
     if (message.type !== 'register' && messageRunnerId && wsRunnerId && wsRunnerId !== messageRunnerId) {
         console.warn(`[WebSocket] Runner mismatch: ws=${wsRunnerId} message=${messageRunnerId} type=${message.type}`);
         return;
@@ -1367,14 +1373,24 @@ async function handleOutput(data: any): Promise<void> {
     // Re-fetch after potential deletion
     const currentStreaming = botState.streamingMessages.get(data.sessionId);
     
-    // Content is already accumulated by the runner - use directly
-    const displayContent = data.content;
+    // Runner output is usually accumulated. Track the full accumulated text separately
+    // so split streaming can continue from the current chunk instead of restarting.
+    const incomingContent = typeof data.content === 'string' ? data.content : String(data.content ?? '');
 
     // Check if we should edit existing message or create new one
     // Edit if: we have streaming state, same output type, and within timeout
-    const shouldStream = currentStreaming &&
+    const shouldStream = Boolean(currentStreaming &&
         (now - currentStreaming.lastUpdateTime) < STREAMING_TIMEOUT &&
-        currentStreaming.outputType === outputType;
+        currentStreaming.outputType === outputType);
+
+    let displayContent = incomingContent;
+    if (shouldStream && currentStreaming) {
+        const previousAccumulated = currentStreaming.accumulatedContent ?? currentStreaming.content;
+        if (previousAccumulated && incomingContent.startsWith(previousAccumulated)) {
+            const delta = incomingContent.slice(previousAccumulated.length);
+            displayContent = `${currentStreaming.content}${delta}`;
+        }
+    }
 
     console.log(`[Output] Session: ${data.sessionId}, Type: ${outputType}, ShouldStream: ${shouldStream}, HasStreaming: ${!!currentStreaming}, ContentLen: ${displayContent.length}`);
 
@@ -1383,7 +1399,7 @@ async function handleOutput(data: any): Promise<void> {
     const HARD_LIMIT = 3900;
 
     // Handle message splitting if content exceeds limits
-    if (shouldStream && displayContent.length > SOFT_LIMIT) {
+    if (shouldStream && currentStreaming && displayContent.length > SOFT_LIMIT) {
         let splitIndex = -1;
 
         if (displayContent.length > HARD_LIMIT) {
@@ -1420,22 +1436,26 @@ async function handleOutput(data: any): Promise<void> {
             // Finalize the old message
             const embedOld = createOutputEmbed(outputType, contentForOld);
             try {
-                const message = await thread.messages.fetch(currentStreaming!.messageId);
+                const message = await thread.messages.fetch(currentStreaming.messageId);
                 await message.edit({ embeds: [embedOld] });
             } catch (e) {
                 console.error('Failed to finalize old message split:', e);
             }
-            
-            // Clear streaming state and start new message with remainder
-            botState.streamingMessages.delete(data.sessionId);
-            
-            const nextData = {
-                ...data,
-                content: contentForNew,
-                outputType: outputType
-            };
 
-            await handleOutput(nextData);
+            // Continue streaming on a new message with the remaining chunk.
+            const embedNew = createOutputEmbed(outputType, contentForNew);
+            const newMessage = await thread.send({ embeds: [embedNew] });
+            botState.streamingMessages.set(data.sessionId, {
+                messageId: newMessage.id,
+                lastUpdateTime: now,
+                content: contentForNew,
+                outputType: outputType,
+                accumulatedContent: incomingContent
+            });
+
+            if (data.isComplete) {
+                botState.streamingMessages.delete(data.sessionId);
+            }
             return;
         }
     }
@@ -1457,7 +1477,8 @@ async function handleOutput(data: any): Promise<void> {
                 messageId: currentStreaming!.messageId,
                 lastUpdateTime: now,
                 content: displayContent,
-                outputType: outputType
+                outputType: outputType,
+                accumulatedContent: incomingContent
             });
         } catch (error) {
             console.error('Error editing message:', error);
@@ -1466,7 +1487,8 @@ async function handleOutput(data: any): Promise<void> {
                 messageId: newMessage.id,
                 lastUpdateTime: now,
                 content: displayContent,
-                outputType: outputType
+                outputType: outputType,
+                accumulatedContent: incomingContent
             });
         }
     } else {
@@ -1490,7 +1512,8 @@ async function handleOutput(data: any): Promise<void> {
                 messageId: sentMessage.id,
                 lastUpdateTime: now,
                 content: displayContent,
-                outputType: outputType
+                outputType: outputType,
+                accumulatedContent: incomingContent
             });
         }
     }
@@ -1563,16 +1586,34 @@ async function handleMetadata(data: any): Promise<void> {
 async function handleSessionReady(data: any): Promise<void> {
     const { runnerId, sessionId } = data;
 
+    console.log(`[handleSessionReady] Received session_ready for ${sessionId} from runner ${runnerId}`);
 
-    const session = storage.getSession(sessionId);
+    let session = storage.getSession(sessionId);
     if (!session) {
-        console.error(`[handleSessionReady] Session not found: ${sessionId}`);
-        return;
+        // Race condition: session might not be stored yet - retry with backoff
+        console.warn(`[handleSessionReady] Session ${sessionId} not found immediately, retrying...`);
+
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+            session = storage.getSession(sessionId);
+            if (session) {
+                console.log(`[handleSessionReady] Session ${sessionId} found on retry attempt ${attempt}`);
+                break;
+            }
+        }
+
+        if (!session) {
+            console.error(`[handleSessionReady] Session not found after retries: ${sessionId}`);
+            return;
+        }
     }
 
     // Check if this is a one-shot suppression (for reconnect reattach flows)
-    const suppressReadyNotice = botState.suppressSessionReadyNotification.delete(sessionId)
-        && (session.plugin === 'claude-sdk' || session.plugin === 'codex-sdk' || session.plugin === 'gemini-sdk');
+    const wasInSuppressSet = botState.suppressSessionReadyNotification.delete(sessionId);
+    const isSdkPlugin = session.plugin === 'claude-sdk' || session.plugin === 'codex-sdk' || session.plugin === 'gemini-sdk';
+    const suppressReadyNotice = wasInSuppressSet && isSdkPlugin;
+
+    console.log(`[handleSessionReady] Session ${sessionId}: wasInSuppressSet=${wasInSuppressSet}, isSdkPlugin=${isSdkPlugin}, suppressReadyNotice=${suppressReadyNotice}`);
 
     // Check if we've already sent the ready notification for this session
     // This prevents duplicate pings when the CLI emits multiple 'ready' events
@@ -1584,8 +1625,8 @@ async function handleSessionReady(data: any): Promise<void> {
     // Mark session as active
     session.status = 'active';
     storage.updateSession(session.sessionId, session);
-    await getCategoryManager()?.updateRunnerStats(runnerId);
 
+    const categoryManager = getCategoryManager();
     const runner = storage.getRunner(runnerId);
 
     try {
@@ -1622,9 +1663,12 @@ async function handleSessionReady(data: any): Promise<void> {
                     content,
                     embeds: [readyEmbed]
                 });
+                console.log(`[handleSessionReady] Sent ready notification to thread ${thread.id} for session ${sessionId}`);
 
                 // Mark this session as having received its ready notification
                 botState.sessionReadyNotified.add(sessionId);
+            } else {
+                console.log(`[handleSessionReady] Suppressed ready notification for session ${sessionId}`);
             }
 
             // Update ephemeral message if we have the token
@@ -1659,6 +1703,12 @@ async function handleSessionReady(data: any): Promise<void> {
         await upsertSessionSettingsSummary(sessionId);
     } catch (error) {
         console.error(`[handleSessionReady] Failed to notify thread:`, error);
+    } finally {
+        if (categoryManager) {
+            void categoryManager.updateRunnerStats(runnerId).catch((statsError) => {
+                console.error('[handleSessionReady] Failed to update runner stats:', statsError);
+            });
+        }
     }
 }
 
