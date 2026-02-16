@@ -11,7 +11,7 @@ import { storage } from '../storage.js';
 import { createErrorEmbed } from '../utils/embeds.js';
 import { getCategoryManager } from '../services/category-manager.js';
 import { getSessionSyncService } from '../services/session-sync.js';
-import { listSessions } from '../../../claude-client/src/sessions.js';
+import { listSessions } from '@raylin01/claude-client/sessions';
 import { cliToSdkPlugin } from './button-utils.js';
 import {
     getRunnerIdFromContext,

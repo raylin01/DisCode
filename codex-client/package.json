@@ -1,26 +1,61 @@
 {
-  "name": "codex-client",
+  "name": "@raylin01/codex-client",
   "version": "0.1.0",
-  "description": "A standalone Node.js client for controlling Codex CLI app-server",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "scripts": {
-    "build": "tsc",
-    "watch": "tsc -w",
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "description": "Node.js client for controlling Codex CLI app-server over JSON-RPC.",
+  "license": "ISC",
+  "author": "Ray Lin",
+  "type": "module",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "examples"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/raylin01/codex-client.git"
+  },
+  "bugs": {
+    "url": "https://github.com/raylin01/codex-client/issues"
+  },
+  "homepage": "https://github.com/raylin01/codex-client#readme",
+  "publishConfig": {
+    "access": "public"
   },
   "keywords": [
     "codex",
     "openai",
     "ai",
     "cli",
-    "client",
-    "sdk"
+    "sdk",
+    "json-rpc"
   ],
-  "author": "",
-  "license": "ISC",
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build:esm": "tsc -p tsconfig.build.esm.json",
+    "build:cjs": "tsc -p tsconfig.build.cjs.json && node ./scripts/write-cjs-package-json.mjs",
+    "build": "npm run clean && npm run build:esm && npm run build:cjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/**/*.test.mjs",
+    "test:coverage": "npm run build && node --test --experimental-test-coverage test/**/*.test.mjs",
+    "prepack": "npm run build"
+  },
   "devDependencies": {
-    "typescript": "^5.0.0",
-    "@types/node": "^20.0.0"
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
   }
 }

@@ -1,24 +1,64 @@
 {
-  "name": "gemini-client",
+  "name": "@raylin01/gemini-client",
   "version": "0.1.0",
-  "description": "A standalone Node.js client for controlling Gemini CLI with session resume support",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "scripts": {
-    "build": "tsc",
-    "watch": "tsc -w",
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "description": "Node.js client for controlling Gemini CLI with stream-json session support.",
+  "license": "ISC",
+  "author": "Ray Lin",
+  "type": "module",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    },
+    "./sessions": {
+      "types": "./dist/types/sessions.d.ts",
+      "import": "./dist/esm/sessions.js",
+      "require": "./dist/cjs/sessions.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "examples"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/raylin01/gemini-client.git"
+  },
+  "bugs": {
+    "url": "https://github.com/raylin01/gemini-client/issues"
+  },
+  "homepage": "https://github.com/raylin01/gemini-client#readme",
+  "publishConfig": {
+    "access": "public"
   },
   "keywords": [
     "gemini",
     "google",
     "ai",
     "cli",
-    "client",
-    "sdk"
+    "sdk",
+    "stream-json"
   ],
-  "author": "",
-  "license": "ISC",
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build:esm": "tsc -p tsconfig.build.esm.json",
+    "build:cjs": "tsc -p tsconfig.build.cjs.json && node ./scripts/write-cjs-package-json.mjs",
+    "build": "npm run clean && npm run build:esm && npm run build:cjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/**/*.test.mjs",
+    "test:coverage": "npm run build && node --test --experimental-test-coverage test/**/*.test.mjs",
+    "prepack": "npm run build"
+  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0"

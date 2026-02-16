@@ -13,6 +13,9 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@raylin01/claude-client": "0.1.0",
+    "@raylin01/codex-client": "0.1.0",
+    "@raylin01/gemini-client": "0.1.0",
     "bun-pty": "^0.4.8",
     "dotenv": "^16.4.7",
     "js-yaml": "^4.1.0",

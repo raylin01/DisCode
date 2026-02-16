@@ -22,7 +22,7 @@ import {
   type GeminiRunResult,
   type ToolUseEvent,
   type ToolResultEvent
-} from '../../../gemini-client/src/index.js';
+} from '@raylin01/gemini-client';
 
 class GeminiSDKSession extends EventEmitter implements PluginSession {
   readonly sessionId: string;

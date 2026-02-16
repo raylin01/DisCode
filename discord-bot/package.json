@@ -12,6 +12,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@raylin01/claude-client": "0.1.0",
     "discord.js": "^14.16.3",
     "js-yaml": "^4.1.0",
     "ws": "^8.18.0"

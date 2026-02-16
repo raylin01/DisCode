@@ -1,7 +1,7 @@
 /**
  * Claude SDK Plugin for CLI Integration
  *
- * Uses the standalone @discode/claude-client library to manage the Claude Code CLI.
+ * Uses the standalone @raylin01/claude-client library to manage the Claude Code CLI.
  * This plugin acts as a bridge between the generic DisCode runner-agent and the Claude Client.
  */
 
@@ -33,7 +33,7 @@ import {
     ToolResultEvent,
     ResultMessage,
     ClaudeSupportedModel
-} from '../../../claude-client/src/index.js';
+} from '@raylin01/claude-client';
 
 // ============================================================================
 // Claude SDK Session

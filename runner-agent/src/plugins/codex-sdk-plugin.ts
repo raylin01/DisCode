@@ -35,7 +35,7 @@ import {
   ThreadListResponse,
   ModelListParams,
   ModelListResponse
-} from '../../../codex-client/src/index.js';
+} from '@raylin01/codex-client';
 
 class CodexSDKSession extends EventEmitter implements PluginSession {
   readonly sessionId: string;

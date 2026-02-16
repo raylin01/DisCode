@@ -7,12 +7,12 @@ import {
     listProjectsAsync, 
     listSessions, 
     getSessionDetailsAsync
-} from '../../../claude-client/src/sessions.js';
-import { CodexClient, Thread } from '../../../codex-client/src/index.js';
+} from '@raylin01/claude-client/sessions';
+import { CodexClient, Thread } from '@raylin01/codex-client';
 import {
     listGeminiSessions as listGeminiProjectSessions,
     resolveGeminiSession
-} from '../../../gemini-client/src/sessions.js';
+} from '@raylin01/gemini-client/sessions';
 import { WebSocketManager } from '../websocket.js';
 import { 
     SyncedContentBlock,

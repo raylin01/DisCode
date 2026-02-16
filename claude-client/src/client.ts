@@ -3,17 +3,6 @@ import { spawn, ChildProcess } from 'child_process';
 import { createInterface } from 'readline';
 import { EventEmitter } from 'events';
 import { randomUUID } from 'crypto';
-import { appendFileSync } from 'fs';
-import { join } from 'path';
-
-const DEBUG_LOG = '/Users/ray/Documents/DisCode/claude_debug.log';
-function debugLog(msg: string) {
-    try {
-        appendFileSync(DEBUG_LOG, `[${new Date().toISOString()}] ${msg}\n`);
-    } catch (e) {
-        // ignore
-    }
-}
 
 import { 
     SystemMessage, 
@@ -68,6 +57,10 @@ export interface ClaudeClientConfig {
      * Enable debug logging
      */
     debug?: boolean;
+    /**
+     * Optional debug logger callback.
+     */
+    debugLogger?: (message: string) => void;
     /**
      * Command line arguments to pass to the CLI
      */
@@ -306,6 +299,14 @@ export class ClaudeClient extends EventEmitter {
         this.taskQueue = config.taskQueue || null;
     }
 
+    private logDebug(message: string): void {
+        if (!this.config.debug) return;
+        if (this.config.debugLogger) {
+            this.config.debugLogger(message);
+            return;
+        }
+    }
+
     get sessionId(): string | null {
         return this._sessionId;
     }
@@ -338,7 +339,7 @@ export class ClaudeClient extends EventEmitter {
     queueMessage(text: string): void {
         if (this._isProcessingMessage) {
             this._messageQueue.push(text);
-            debugLog(`Message queued (queue size: ${this._messageQueue.length})`);
+            this.logDebug(`Message queued (queue size: ${this._messageQueue.length})`);
         } else {
             this.sendMessage(text);
         }
@@ -350,7 +351,7 @@ export class ClaudeClient extends EventEmitter {
     private processNextQueuedMessage(): void {
         if (this._messageQueue.length > 0) {
             const nextMessage = this._messageQueue.shift()!;
-            debugLog(`Processing queued message (${this._messageQueue.length} remaining)`);
+            this.logDebug(`Processing queued message (${this._messageQueue.length} remaining)`);
             this.sendMessage(nextMessage);
         }
     }
@@ -402,9 +403,7 @@ export class ClaudeClient extends EventEmitter {
                 const maxTokens = this.getMaxThinkingTokens();
                 if (maxTokens > 0) {
                     args.push('--max-thinking-tokens', maxTokens.toString());
-                    if (this.config.debug) {
-                        console.log(`Extended thinking enabled: ${maxTokens} tokens`);
-                    }
+                    this.logDebug(`Extended thinking enabled: ${maxTokens} tokens`);
                 }
 
                 if (this.config.continueConversation) {
@@ -524,10 +523,7 @@ export class ClaudeClient extends EventEmitter {
                     ? [...(this.config.executableArgs || []), claudePath, ...args]
                     : args;
 
-                if (this.config.debug) {
-                    console.log(`Spawning: ${spawnBin} ${spawnArgs.join(' ')}`);
-                }
-                debugLog(`Spawning: ${spawnBin} ${spawnArgs.join(' ')}`);
+                this.logDebug(`Spawning: ${spawnBin} ${spawnArgs.join(' ')}`);
 
                 this.process = spawn(spawnBin, spawnArgs, {
                     cwd: this.config.cwd,
@@ -559,22 +555,19 @@ export class ClaudeClient extends EventEmitter {
                 // Handle stderr (logs/errors)
                 this.process.stderr.on('data', (data) => {
                     const str = data.toString();
-                    debugLog(`Stderr: ${str}`);
-                    if (this.config.debug) {
-                        console.error(`[Claude CLI Stderr]: ${str}`);
-                    }
+                    this.logDebug(`Stderr: ${str}`);
                     // Some crucial errors might come here
                 });
 
                 this.process.on('error', (err) => {
                     this.emit('error', err);
-                    debugLog(`Process error: ${err.message}`);
+                    this.logDebug(`Process error: ${err.message}`);
                     reject(err);
                 });
 
                 this.process.on('exit', (code) => {
                     this.emit('exit', code);
-                    debugLog(`Process exited with code: ${code}`);
+                    this.logDebug(`Process exited with code: ${code}`);
                     this.process = null;
                     this.stdinReady = false;
                     this.readyEmitted = false;
@@ -626,10 +619,7 @@ export class ClaudeClient extends EventEmitter {
      * Send a control response (permission decision, answer, etc.)
      */
     async sendControlResponse(requestId: string, responseData: ControlResponseData): Promise<void> {
-        debugLog(`Sending control_response: request_id=${requestId} behavior=${responseData.behavior} scope=${(responseData as any).scope || 'none'}`);
-        if (this.config.debug) {
-            console.log(`[ClaudeClient] Sending control_response: request_id=${requestId} behavior=${responseData.behavior} scope=${(responseData as any).scope || 'none'}`);
-        }
+        this.logDebug(`Sending control_response: request_id=${requestId} behavior=${responseData.behavior} scope=${(responseData as any).scope || 'none'}`);
         const message: ControlResponseMessage = {
             type: 'control_response',
             request_id: requestId,
@@ -655,7 +645,7 @@ export class ClaudeClient extends EventEmitter {
      * Interrupt current operation (like Ctrl+C but via protocol)
      */
     async interrupt(): Promise<void> {
-        debugLog('Sending interrupt control request');
+        this.logDebug('Sending interrupt control request');
         await this.sendControlRequest({ subtype: 'interrupt' });
     }
 
@@ -800,21 +790,21 @@ export class ClaudeClient extends EventEmitter {
 
     private processLine(line: string): void {
         if (!line.trim()) return;
-        debugLog(`Received line: ${line}`);
+        this.logDebug(`Received line: ${line}`);
 
         try {
             const message = JSON.parse(line) as CliMessage;
             this.handleMessage(message);
         } catch (error) {
             if (this.config.debug) {
-                console.error('Failed to parse JSON:', error, line);
+                console.debug('Failed to parse JSON:', error, line);
             }
-            debugLog(`Failed to parse JSON: ${error} Line: ${line}`);
+            this.logDebug(`Failed to parse JSON: ${error} Line: ${line}`);
         }
     }
 
     private handleMessage(message: CliMessage): void {
-        debugLog(`Received message type=${message.type}`);
+        this.logDebug(`Received message type=${message.type}`);
         // Emit ready on first successful message if we haven't yet
         // (This acts as a fallback if system/init is missed or not sent first)
         if (this._sessionId === null && 'session_id' in message && message.session_id) {
@@ -828,7 +818,7 @@ export class ClaudeClient extends EventEmitter {
         switch (message.type) {
             case 'system':
                 if (message.subtype === 'init') {
-                    debugLog(`System init: session_id=${message.session_id}`);
+                    this.logDebug(`System init: session_id=${message.session_id}`);
                     this._sessionId = message.session_id;
                     this._lastSystemModel = message.model || null;
                     if (!this.readyEmitted) {
@@ -855,7 +845,7 @@ export class ClaudeClient extends EventEmitter {
                 break;
 
             case 'control_request':
-                debugLog(`Control request: id=${message.request_id} subtype=${message.request.subtype} tool=${(message.request as any).tool_name || 'n/a'}`);
+                this.logDebug(`Control request: id=${message.request_id} subtype=${message.request.subtype} tool=${(message.request as any).tool_name || 'n/a'}`);
                 this.pendingControlRequests.set(message.request_id, message);
                 
                 // Update status to input_needed with pending action details
@@ -968,7 +958,7 @@ export class ClaudeClient extends EventEmitter {
 
             case 'result':
                 const resMessage = message as ResultMessage;
-                debugLog(`Result received: subtype=${resMessage.subtype} duration=${resMessage.duration_ms}ms`);
+                this.logDebug(`Result received: subtype=${resMessage.subtype} duration=${resMessage.duration_ms}ms`);
                 
                 // Update status and process queue
                 this._isProcessingMessage = false;
@@ -985,7 +975,7 @@ export class ClaudeClient extends EventEmitter {
                 break;
 
             default:
-                debugLog(`Unhandled message type: ${(message as any).type} - ${JSON.stringify(message).slice(0, 200)}`);
+                this.logDebug(`Unhandled message type: ${(message as any).type} - ${JSON.stringify(message).slice(0, 200)}`);
                 break;
         }
 
@@ -1040,7 +1030,7 @@ export class ClaudeClient extends EventEmitter {
                             parsedInput = JSON.parse(this._currentToolBlock.inputJson);
                         }
                     } catch (e) {
-                        debugLog(`Failed to parse tool input JSON: ${this._currentToolBlock.inputJson}`);
+                        this.logDebug(`Failed to parse tool input JSON: ${this._currentToolBlock.inputJson}`);
                     }
                     
                     this.emit('tool_use_start', {
@@ -1066,7 +1056,7 @@ export class ClaudeClient extends EventEmitter {
                 break;
 
             default:
-                debugLog(`Unhandled stream event type: ${event.type} - ${JSON.stringify(event).slice(0, 200)}`);
+                this.logDebug(`Unhandled stream event type: ${event.type} - ${JSON.stringify(event).slice(0, 200)}`);
                 break;
         }
     }

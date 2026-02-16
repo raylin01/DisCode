@@ -239,17 +239,11 @@ export async function listProjectsAsync(): Promise<ProjectInfo[]> {
 /**
  * List sessions for a specific project
  */
-/**
- * List sessions for a specific project
- */
 export async function listSessions(projectPath: string): Promise<SessionEntry[]> {
     const storagePath = getProjectStoragePath(projectPath);
     const indexPath = join(storagePath, 'sessions-index.json');
-    
-    console.log(`[DEBUG] listSessions('${projectPath}') -> storagePath: '${storagePath}'`);
 
     if (!existsSync(indexPath)) {
-        console.log(`[DEBUG] sessions-index.json not found at '${indexPath}'`);
         return [];
     }
     
@@ -257,12 +251,10 @@ export async function listSessions(projectPath: string): Promise<SessionEntry[]>
         const { readFile } = await import('fs/promises');
         const content = await readFile(indexPath, 'utf-8');
         const index = JSON.parse(content) as SessionsIndex;
-        console.log(`[DEBUG] Found ${index.entries?.length || 0} entries in index`);
         return (index.entries || []).sort((a, b) => 
             new Date(b.modified).getTime() - new Date(a.modified).getTime()
         );
-    } catch (e) {
-        console.error('[DEBUG] Error reading sessions index:', e);
+    } catch {
         return [];
     }
 }
@@ -472,18 +464,20 @@ export class SessionWatcher extends EventEmitter {
         }
         
         // Initialize state
-        this.updateKnownState(projectPath).catch(err => 
-            console.error(`Error initializing state for ${projectPath}:`, err)
-        );
+        this.updateKnownState(projectPath).catch(err => {
+            const msg = `Error initializing state for ${projectPath}`;
+            this.emit('error', err instanceof Error ? err : new Error(msg));
+        });
         
         // Try to use fs.watch first
         try {
             const watcher = watch(storagePath, { persistent: false }, (eventType, filename) => {
                 if (filename === 'sessions-index.json' || filename?.endsWith('.jsonl')) {
                     this.recordActivity(projectPath);
-                    this.checkForChanges(projectPath).catch(err => 
-                        console.error(`Error checking for changes in ${projectPath}:`, err)
-                    );
+                    this.checkForChanges(projectPath).catch(err => {
+                        const msg = `Error checking for changes in ${projectPath}`;
+                        this.emit('error', err instanceof Error ? err : new Error(msg));
+                    });
                 }
             });
             
@@ -506,9 +500,10 @@ export class SessionWatcher extends EventEmitter {
      */
     private startPolling(projectPath: string): void {
         const poll = () => {
-            this.checkForChanges(projectPath).catch(err => 
-                console.error(`Polling error for ${projectPath}:`, err)
-            );
+            this.checkForChanges(projectPath).catch(err => {
+                const msg = `Polling error for ${projectPath}`;
+                this.emit('error', err instanceof Error ? err : new Error(msg));
+            });
             
             // Schedule next poll with adaptive interval
             const interval = this.getPollInterval(projectPath);
