@@ -1,12 +1,12 @@
 /**
  * Session Sync Service
  * 
- * Syncs Claude Code sessions between VS Code and Discord.
+ * Syncs CLI sessions (Claude/Codex/Gemini) between local clients and Discord.
  * Delegation to runner agent: The runner agent handles direct file system access and watcher pushes.
  * The bot acts as a client, requesting sync data via WebSocket and receiving pushed events.
  */
 
-import { Client, TextChannel, ThreadChannel, EmbedBuilder } from 'discord.js';
+import { Client, TextChannel, ThreadChannel, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { EventEmitter } from 'events';
 import { getCategoryManager, ProjectStats } from './category-manager.js';
 import * as botState from '../state.js';
@@ -20,12 +20,13 @@ import {
 // Types
 // ============================================================================
 
-type SyncedCliType = 'claude' | 'codex';
+type SyncedCliType = 'claude' | 'codex' | 'gemini';
 
 export interface SyncedSession {
     sessionId: string;
     externalSessionId: string;  // Session/thread ID from upstream CLI
     cliType: SyncedCliType;
+    syncFormatVersion?: number;
     projectPath: string;
     threadId?: string;
     firstPrompt: string;
@@ -104,14 +105,16 @@ export class SessionSyncService extends EventEmitter {
     }
 
     private resolveSyncedCliType(raw: any): SyncedCliType {
-        return raw?.cliType === 'codex' ? 'codex' : 'claude';
+        if (raw?.cliType === 'codex') return 'codex';
+        if (raw?.cliType === 'gemini') return 'gemini';
+        return 'claude';
     }
 
     private resolvePersistedSessionRecord(
-        sessionsRecord: Record<string, { threadId: string; projectPath: string; lastSync?: string; cliType?: 'claude' | 'codex' }> | undefined,
+        sessionsRecord: Record<string, { threadId: string; projectPath: string; lastSync?: string; cliType?: 'claude' | 'codex' | 'gemini' }> | undefined,
         sessionId: string,
         cliType: SyncedCliType
-    ): { key: string; data: { threadId: string; projectPath: string; lastSync?: string; cliType?: 'claude' | 'codex' } } | null {
+    ): { key: string; data: { threadId: string; projectPath: string; lastSync?: string; cliType?: 'claude' | 'codex' | 'gemini' } } | null {
         if (!sessionsRecord) return null;
         const preferredKey = this.toSessionKey(sessionId, cliType);
         const preferred = sessionsRecord[preferredKey];
@@ -261,7 +264,11 @@ export class SessionSyncService extends EventEmitter {
                                 for (const [storedKey, data] of Object.entries(runner.discordState.sessions)) {
                                     const normalizedStoredPath = this.normalizeProjectPath(data.projectPath);
                                     if (normalizedStoredPath === projectPath) {
-                                        const cliType = data.cliType === 'codex' ? 'codex' : 'claude';
+                                        const cliType: SyncedCliType = data.cliType === 'codex'
+                                            ? 'codex'
+                                            : data.cliType === 'gemini'
+                                            ? 'gemini'
+                                            : 'claude';
                                         const sessionId = storedKey.includes(':')
                                             ? storedKey.split(':').slice(1).join(':')
                                             : storedKey;
@@ -415,7 +422,8 @@ export class SessionSyncService extends EventEmitter {
     async handleSyncSessionsResponse(
         runnerId: string, 
         projectPath: string, 
-        sessions: any[]
+        sessions: any[],
+        syncFormatVersion?: number
     ): Promise<void> {
         const normalizedProjectPath = this.normalizeProjectPath(projectPath);
         console.log(`[SessionSync] Received ${sessions.length} sessions for ${normalizedProjectPath}`);
@@ -443,7 +451,7 @@ export class SessionSyncService extends EventEmitter {
             await this.syncSessionToDiscord(
                 runnerId,
                 normalizedProjectPath,
-                { ...session, projectPath: normalizedProjectPath, cliType },
+                { ...session, projectPath: normalizedProjectPath, cliType, syncFormatVersion },
                 session.messages
             );
 
@@ -660,10 +668,10 @@ export class SessionSyncService extends EventEmitter {
                 if (messages && messages.length > 0) {
                     const uniqueMessages = this.filterNewMessages(sessionKey, messages);
                     console.log(`[SessionSync] createSessionThread: Posting ${uniqueMessages.length} initial messages to thread ${thread.id}`);
-                    await this.postSessionMessages(runnerId, thread, uniqueMessages);
+                    await this.postSessionMessages(runnerId, thread, uniqueMessages, session.syncFormatVersion);
                 } else {
                     console.log(`[SessionSync] createSessionThread: No messages to post (messages arg is ${messages ? 'empty' : 'null'})`);
-                    if (cliType === 'codex') {
+                    if (cliType === 'codex' || cliType === 'gemini') {
                         const ws = botState.runnerConnections.get(runnerId);
                         if (ws) {
                             ws.send(JSON.stringify({
@@ -672,11 +680,11 @@ export class SessionSyncService extends EventEmitter {
                                     runnerId,
                                     sessionId: session.sessionId,
                                     projectPath: normalizedProjectPath,
-                                    cliType: 'codex',
+                                    cliType,
                                     requestId: `sync_session_${session.sessionId}_${Date.now()}`
                                 }
                             }));
-                            console.log(`[SessionSync] Requested Codex message hydration for ${sessionKey}`);
+                            console.log(`[SessionSync] Requested ${cliType.toUpperCase()} message hydration for ${sessionKey}`);
                         }
                     }
                 }
@@ -685,6 +693,7 @@ export class SessionSyncService extends EventEmitter {
                     sessionId: `sync_${cliType}_${session.sessionId}`,
                     externalSessionId: session.sessionId,
                     cliType,
+                    syncFormatVersion: session.syncFormatVersion,
                     projectPath: normalizedProjectPath,
                     threadId: thread.id,
                     firstPrompt: session.firstPrompt,
@@ -727,7 +736,12 @@ export class SessionSyncService extends EventEmitter {
         }
         if (this.ownedSessions.has(sessionKey)) return;
         await this.ensureProjectState(runnerId, projectPath);
-        await this.syncSessionToDiscord(runnerId, projectPath, { ...session, cliType, projectPath }, session.messages);
+        await this.syncSessionToDiscord(
+            runnerId,
+            projectPath,
+            { ...session, cliType, projectPath, syncFormatVersion: session.syncFormatVersion },
+            session.messages
+        );
         this.emit('session_new', { runnerId, entry: session });
     }
 
@@ -736,7 +750,7 @@ export class SessionSyncService extends EventEmitter {
     /**
      * Handle pushed session update from runner
      */
-    async handleSessionUpdated(runnerId: string, data: { session: any, newMessages: any[] }): Promise<void> {
+    async handleSessionUpdated(runnerId: string, data: { session: any, newMessages: any[]; syncFormatVersion?: number }): Promise<void> {
         const cliType = this.resolveSyncedCliType(data.session);
         const sessionKey = this.toSessionKey(data.session.sessionId, cliType);
         const projectPath = this.normalizeProjectPath(data.session.projectPath);
@@ -781,12 +795,23 @@ export class SessionSyncService extends EventEmitter {
             if (allMessages.length > currentCount) {
                 const trulyNewMessages = this.filterNewMessages(sessionKey, allMessages.slice(currentCount));
                 console.log(`[SessionSync] Syncing ${trulyNewMessages.length} truly new messages`);
-                await this.syncNewMessages(runnerId, projectPath, { ...data.session, cliType, projectPath }, existingSync, trulyNewMessages);
+                await this.syncNewMessages(
+                    runnerId,
+                    projectPath,
+                    { ...data.session, cliType, projectPath, syncFormatVersion: data.syncFormatVersion },
+                    existingSync,
+                    trulyNewMessages
+                );
             }
         } else {
             // New session discovered via update
             console.log(`[SessionSync] No existing sync for ${sessionKey}. Creating new thread with ${data.newMessages?.length} messages.`);
-            await this.createSessionThread(runnerId, projectPath, { ...data.session, cliType, projectPath }, data.newMessages);
+            await this.createSessionThread(
+                runnerId,
+                projectPath,
+                { ...data.session, cliType, projectPath, syncFormatVersion: data.syncFormatVersion },
+                data.newMessages
+            );
         }
 
         this.emit('session_updated', { runnerId, entry: data.session });
@@ -820,7 +845,12 @@ export class SessionSyncService extends EventEmitter {
 
             if (uniqueMessages.length > 0) {
                 console.log(`[SessionSync] Posting ${uniqueMessages.length} messages to thread ${thread.id}`);
-                await this.postSessionMessages(runnerId, thread, uniqueMessages);
+                await this.postSessionMessages(
+                    runnerId,
+                    thread,
+                    uniqueMessages,
+                    session.syncFormatVersion ?? existingSync.syncFormatVersion
+                );
                 
                 existingSync.lastSyncedAt = new Date();
                 existingSync.messageCount = session.messageCount;
@@ -943,7 +973,7 @@ export class SessionSyncService extends EventEmitter {
 
         for (const candidate of roleCandidates) {
             if (candidate === 'user') return 'user';
-            if (candidate === 'assistant') return 'assistant';
+            if (candidate === 'assistant' || candidate === 'gemini') return 'assistant';
         }
 
         return 'assistant';
@@ -1034,13 +1064,37 @@ export class SessionSyncService extends EventEmitter {
         return null;
     }
 
+    private buildAttachToApproveComponents(): ActionRowBuilder<ButtonBuilder>[] {
+        const button = new ButtonBuilder()
+            .setCustomId('sync_attach_control')
+            .setLabel('Attach To Approve')
+            .setStyle(ButtonStyle.Primary);
+
+        return [new ActionRowBuilder<ButtonBuilder>().addComponents(button)];
+    }
+
+    private async sendAssistantTextEmbeds(thread: ThreadChannel, text: string): Promise<void> {
+        const chunks = text.match(/[\s\S]{1,4000}/g) || [text];
+        for (const chunk of chunks) {
+            await this.sendThreadMessage(thread, { embeds: [createOutputEmbed('stdout', chunk)] });
+        }
+    }
+
+    private toolResultToText(block: any): string {
+        if (typeof block?.content === 'string') return block.content;
+        if (Array.isArray(block?.content)) return block.content.map((entry: any) => entry?.text || JSON.stringify(entry)).join('\n');
+        if (block?.content == null) return '';
+        return JSON.stringify(block.content);
+    }
+
     /**
      * Post messages to a thread with formatting and splitting
      */
     async postSessionMessages(
         runnerId: string,
         thread: ThreadChannel,
-        messages: any[]
+        messages: any[],
+        syncFormatVersion?: number
     ): Promise<void> {
         const runner = storage.getRunner(runnerId);
         if (!runner) return;
@@ -1070,12 +1124,17 @@ export class SessionSyncService extends EventEmitter {
         for (const msg of effectiveMessages) {
             const content = msg.content;
             const roleLabel = msg.role === 'user' ? 'User' : 'Assistant';
+            const isAssistant = msg.role === 'assistant';
 
             if (typeof content === 'string') {
                 if (content.trim()) {
-                    const chunks = content.match(/[\s\S]{1,1900}/g) || [content];
-                    for (const chunk of chunks) {
-                        await this.sendThreadMessage(thread, { content: `**${roleLabel}:** ${chunk}` });
+                    if (isAssistant) {
+                        await this.sendAssistantTextEmbeds(thread, content);
+                    } else {
+                        const chunks = content.match(/[\s\S]{1,1900}/g) || [content];
+                        for (const chunk of chunks) {
+                            await this.sendThreadMessage(thread, { content: `**${roleLabel}:** ${chunk}` });
+                        }
                     }
                 }
                 continue;
@@ -1086,9 +1145,13 @@ export class SessionSyncService extends EventEmitter {
                     ? JSON.stringify(content, null, 2)
                     : String(content);
                 if (contentText.trim()) {
-                    const chunks = contentText.match(/[\s\S]{1,1900}/g) || [contentText];
-                    for (const chunk of chunks) {
-                        await this.sendThreadMessage(thread, { content: `**${roleLabel}:**\n${chunk}` });
+                    if (isAssistant) {
+                        await this.sendAssistantTextEmbeds(thread, contentText);
+                    } else {
+                        const chunks = contentText.match(/[\s\S]{1,1900}/g) || [contentText];
+                        for (const chunk of chunks) {
+                            await this.sendThreadMessage(thread, { content: `**${roleLabel}:**\n${chunk}` });
+                        }
                     }
                 }
                 continue;
@@ -1099,17 +1162,32 @@ export class SessionSyncService extends EventEmitter {
                     if (block?.type === 'text' || block?.type === 'input_text' || block?.type === 'output_text' || block?.type === 'inputText') {
                         const text = this.extractTextFromBlock(block);
                         if (text) {
-                            const chunks = text.match(/[\s\S]{1,1900}/g) || [text];
-                            for (const chunk of chunks) {
-                                await this.sendThreadMessage(thread, { content: `**${roleLabel}:**\n${chunk}` });
+                            if (isAssistant) {
+                                await this.sendAssistantTextEmbeds(thread, text);
+                            } else {
+                                const chunks = text.match(/[\s\S]{1,1900}/g) || [text];
+                                for (const chunk of chunks) {
+                                    await this.sendThreadMessage(thread, { content: `**${roleLabel}:**\n${chunk}` });
+                                }
                             }
                         }
                     } else if (block?.type === 'thinking') {
                         // Thinking block support
                          if (block?.thinking?.trim()) {
-                            const chunks = block.thinking.match(/[\s\S]{1,1900}/g) || [block.thinking];
+                            const chunks = block.thinking.match(/[\s\S]{1,4000}/g) || [block.thinking];
                             for (const chunk of chunks) {
-                                await this.sendThreadMessage(thread, { content: `> **Thinking:**\n> ${chunk.replace(/\n/g, '\n> ')}` });
+                                await this.sendThreadMessage(thread, { embeds: [createOutputEmbed('thinking', chunk)] });
+                            }
+                        }
+                    } else if (block?.type === 'plan') {
+                        if (syncFormatVersion !== 2) continue;
+                        const planText = typeof block?.text === 'string' ? block.text : '';
+                        const explanation = typeof block?.explanation === 'string' ? `\n\n${block.explanation}` : '';
+                        const contentText = `${planText}${explanation}`.trim();
+                        if (contentText) {
+                            const parts = contentText.match(/[\s\S]{1,4000}/g) || [contentText];
+                            for (const part of parts) {
+                                await this.sendThreadMessage(thread, { embeds: [createOutputEmbed('info', `Plan Update\n\n${part}`)] });
                             }
                         }
                     } else if (block?.type === 'tool_use' || block?.type === 'toolUse') {
@@ -1117,14 +1195,8 @@ export class SessionSyncService extends EventEmitter {
                         await this.sendThreadMessage(thread, { embeds: [embed] });
                     } else if (block?.type === 'tool_result' || block?.type === 'toolResult') {
                         // Keep tool result as embed but ensure it's clean
-                        let resultText = '';
-                        if (typeof block.content === 'string') {
-                            resultText = block.content;
-                        } else if (Array.isArray(block.content)) {
-                            resultText = block.content.map((c: any) => c.text || JSON.stringify(c)).join('\n');
-                        } else {
-                            resultText = JSON.stringify(block.content);
-                        }
+                        const resultText = this.toolResultToText(block);
+                        if (!resultText.trim()) continue;
 
                         const parts = resultText.match(/[\s\S]{1,4000}/g) || [resultText];
                         for (let i = 0; i < parts.length; i++) {
@@ -1134,12 +1206,35 @@ export class SessionSyncService extends EventEmitter {
                             );
                             await this.sendThreadMessage(thread, { embeds: [embed] });
                         }
+                    } else if (block?.type === 'approval_needed') {
+                        if (syncFormatVersion !== 2) continue;
+                        const embed = new EmbedBuilder()
+                            .setColor(0xFFD700)
+                            .setTitle(block?.title || 'Approval needed')
+                            .setDescription(block?.description || 'Attach this synced session to approve tool requests.')
+                            .setTimestamp();
+
+                        if (block?.toolName) {
+                            embed.addFields({ name: 'Tool', value: `\`${block.toolName}\``, inline: true });
+                        }
+                        if (block?.status) {
+                            embed.addFields({ name: 'Status', value: `\`${block.status}\``, inline: true });
+                        }
+
+                        await this.sendThreadMessage(thread, {
+                            embeds: [embed],
+                            components: this.buildAttachToApproveComponents()
+                        });
                     } else {
                         const text = this.extractTextFromBlock(block);
                         if (!text) continue;
-                        const chunks = text.match(/[\s\S]{1,1900}/g) || [text];
-                        for (const chunk of chunks) {
-                            await this.sendThreadMessage(thread, { content: `**${roleLabel}:**\n${chunk}` });
+                        if (isAssistant) {
+                            await this.sendAssistantTextEmbeds(thread, text);
+                        } else {
+                            const chunks = text.match(/[\s\S]{1,1900}/g) || [text];
+                            for (const chunk of chunks) {
+                                await this.sendThreadMessage(thread, { content: `**${roleLabel}:**\n${chunk}` });
+                            }
                         }
                     }
                 }
@@ -1216,6 +1311,25 @@ export class SessionSyncService extends EventEmitter {
                 }
             }
         }
+        return null;
+    }
+
+    getSessionByExternalSessionId(
+        runnerId: string,
+        externalSessionId: string,
+        cliType?: SyncedCliType
+    ): { runnerId: string; projectPath: string; session: SyncedSession } | null {
+        const runnerState = this.runnerStates.get(runnerId);
+        if (!runnerState) return null;
+
+        for (const [projectPath, projectState] of runnerState.projects) {
+            for (const session of projectState.sessions.values()) {
+                if (session.externalSessionId !== externalSessionId) continue;
+                if (cliType && session.cliType !== cliType) continue;
+                return { runnerId, projectPath, session };
+            }
+        }
+
         return null;
     }
 }

@@ -23,7 +23,7 @@ export async function handleSyncSession(
     let runnerId: string | undefined;
     let sessionId: string | undefined;
     let projectPath: string | undefined;
-    let cliType: 'claude' | 'codex' = 'claude';
+    let cliType: 'claude' | 'codex' | 'gemini' = 'claude';
 
     // Try to resolve from session sync (synced sessions)
     const sessionSync = getSessionSyncService();
@@ -33,7 +33,11 @@ export async function handleSyncSession(
             runnerId = syncEntry.runnerId;
             sessionId = syncEntry.session.externalSessionId;
             projectPath = syncEntry.projectPath;
-            cliType = syncEntry.session.cliType === 'codex' ? 'codex' : 'claude';
+            cliType = syncEntry.session.cliType === 'codex'
+                ? 'codex'
+                : syncEntry.session.cliType === 'gemini'
+                ? 'gemini'
+                : 'claude';
         }
     }
 
@@ -46,7 +50,11 @@ export async function handleSyncSession(
             runnerId = session.runnerId;
             sessionId = session.sessionId;
             projectPath = session.folderPath;
-            cliType = session.cliType === 'codex' ? 'codex' : 'claude';
+            cliType = session.cliType === 'codex'
+                ? 'codex'
+                : session.cliType === 'gemini'
+                ? 'gemini'
+                : 'claude';
         }
     }
 

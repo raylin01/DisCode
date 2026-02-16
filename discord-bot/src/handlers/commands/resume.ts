@@ -61,6 +61,8 @@ export async function handleResumeSession(interaction: ChatInputCommandInteracti
                 resumeSessionIdForCli = syncEntry.session.externalSessionId;
                 resolvedCliType = syncEntry.session.cliType === 'codex'
                     ? 'codex'
+                    : syncEntry.session.cliType === 'gemini'
+                    ? 'gemini'
                     : 'claude';
             }
         }

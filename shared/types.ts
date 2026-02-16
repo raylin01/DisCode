@@ -61,7 +61,7 @@ export interface RunnerInfo {
     };
     projects?: Record<string, { channelId: string; lastSync?: string; dashboardMessageId?: string }>;
     // Persist session->thread mapping to prevent duplicates on restart
-    sessions?: Record<string, { threadId: string; projectPath: string; lastSync?: string; cliType?: 'claude' | 'codex' }>;
+    sessions?: Record<string, { threadId: string; projectPath: string; lastSync?: string; cliType?: 'claude' | 'codex' | 'gemini' }>;
   };
 }
 
@@ -234,21 +234,49 @@ export interface SyncSessionsMessage extends WebSocketMessage {
     };
 }
 
+export type SyncedMessageRole = 'user' | 'assistant';
+
+export type SyncedContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'thinking'; thinking: string }
+  | { type: 'tool_use'; name: string; input?: unknown; toolUseId?: string }
+  | { type: 'tool_result'; content: unknown; is_error?: boolean; tool_use_id?: string }
+  | { type: 'plan'; text: string; explanation?: string }
+  | {
+      type: 'approval_needed';
+      title: string;
+      description: string;
+      toolName?: string;
+      status?: string;
+      requiresAttach?: boolean;
+      payload?: unknown;
+    };
+
+export interface SyncedSessionMessage {
+  id: string;
+  role: SyncedMessageRole;
+  createdAt: string;
+  turnId?: string;
+  itemId?: string;
+  content: SyncedContentBlock[];
+}
+
 export interface SyncSessionsResponseMessage extends WebSocketMessage {
     type: 'sync_sessions_response';
     data: {
         runnerId: string;
         projectPath: string;
     requestId?: string;
+        syncFormatVersion?: number;
         sessions: {
             sessionId: string;
             projectPath: string;
-            cliType?: 'claude' | 'codex';
+            cliType?: 'claude' | 'codex' | 'gemini';
             firstPrompt: string;
             created: string;
             messageCount: number;
             gitBranch?: string;
-            messages?: any[];
+            messages?: SyncedSessionMessage[] | any[];
         }[];
     };
 }
@@ -273,7 +301,7 @@ export interface SyncSessionMessagesMessage extends WebSocketMessage {
     runnerId: string;
     sessionId: string;
     projectPath: string;
-    cliType?: 'claude' | 'codex';
+    cliType?: 'claude' | 'codex' | 'gemini';
     requestId?: string;
   };
 }
@@ -320,15 +348,16 @@ export interface SyncSessionDiscoveredMessage extends WebSocketMessage {
     type: 'sync_session_discovered';
     data: {
         runnerId: string;
+        syncFormatVersion?: number;
         session: {
             sessionId: string;
             projectPath: string;
-            cliType?: 'claude' | 'codex';
+            cliType?: 'claude' | 'codex' | 'gemini';
             firstPrompt: string;
             created: string;
             messageCount: number;
             gitBranch?: string;
-            messages?: any[];
+            messages?: SyncedSessionMessage[] | any[];
         };
     };
 }
@@ -337,13 +366,14 @@ export interface SyncSessionUpdatedMessage extends WebSocketMessage {
     type: 'sync_session_updated';
     data: {
         runnerId: string;
+        syncFormatVersion?: number;
         session: {
             sessionId: string;
             projectPath: string;
-            cliType?: 'claude' | 'codex';
+            cliType?: 'claude' | 'codex' | 'gemini';
             messageCount: number;
         };
-        newMessages: any[]; // The new messages to post
+        newMessages: SyncedSessionMessage[] | any[]; // The new messages to post
     };
 }
 
