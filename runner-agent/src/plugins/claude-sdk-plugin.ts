@@ -271,8 +271,9 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         // Tool Use & Permissions
         this.client.on('control_request', (req: ControlRequestMessage) => {
             const request = req.request;
+            const toolNameForLog = request.subtype === 'can_use_tool' ? (request.tool_name || 'n/a') : 'n/a';
 
-            console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] control_request: id=${req.request_id} subtype=${request.subtype} tool=${request.tool_name || 'n/a'}`);
+            console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] control_request: id=${req.request_id} subtype=${request.subtype} tool=${toolNameForLog}`);
             
             if (request.subtype === 'can_use_tool') {
                 if (request.tool_name === 'AskUserQuestion') {
@@ -574,6 +575,9 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         }
 
         const request = req.request;
+        if (request.subtype !== 'can_use_tool') {
+            return;
+        }
         const approvalId = `${this.sessionId}-${Date.now()}-${randomUUID().slice(0, 8)}`;
         
         // Register pending permission with special handling for ExitPlanMode

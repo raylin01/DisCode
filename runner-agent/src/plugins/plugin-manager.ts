@@ -256,13 +256,6 @@ export class PluginManager extends EventEmitter {
     }
 
     /**
-     * Get a specific plugin instance
-     */
-    getPlugin(type: PluginType): CliPlugin | undefined {
-        return this.plugins.get(type);
-    }
-
-    /**
      * Setup event forwarding from a plugin
      */
     private setupPluginEvents(plugin: CliPlugin): void {

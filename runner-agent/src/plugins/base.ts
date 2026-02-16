@@ -86,6 +86,12 @@ export interface PluginOptions {
     extraArgs?: Record<string, any>;
     /** Optional sandbox setting */
     sandbox?: string;
+    /** Codex sandbox policy */
+    sandboxPolicy?: unknown;
+    /** Codex collaboration mode */
+    collaborationMode?: string;
+    /** Codex thread config payload */
+    config?: Record<string, any> | null;
     /** Codex approval policy */
     approvalPolicy?: 'untrusted' | 'on-failure' | 'on-request' | 'never';
     /** Codex reasoning effort */

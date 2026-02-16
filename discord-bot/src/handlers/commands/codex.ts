@@ -11,7 +11,7 @@ import * as botState from '../../state.js';
 import { createErrorEmbed, createInfoEmbed, createSuccessEmbed } from '../../utils/embeds.js';
 import { buildSessionStartOptions } from '../../utils/session-options.js';
 import { getOrCreateRunnerChannel } from '../../utils/channels.js';
-import type { RunnerInfo } from '../../../../shared/types.js';
+import type { RunnerInfo, Session } from '../../../../shared/types.js';
 
 function resolveCodexRunner(userId: string, runnerId?: string | null): RunnerInfo | null {
     if (runnerId) {
@@ -176,8 +176,7 @@ export async function handleResumeCodex(interaction: ChatInputCommandInteraction
     const channel = await botState.client.channels.fetch(channelId);
     if (!channel || !('threads' in channel)) {
         await interaction.editReply({
-            embeds: [createErrorEmbed('Cannot Create Thread', 'Cannot access runner channel.')],
-            flags: 64
+            embeds: [createErrorEmbed('Cannot Create Thread', 'Cannot access runner channel.')]
         });
         return;
     }
@@ -201,7 +200,7 @@ export async function handleResumeCodex(interaction: ChatInputCommandInteraction
     }
 
     const sessionId = randomUUID();
-    const session = {
+    const session: Session = {
         sessionId,
         runnerId: resolvedRunner.runnerId,
         channelId: channel.id,
@@ -212,7 +211,8 @@ export async function handleResumeCodex(interaction: ChatInputCommandInteraction
         plugin: 'codex-sdk' as const,
         folderPath,
         interactionToken: interaction.token,
-        creatorId: interaction.user.id
+        creatorId: interaction.user.id,
+        options: undefined
     };
 
     storage.createSession(session);
