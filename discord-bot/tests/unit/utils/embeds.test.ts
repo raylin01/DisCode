@@ -121,7 +121,7 @@ describe('Embeds Utils', () => {
             const embed = createOutputEmbed('stdout', 'output here');
 
             expect(embed.data.color).toBe(0x2B2D31); // DARK color
-            expect(embed.data.title).toBe('CLI Output');
+            expect(embed.data.title).toBe('Agent Output');
         });
 
         it('should create stderr embed with correct color and title', () => {

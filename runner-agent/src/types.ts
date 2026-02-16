@@ -19,6 +19,7 @@ export interface PendingApprovalRequestInfo {
     requestId: string;
     runnerId: string;
     sessionId: string;
+    origin?: 'native' | 'sync_attached';
     toolName: string;
     toolInput: unknown;
     options?: string[];

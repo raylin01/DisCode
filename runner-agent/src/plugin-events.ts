@@ -57,6 +57,7 @@ export function wirePluginEvents(
                 pruneExpiredPendingApprovalRequests(pendingApprovalRequests);
                 pendingApprovalRequests.set(requestId, {
                     ...approvalData,
+                    origin: 'native',
                     firstSeenAt: Date.now(),
                     lastSentAt: Date.now(),
                     resendCount: 0

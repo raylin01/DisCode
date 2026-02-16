@@ -184,7 +184,7 @@ export function createOutputEmbed(outputType: string, content: string): EmbedBui
     };
 
     const titles: Record<string, string> = {
-        stdout: 'CLI Output',
+        stdout: 'Agent Output',
         stderr: 'Error Output',
         info: 'Info',
         thinking: 'Thinking',

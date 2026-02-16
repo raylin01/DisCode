@@ -12,8 +12,8 @@ import { storage } from './storage.js';
 import { getConfig } from './config.js';
 import * as botState from './state.js';
 import { initCategoryManager, getCategoryManager } from './services/category-manager.js';
-import { initSessionSyncService, getSessionSyncService } from './services/session-sync.js';
-import { buildSessionStartOptions } from './utils/session-options.js';
+import { initSessionSyncService } from './services/session-sync.js';
+import { attachSyncedSessionControl } from './services/synced-session-control.js';
 import { isAlreadyAcknowledged, isUnknownInteraction } from './handlers/interaction-safety.js';
 import {
   createWebSocketServer,
@@ -358,114 +358,42 @@ botState.client.on(Events.MessageCreate, async (message) => {
     const session = allSessions.find(s => s.threadId === message.channel.id && s.status === 'active');
 
     if (!session) {
-      // Check if this is a synced session (so we can auto-resume it)
-      const sessionSync = getSessionSyncService();
-      if (sessionSync) {
-        const syncEntry = sessionSync.getSessionByThreadId(message.channel.id);
-        if (syncEntry) {
-          // It's a synced session. Let's auto-resume it!
-          const syncedCliType = syncEntry.session.cliType === 'codex' ? 'codex' : 'claude';
-          const syncedPlugin = syncedCliType === 'codex' ? 'codex-sdk' : 'claude-sdk';
-          const externalSessionId = syncEntry.session.externalSessionId;
-          
-          // 1. Verify access
-          const runner = storage.getRunner(syncEntry.runnerId);
-          if (!runner || !storage.canUserAccessRunner(message.author.id, syncEntry.runnerId)) {
-             return; // Silent fail if no access
-          }
+      const attachments = message.attachments.map(att => ({
+        name: att.name,
+        url: att.url,
+        contentType: att.contentType || 'application/octet-stream',
+        size: att.size
+      }));
 
-          if (runner.status !== 'online') {
-              try {
-                await message.reply({ content: '❌ **Runner Offline**: Cannot resume this session because the runner is offline.', flags: 64 as any });
-              } catch (e) { /* ignore */ }
-              return;
-          }
-
-          const ws = botState.runnerConnections.get(runner.runnerId);
-          if (!ws) return;
-
-          // 2. Add reaction to indicate "Attaching"
-          try { await message.react('🔄'); } catch (e) { /* ignore */ }
-
-          // 3. Send START session command (Resume)
-          // We need to construct a valid Session object for storage if it doesn't exist
-          let sessionObj = storage.getSession(externalSessionId);
-          if (!sessionObj) {
-               sessionObj = {
-                  sessionId: externalSessionId,
-                  runnerId: runner.runnerId,
-                  channelId: syncEntry.session.threadId || message.channel.id, // thread is channel
-                  threadId: syncEntry.session.threadId || message.channel.id,
-                  createdAt: new Date().toISOString(),
-                  status: 'active',
-                  cliType: syncedCliType,
-                  plugin: syncedPlugin,
-                  folderPath: syncEntry.projectPath, // Important for context
-                  creatorId: message.author.id,
-                  interactionToken: '' // No token as it's auto-resume
-              };
-              storage.createSession(sessionObj);
-          } else {
-              sessionObj.status = 'active';
-              storage.updateSession(sessionObj.sessionId, sessionObj);
-          }
-
-          // Mark as owned immediately to stop watcher syncing (bidirectional switch)
-          sessionSync.markSessionAsOwned(externalSessionId, syncedCliType);
-
-          // Update active sessions state
-          botState.sessionStatuses.set(externalSessionId, 'working');
-
-          // Send start/resume command
-          const startOptions = buildSessionStartOptions(
-              runner,
-              undefined,
-              { resumeSessionId: externalSessionId },
-              syncedCliType
-          );
-          sessionObj.options = startOptions;
-          storage.updateSession(sessionObj.sessionId, sessionObj);
-
-          ws.send(JSON.stringify({
-              type: 'session_start',
-              data: {
-                  sessionId: externalSessionId,
-                  runnerId: runner.runnerId,
-                  cliType: syncedCliType,
-                  plugin: syncedPlugin,
-                  folderPath: syncEntry.projectPath,
-                  resume: true,
-                  options: startOptions
-              }
-          }));
-
-          // 4. Forward the user message immediately (queued by runner-agent)
-          const attachments = message.attachments.map(att => ({
-              name: att.name,
-              url: att.url,
-              contentType: att.contentType || 'application/octet-stream',
-              size: att.size
-          }));
-
-          ws.send(JSON.stringify({
-              type: 'user_message',
-              data: {
-                  sessionId: externalSessionId,
-                  userId: message.author.id,
-                  username: message.author.username,
-                  content: message.content,
-                  attachments: attachments.length > 0 ? attachments : undefined,
-                  timestamp: new Date().toISOString()
-              }
-          }));
-
-          // Clear streaming state
-          botState.streamingMessages.delete(externalSessionId);
-
-          // Done! Runner plugin will handle queueing the message until ready.
-          return;
+      const attachResult = await attachSyncedSessionControl({
+        threadId: message.channel.id,
+        userId: message.author.id,
+        initialMessage: {
+          content: message.content,
+          username: message.author.username,
+          attachments
         }
+      });
+
+      if (attachResult.ok) {
+        try { await message.react('🔄'); } catch (e) { /* ignore */ }
+        return;
       }
+
+      if (attachResult.reason === 'runner_offline') {
+        try {
+          await message.reply({ content: '❌ **Runner Offline**: Cannot resume this synced session because the runner is offline.' });
+        } catch (e) { /* ignore */ }
+        return;
+      }
+
+      if (attachResult.reason === 'runner_unavailable') {
+        try {
+          await message.reply({ content: '❌ Runner connection unavailable. Please try again in a moment.' });
+        } catch (e) { /* ignore */ }
+        return;
+      }
+
       return;
     }
 

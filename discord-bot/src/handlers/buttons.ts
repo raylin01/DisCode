@@ -66,6 +66,7 @@ import {
     handleSyncSessionsButton,
     parseProjectDashboardContext
 } from './dashboard-buttons.js';
+import { handleSyncAttachControlButton } from './synced-session-buttons.js';
 
 // Re-export for external consumers
 export { handleSessionReview } from './session-buttons.js';
@@ -91,6 +92,7 @@ function getAutoDeferMode(customId: string): 'reply' | 'update' | null {
     if (customId.startsWith('list_sessions:')) return 'reply';
     if (customId.startsWith('sync_sessions:')) return 'reply';
     if (customId.startsWith('sync_projects:')) return 'reply';
+    if (customId === 'sync_attach_control') return 'reply';
     if (customId.startsWith('runner_stats:')) return 'reply';
     if (customId.startsWith('create_folder_')) return 'reply';
 
@@ -219,6 +221,7 @@ export async function handleButtonInteraction(interaction: any): Promise<void> {
     if (customId.startsWith('config:'))         { await handleConfigAction(interaction, userId, customId); return; }
     if (customId.startsWith('runner_stats:'))   { const rid = customId.split(':')[1]; await handleRunnerStats(interaction, userId, rid); return; }
     if (customId.startsWith('sync_projects:'))  { const rid = customId.split(':')[1]; await handleSyncProjects(interaction, userId, rid); return; }
+    if (customId === 'sync_attach_control') { await handleSyncAttachControlButton(interaction, userId); return; }
 
     // ── Project dashboard ────────────────────────────────────────────────
     if (customId.startsWith('list_sessions:')) {

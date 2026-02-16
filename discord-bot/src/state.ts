@@ -138,3 +138,6 @@ export const codexThreadCache = new Map<string, { runnerId: string; cwd?: string
 
 // One-shot suppression for reconnect reattach flows (sessionId -> suppress next session_ready post)
 export const suppressSessionReadyNotification = new Set<string>();
+
+// Pending attach-to-approve fallback notices (sessionId -> timeout + target thread)
+export const pendingSyncedAttachFallbacks = new Map<string, { threadId: string; timeout: NodeJS.Timeout }>();

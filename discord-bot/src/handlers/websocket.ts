@@ -23,6 +23,7 @@ import {
 } from '../utils/channels.js';
 import { getCategoryManager } from '../services/category-manager.js';
 import { getSessionSyncService } from '../services/session-sync.js';
+import { clearAttachApprovalFallback } from '../services/synced-session-control.js';
 import { permissionStateStore } from '../permissions/state-store.js';
 import { rebuildPermissionButtons } from './permission-buttons.js';
 import { safeEditReply } from './interaction-safety.js';
@@ -928,6 +929,10 @@ function createQuestionButtons(data: any, requestId: string): { rows: ActionRowB
 async function handleApprovalRequest(ws: any, data: any): Promise<void> {
     console.log(`[DEBUG] handleApprovalRequest called for ${data.requestId} (tool: ${data.toolName})`);
 
+    if (typeof data.sessionId === 'string' && data.sessionId) {
+        clearAttachApprovalFallback(data.sessionId);
+    }
+
     const runner = storage.getRunner(data.runnerId);
     if (!runner) {
         console.error('[Approval] Unknown runner:', data.runnerId);
@@ -1049,7 +1054,25 @@ async function handleApprovalRequest(ws: any, data: any): Promise<void> {
         return;
     }
 
-    const session = storage.getSession(data.sessionId);
+    let session = storage.getSession(data.sessionId);
+    if (!session) {
+        const sessionSync = getSessionSyncService();
+        const syncEntry = sessionSync?.getSessionByExternalSessionId(data.runnerId, data.sessionId);
+        if (syncEntry?.session?.threadId) {
+            session = {
+                sessionId: data.sessionId,
+                runnerId: data.runnerId,
+                channelId: syncEntry.session.threadId,
+                threadId: syncEntry.session.threadId,
+                createdAt: syncEntry.session.lastSyncedAt?.toISOString?.() || new Date().toISOString(),
+                status: 'active',
+                cliType: syncEntry.session.cliType,
+                creatorId: storage.getRunner(data.runnerId)?.ownerId || ''
+            } as any;
+            console.log(`[Approval] Routed external session ${data.sessionId} to synced thread ${syncEntry.session.threadId}`);
+        }
+    }
+
     if (!session) {
         console.error('[Approval] Unknown session:', data.sessionId);
         ws.send(JSON.stringify({
@@ -2151,7 +2174,12 @@ async function handleSyncProjectsComplete(data: any): Promise<void> {
 async function handleSyncSessionsResponse(data: any): Promise<void> {
     const sessionSync = getSessionSyncService();
     if (sessionSync) {
-        await sessionSync.handleSyncSessionsResponse(data.runnerId, data.projectPath, data.sessions);
+        await sessionSync.handleSyncSessionsResponse(
+            data.runnerId,
+            data.projectPath,
+            data.sessions,
+            data.syncFormatVersion
+        );
     }
 }
 
@@ -2168,7 +2196,10 @@ async function handleSyncSessionsComplete(data: any): Promise<void> {
 async function handleSyncSessionDiscovered(data: any): Promise<void> {
     const sessionSync = getSessionSyncService();
     if (sessionSync) {
-        await sessionSync.handleSessionDiscovered(data.runnerId, data.session);
+        await sessionSync.handleSessionDiscovered(data.runnerId, {
+            ...data.session,
+            syncFormatVersion: data.syncFormatVersion
+        });
     }
 }
 
