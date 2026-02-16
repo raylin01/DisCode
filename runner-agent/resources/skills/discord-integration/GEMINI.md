@@ -57,7 +57,7 @@ Use this to communicate with the user. **You must provide content OR embed detai
 #### With User Ping
 
 ```bash
-/path/to/bin/send-to-discord.sh "Hey @ray, I need your input on this."
+/path/to/bin/send-to-discord.sh "Hey user, I need your input on this."
 ```
 
 #### Sending Files
@@ -109,7 +109,7 @@ Use these exact names (case-insensitive):
 |------------------------------------|-------------------------------------------------------------|
 | Starting a new task                | `/path/to/bin/update-channel.sh "task-name" "description"`               |
 | Task completed                     | `/path/to/bin/send-to-discord.sh --title "Done" --description "..." --color "green"` |
-| Need user input                    | `/path/to/bin/send-to-discord.sh "Hey @username, I need..."`            |
+| Need user input                    | `/path/to/bin/send-to-discord.sh "Hey user, I need..."`            |
 | Error/problem occurred             | `/path/to/bin/send-to-discord.sh --title "Error" --description "..." --color "red"` |
 | Switching to different work        | `/path/to/bin/update-channel.sh "new-task" "new description"`           |
 
@@ -119,5 +119,5 @@ Use these exact names (case-insensitive):
 
 1. **Always rename the channel** when you start or when the topic changes
 2. **Use embeds for status updates** (completion, errors, milestones)
-3. **Ping the user** (`@username`) when you need their input or are done
+3. **Ping the user** ("user") when you need their input or are done
 4. **Be proactive** — Don't wait to be asked; send updates as you work

@@ -623,7 +623,9 @@ export async function handleSessionReview(interaction: any, userId: string): Pro
     const isCodex = state.cliType === 'codex';
     const defaults = isCodex ? runner?.config?.codexDefaults : runner?.config?.claudeDefaults;
 
-    let approvalText = state.options?.approvalMode === 'auto' ? 'Auto-Approve (YOLO)' : 'Require Approval';
+    let approvalText = state.options?.approvalMode === 'auto' ? 'Auto-Approve (YOLO)' :
+                        state.options?.approvalMode === 'autoSafe' ? 'Auto-Safe (Read-Only)' :
+                        'Require Approval';
     if (state.plugin === 'stream') {
         approvalText = 'Auto-Approve (Stream Mode)';
     }
@@ -701,12 +703,17 @@ export async function handleCustomizeSettings(interaction: any, userId: string):
         .addComponents(
             new ButtonBuilder()
                 .setCustomId('session_settings_approval_manual')
-                .setLabel('Require Approval (Default)')
+                .setLabel('Manual')
                 .setStyle(currentMode === 'manual' ? ButtonStyle.Success : ButtonStyle.Secondary)
                 .setEmoji('🛡️'),
             new ButtonBuilder()
+                .setCustomId('session_settings_approval_autosafe')
+                .setLabel('Auto-Safe')
+                .setStyle(currentMode === 'autoSafe' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+                .setEmoji('✅'),
+            new ButtonBuilder()
                 .setCustomId('session_settings_approval_auto')
-                .setLabel('Auto-Approve (YOLO)')
+                .setLabel('YOLO')
                 .setStyle(currentMode === 'auto' ? ButtonStyle.Danger : ButtonStyle.Secondary)
                 .setEmoji('⚡')
         );
@@ -759,6 +766,8 @@ export async function handleSessionSettings(interaction: any, userId: string, cu
 
     if (customId === 'session_settings_approval_manual') {
         state.options.approvalMode = 'manual';
+    } else if (customId === 'session_settings_approval_autosafe') {
+        state.options.approvalMode = 'autoSafe';
     } else if (customId === 'session_settings_approval_auto') {
         state.options.approvalMode = 'auto';
     } else if (customId === 'session_settings_permission_default') {
@@ -1033,7 +1042,8 @@ export async function handleStartSession(interaction: any, userId: string): Prom
             { name: 'Runner', value: runner.name, inline: true },
             { name: 'CLI Type', value: state.cliType.toUpperCase(), inline: true },
             { name: 'Plugin', value: pluginLabel, inline: true },
-            { name: 'Approval', value: state.options?.approvalMode === 'auto' ? 'Auto-Approve' : 'Manual', inline: true },
+            { name: 'Approval', value: state.options?.approvalMode === 'auto' ? 'YOLO' :
+                                    state.options?.approvalMode === 'autoSafe' ? 'Auto-Safe' : 'Manual', inline: true },
             { name: 'Working Folder', value: `\`\`\`${state.folderPath}\`\`\``, inline: false }
         )
         .setTimestamp();

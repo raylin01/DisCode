@@ -34,6 +34,7 @@ export class AssistantManager extends EventEmitter {
     private deps: AssistantManagerDeps;
     private config: AssistantConfig;
     private cliType: 'claude' | 'gemini' | 'codex' | null = null;
+    private outputHandler: ((data: { sessionId: string; content: string; outputType?: string }) => void) | null = null;
 
     constructor(deps: AssistantManagerDeps) {
         super();
@@ -160,7 +161,12 @@ export class AssistantManager extends EventEmitter {
 
             // Wire up output events from PluginManager (not session - TmuxPlugin emits through PluginManager)
             // Filter events by our session ID
-            this.deps.pluginManager.on('output', (data: { sessionId: string; content: string; outputType?: string }) => {
+            // Remove any existing handler first to prevent duplicates
+            if (this.outputHandler) {
+                this.deps.pluginManager.off('output', this.outputHandler);
+            }
+
+            this.outputHandler = (data: { sessionId: string; content: string; outputType?: string }) => {
                 // Only handle output from our assistant session
                 if (data.sessionId !== this.sessionId) return;
 
@@ -182,7 +188,9 @@ export class AssistantManager extends EventEmitter {
                         outputType: data.outputType || 'stdout'
                     }
                 });
-            });
+            };
+
+            this.deps.pluginManager.on('output', this.outputHandler);
 
             // Wait for ready or timeout
             if (!this.session.isReady) {
@@ -293,6 +301,12 @@ The spawn-thread skill is available at: spawn-thread.sh "<folder>" "<cli_type>" 
         }
 
         console.log(`[AssistantManager] Stopping assistant session ${this.sessionId}`);
+
+        // Remove the output handler to prevent duplicate messages on restart
+        if (this.outputHandler) {
+            this.deps.pluginManager.off('output', this.outputHandler);
+            this.outputHandler = null;
+        }
 
         try {
             await this.session.close();

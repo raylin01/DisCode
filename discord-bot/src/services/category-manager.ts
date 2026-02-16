@@ -38,6 +38,7 @@ export interface RunnerCategory {
     statsChannelIds: {
         sessions?: string;  // "📊 3 active"
         pending?: string;   // "⚠️ 5 pending"
+        memory?: string;    // "💾 128MB"
     };
     projects: Map<string, ProjectChannel>;  // projectPath -> channel info
 }
@@ -691,7 +692,8 @@ export class CategoryManager {
     async updateStatsChannels(
         runnerId: string,
         activeSessions: number,
-        pendingActions: number
+        pendingActions: number,
+        memoryMb?: number
     ): Promise<void> {
         const runnerCategory = this.categories.get(runnerId);
         if (!runnerCategory) return;
@@ -704,7 +706,7 @@ export class CategoryManager {
                 let sessionsChannel = await this.client.channels.fetch(
                     runnerCategory.statsChannelIds.sessions
                 ).catch(() => null);
-                
+
                 // Migration: If channel is not Text (e.g. it is Voice), delete it
                 if (sessionsChannel && sessionsChannel.type !== ChannelType.GuildText) {
                     try {
@@ -727,7 +729,7 @@ export class CategoryManager {
                         position: 0,
                         permissionOverwrites: [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.SendMessages] }]
                     });
-                    
+
                     // Update ID
                     runnerCategory.statsChannelIds.sessions = sessionsChannel.id;
                     this.persistStatsChannelIds(runnerId, runnerCategory.statsChannelIds);
@@ -763,7 +765,7 @@ export class CategoryManager {
                         position: 1,
                         permissionOverwrites: [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.SendMessages] }]
                     });
-                    
+
                     // Update ID
                     runnerCategory.statsChannelIds.pending = pendingChannel.id;
                     this.persistStatsChannelIds(runnerId, runnerCategory.statsChannelIds);
@@ -772,12 +774,51 @@ export class CategoryManager {
                      if (pendingChannel.position !== 1) await pendingChannel.setPosition(1);
                 }
             }
+
+            // --- Memory Channel ---
+            if (memoryMb !== undefined) {
+                let memoryChannel = runnerCategory.statsChannelIds.memory
+                    ? await this.client.channels.fetch(runnerCategory.statsChannelIds.memory).catch(() => null)
+                    : null;
+
+                // Migration: If channel is not Text, delete it
+                if (memoryChannel && memoryChannel.type !== ChannelType.GuildText) {
+                    try {
+                        await memoryChannel.delete();
+                        memoryChannel = null;
+                    } catch (e) { /* ignore */ }
+                }
+
+                // Format memory nicely
+                const memoryDisplay = memoryMb >= 1024
+                    ? `${(memoryMb / 1024).toFixed(1)}GB`
+                    : `${memoryMb}MB`;
+                const name = `💾-${memoryDisplay}`;
+
+                if (!memoryChannel) {
+                    // Create new
+                    memoryChannel = await guild.channels.create({
+                        name,
+                        type: ChannelType.GuildText,
+                        parent: runnerCategory.categoryId,
+                        position: 2,
+                        permissionOverwrites: [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.SendMessages] }]
+                    });
+
+                    // Update ID
+                    runnerCategory.statsChannelIds.memory = memoryChannel.id;
+                    this.persistStatsChannelIds(runnerId, runnerCategory.statsChannelIds);
+                } else {
+                    if (memoryChannel.name !== name) await memoryChannel.setName(name);
+                    if (memoryChannel.position !== 2) await memoryChannel.setPosition(2);
+                }
+            }
         } catch (error) {
             console.error('[CategoryManager] Error updating stats channels:', error);
         }
     }
 
-    private persistStatsChannelIds(runnerId: string, statsChannelIds: { sessions?: string; pending?: string }) {
+    private persistStatsChannelIds(runnerId: string, statsChannelIds: { sessions?: string; pending?: string; memory?: string }) {
         const runner = storage.getRunner(runnerId);
         if (runner) {
              storage.updateRunner(runnerId, {
@@ -836,19 +877,11 @@ export class CategoryManager {
             const sessions = storage.getRunnerSessions(runnerId);
             const activeSessions = sessions.filter(s => s.status === 'active').length;
             const pendingActions = permissionStateStore.getByRunnerId(runnerId).length;
-            // Pending actions might need more complex logic (e.g. from session.pendingAction)
-            // For now, we count sessions in 'input_needed' status if we track that in Session object
-            // Currently Session object has 'status': 'active' | 'ended'.
-            // SyncedSession in SessionSyncService has 'status': 'running' | 'input_needed' ...
-            // We should use SessionSyncService if available for accurate pending count, or just 0 for now.
-            // Or better, update Session type in storage to include sub-status?
-            
-            // Let's rely on what we have. 
-            // If we want pending actions, we need to check SessionSyncService or RunnerSyncState.
-            // But CategoryManager doesn't depend on SessionSyncService (circular dependency risk).
-            // We'll stick to active count for now.
-            
-            await this.updateStatsChannels(runnerId, activeSessions, pendingActions);
+
+            // Get memory from botState (updated via heartbeat)
+            const memoryMb = botState.runnerMemoryUsage.get(runnerId);
+
+            await this.updateStatsChannels(runnerId, activeSessions, pendingActions, memoryMb);
         } catch (error) {
             console.error('[CategoryManager] Error updating runner stats:', error);
         }

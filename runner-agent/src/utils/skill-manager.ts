@@ -11,13 +11,20 @@ export class SkillManager {
     }
 
     /**
-     * Installs skills into the session's workspace
+     * Gets the path to the skills directory in runner-agent
      */
+    getSkillsRoot(): string {
+        return path.join(this.runnerRoot, 'resources', 'skills');
+    }
+
     /**
      * Installs skills into the session's workspace
+     * NOTE: This no longer copies script files. Instead, it sets up instruction files
+     * that reference the scripts directly from the runner-agent directory.
+     * The DISCODE_SKILLS_PATH environment variable should be set to allow scripts to be found.
      */
     async installSkills(cwd: string, cliType: 'claude' | 'gemini' | 'codex', excludedSkills: string[] = []): Promise<void> {
-        const skillsRoot = path.join(this.runnerRoot, 'resources', 'skills');
+        const skillsRoot = this.getSkillsRoot();
 
         try {
             const skillDirs = await fs.readdir(skillsRoot);
@@ -35,7 +42,7 @@ export class SkillManager {
                 const stats = await fs.stat(sourcePath);
                 if (!stats.isDirectory()) continue;
 
-                // Target path depends on CLI type
+                // Target path for SKILL.md only (no bin copying)
                 const skillDirName = cliType === 'claude' ? '.claude' : cliType === 'gemini' ? '.gemini' : '.codex';
                 const targetPath = path.join(cwd, skillDirName, 'skills', skillName);
 
@@ -43,46 +50,21 @@ export class SkillManager {
                     // Create target directory
                     await fs.mkdir(targetPath, { recursive: true });
 
-                    // Copy SKILL.md
+                    // The actual bin path in runner-agent (not copied)
+                    const runnerBinPath = path.join(sourcePath, 'bin');
+
+                    // Copy SKILL.md with updated paths
                     if (await this.fileExists(path.join(sourcePath, 'SKILL.md'))) {
-                        // Read, replace bin path, and write
                         let skillContent = await fs.readFile(path.join(sourcePath, 'SKILL.md'), 'utf8');
-
-                        // Setup bin path for this skill
-                        const targetBin = path.join(targetPath, 'bin');
-
-                        // Replace generic placeholder with actual path
-                        skillContent = skillContent.replace(/\/path\/to\/bin/g, targetBin);
-
+                        // Replace generic placeholder with actual runner-agent path
+                        skillContent = skillContent.replace(/\/path\/to\/bin/g, runnerBinPath);
                         await fs.writeFile(path.join(targetPath, 'SKILL.md'), skillContent);
                     }
 
-                    // Copy bin directory (scripts)
-                    const sourceBin = path.join(sourcePath, 'bin');
-                    if (await this.directoryExists(sourceBin)) {
-                        const targetBin = path.join(targetPath, 'bin');
-                        await fs.mkdir(targetBin, { recursive: true });
-
-                        const scripts = await fs.readdir(sourceBin);
-                        for (const script of scripts) {
-                            const srcFile = path.join(sourceBin, script);
-                            const destFile = path.join(targetBin, script);
-                            await fs.copyFile(srcFile, destFile);
-
-                            // Make executable
-                            await fs.chmod(destFile, 0o755);
-                        }
-                    }
+                    // DO NOT copy bin directory anymore - scripts are used directly from runner-agent
+                    // This prevents duplicate scripts and makes updates easier
 
                     // Copy instruction files (CLAUDE.md / GEMINI.md)
-                    // Logic: If there is an ASSISTANT.md and we are installing for an assistant session...
-                    // But here we don't know if it's an assistant session.
-                    // We can check if 'thread-spawning' skill has special handling?
-                    // Actually, the excludedSkills logic handles the "which skills" part.
-                    // The "which instructions" part is tricky.
-                    // For now, let's just stick to copying CLAUDE.md/GEMINI.md if present.
-                    // But wait, thread-spawning/ASSISTANT.md was part of the plan.
-
                     const instructionFile = cliType === 'claude' ? 'CLAUDE.md' : cliType === 'gemini' ? 'GEMINI.md' : null;
                     if (!instructionFile) {
                         continue;
@@ -92,33 +74,32 @@ export class SkillManager {
                     if (await this.fileExists(sourceInstruction)) {
                         const targetInstruction = path.join(cwd, instructionFile);
                         try {
-                            await fs.access(targetInstruction);
-                            // console.log(`[SkillManager] ${instructionFile} already exists in ${cwd}, skipping.`);
-                        } catch {
-                            try {
-                                // Read and replace bin path in instruction file too
-                                let instructionContent = await fs.readFile(sourceInstruction, 'utf8');
-                                const targetBin = path.join(targetPath, 'bin');
-                                instructionContent = instructionContent.replace(/\/path\/to\/bin/g, targetBin);
+                            // Always update the instruction file to ensure paths are correct
+                            // This is important because paths may change between sessions
+                            let instructionContent = await fs.readFile(sourceInstruction, 'utf8');
+                            instructionContent = instructionContent.replace(/\/path\/to\/bin/g, runnerBinPath);
 
-                                await fs.writeFile(targetInstruction, instructionContent);
-                                console.log(`[SkillManager] Copied ${instructionFile} for ${skillName}`);
-                            } catch (copyErr) {
-                                console.warn(`[SkillManager] Failed to copy instruction file:`, copyErr);
+                            // Check if file exists and compare content
+                            let shouldWrite = true;
+                            try {
+                                const existingContent = await fs.readFile(targetInstruction, 'utf8');
+                                // Only write if content has changed (paths updated)
+                                shouldWrite = existingContent !== instructionContent;
+                            } catch {
+                                // File doesn't exist, need to write
+                                shouldWrite = true;
                             }
+
+                            if (shouldWrite) {
+                                await fs.writeFile(targetInstruction, instructionContent);
+                                console.log(`[SkillManager] Updated ${instructionFile} for ${skillName}`);
+                            }
+                        } catch (copyErr) {
+                            console.warn(`[SkillManager] Failed to update instruction file:`, copyErr);
                         }
                     }
 
-                    // Special handling for ASSISTANT.md (if this is the thread-spawning skill)
-                    // If we see ASSISTANT.md, should we append it to CLAUDE.md?
-                    // Or let the system prompt handle it?
-                    // The plan said "Special instructions ONLY for the main assistant session".
-                    // The assistant session WILL have 'thread-spawning' skill.
-                    // So we can copy ASSISTANT.md content into CLAUDE.md if it exists?
-                    // NO, let's keep it simple for now and rely on SKILL.md being enough.
-                    // The implementation plan had ASSISTANT.md but I haven't implemented logic to use it yet.
-
-                    console.log(`[SkillManager] Installed ${skillName} skill`);
+                    console.log(`[SkillManager] Installed ${skillName} skill (scripts at ${runnerBinPath})`);
 
                 } catch (error) {
                     console.error(`[SkillManager] Failed to install skill ${skillName}:`, error);

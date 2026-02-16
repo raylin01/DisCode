@@ -1,6 +1,6 @@
 /**
  * Session Handlers
- * 
+ *
  * Handles session_start and session_end WebSocket messages.
  */
 
@@ -14,6 +14,7 @@ import type { RunnerConfig } from '../config.js';
 import { expandPath, findCliPath, validateOrCreateFolder } from '../utils.js';
 import { normalizeClaudeOptions } from '../utils/session-options.js';
 import type { CliPaths } from '../types.js';
+import { sessionStorage } from '../storage.js';
 
 export interface SessionHandlerDeps {
     config: RunnerConfig;
@@ -116,14 +117,28 @@ export async function handleSessionStart(
             ...(data.options || {})
         };
 
+        // Only continue conversation if explicitly requested or resuming
+        // New sessions should start fresh by default
         if (mergedOptions.continueConversation === undefined) {
-            mergedOptions.continueConversation = true;
+            mergedOptions.continueConversation = false;
         }
         if (mergedOptions.skipPermissions === undefined) {
             mergedOptions.skipPermissions = false;
         }
-        if (data.resume && !mergedOptions.resumeSessionId) {
-            mergedOptions.resumeSessionId = data.sessionId;
+        if (data.resume) {
+            // Runner is authoritative for CLI session IDs - always check local storage first
+            const persistedCliSessionId = sessionStorage.getCliSessionId(data.sessionId);
+            if (persistedCliSessionId) {
+                console.log(`[SessionStart] Using persisted CLI session ID from local storage: ${persistedCliSessionId.slice(0, 8)}`);
+                mergedOptions.resumeSessionId = persistedCliSessionId;
+            } else if (mergedOptions.resumeSessionId) {
+                // Bot passed a resumeSessionId and we don't have one locally (external session or first resume)
+                console.log(`[SessionStart] Using resumeSessionId from bot: ${mergedOptions.resumeSessionId.slice(0, 8)}`);
+            } else {
+                // Last resort: use DisCode session ID
+                console.log(`[SessionStart] No CLI session ID found, using DisCode session ID: ${data.sessionId.slice(0, 8)}`);
+                mergedOptions.resumeSessionId = data.sessionId;
+            }
         }
 
         const normalized = data.cliType === 'claude'
@@ -235,6 +250,10 @@ export async function handleSessionEnd(
     cliSessions.delete(data.sessionId);
     sessionMetadata.delete(data.sessionId);
     pendingMessages.delete(data.sessionId);
+
+    // Remove from persistent storage
+    sessionStorage.deleteSession(data.sessionId);
+
     for (const [requestId, pending] of pendingApprovalRequests.entries()) {
         if (pending.sessionId === data.sessionId) {
             pendingApprovalRequests.delete(requestId);

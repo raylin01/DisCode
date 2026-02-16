@@ -1,22 +1,25 @@
 /**
  * Plugin Event Wiring
- * 
+ *
  * Connects PluginManager events to WebSocket for Discord communication.
  */
 
 import type { PluginManager } from './plugins/index.js';
 import type { WebSocketManager } from './websocket.js';
-import type { PendingApprovalRequestInfo } from './types.js';
+import type { PendingApprovalRequestInfo, SessionMetadata } from './types.js';
 import { pruneExpiredPendingApprovalRequests } from './permissions/pending-requests.js';
+import { sessionStorage } from './storage.js';
 
 export function wirePluginEvents(
     pluginManager: PluginManager,
     wsManager: WebSocketManager,
     options?: {
         pendingApprovalRequests?: Map<string, PendingApprovalRequestInfo>;
+        sessionMetadata?: Map<string, SessionMetadata>;
     }
 ): void {
     const pendingApprovalRequests = options?.pendingApprovalRequests;
+    const sessionMetadata = options?.sessionMetadata;
 
     // Output events -> Discord
     pluginManager.on('output', (data) => {
@@ -28,7 +31,9 @@ export function wirePluginEvents(
                     sessionId: data.sessionId,
                     content: data.content,
                     timestamp: data.timestamp.toISOString(),
-                    outputType: data.outputType
+                    outputType: data.outputType,
+                    isComplete: data.isComplete,
+                    structuredData: data.structuredData
                 }
             });
         }
@@ -186,6 +191,31 @@ export function wirePluginEvents(
                     timestamp: data.timestamp.toISOString()
                 }
             });
+        }
+    });
+
+    // CLI session ID events -> Persist to storage for resume after restart
+    pluginManager.on('cli_session_id', (data: { sessionId: string; cliSessionId: string }) => {
+        console.log(`[PluginManager] CLI session ID for ${data.sessionId.slice(0, 8)}: ${data.cliSessionId.slice(0, 8)}`);
+
+        // Update in-memory metadata
+        if (sessionMetadata) {
+            const metadata = sessionMetadata.get(data.sessionId);
+            if (metadata) {
+                metadata.cliSessionId = data.cliSessionId;
+
+                // Persist to storage
+                sessionStorage.saveSession({
+                    sessionId: data.sessionId,
+                    cliSessionId: data.cliSessionId,
+                    cliType: metadata.cliType,
+                    plugin: metadata.plugin as any,
+                    folderPath: metadata.folderPath,
+                    runnerId: metadata.runnerId,
+                    createdAt: new Date().toISOString(),
+                    lastActivityAt: new Date().toISOString()
+                });
+            }
         }
     });
 }

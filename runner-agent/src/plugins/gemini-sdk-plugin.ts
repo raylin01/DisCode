@@ -15,6 +15,7 @@ import {
   PluginType,
   PluginOptions
 } from './base.js';
+import { getConfig } from '../config.js';
 import {
   GeminiClient,
   type GeminiRunOptions,
@@ -44,6 +45,9 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
   private currentOutput = '';
   private outputTimer: NodeJS.Timeout | null = null;
   private readonly OUTPUT_THROTTLE_MS = 500;
+  private currentDiagnostics = '';
+  private diagnosticsOutputType: 'info' | 'stderr' = 'info';
+  private diagnosticsTimer: NodeJS.Timeout | null = null;
 
   private currentRunStartedAt = 0;
   private currentRunToolCalls = 0;
@@ -70,7 +74,8 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
       env: {
         ...process.env,
         ...options.env,
-        DISCODE_SESSION_ID: this.sessionId
+        DISCODE_SESSION_ID: this.sessionId,
+        DISCODE_HTTP_PORT: String(getConfig().httpPort)
       }
     });
 
@@ -124,6 +129,7 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
   async interrupt(): Promise<void> {
     await this.client.interrupt();
     this.flushOutput(true);
+    this.flushDiagnostics(true);
     this.status = 'idle';
     this.plugin.emit('status', {
       sessionId: this.sessionId,
@@ -138,6 +144,10 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
       clearTimeout(this.outputTimer);
       this.outputTimer = null;
     }
+    if (this.diagnosticsTimer) {
+      clearTimeout(this.diagnosticsTimer);
+      this.diagnosticsTimer = null;
+    }
     await this.client.shutdown();
     this.status = 'offline';
     this.isReady = false;
@@ -145,6 +155,12 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
 
   private setupClientListeners(): void {
     this.client.on('ready', (geminiSessionId) => {
+      // Emit CLI session ID for persistence (enables resume after restart)
+      this.plugin.emit('cli_session_id', {
+        sessionId: this.sessionId,
+        cliSessionId: geminiSessionId
+      });
+
       this.plugin.emit('metadata', {
         sessionId: this.sessionId,
         model: this.modelOverride,
@@ -158,6 +174,13 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
       if (!this.sending) return;
       if (!delta) return;
       this.currentOutput += delta;
+      this.scheduleOutputFlush();
+    });
+
+    this.client.on('stdout', (line) => {
+      if (!this.sending) return;
+      if (!line) return;
+      this.currentOutput += this.currentOutput ? `\n${line}` : line;
       this.scheduleOutputFlush();
     });
 
@@ -233,14 +256,17 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
 
     this.client.on('stderr', (line) => {
       if (!this.sending) return;
-      if (!line || line.includes('Loaded cached credentials')) return;
-      this.plugin.emit('output', {
-        sessionId: this.sessionId,
-        content: line,
-        isComplete: false,
-        outputType: 'stderr',
-        timestamp: new Date()
-      });
+      if (!line || this.shouldIgnoreStderrLine(line)) return;
+
+      const outputType = this.classifyStderrLine(line);
+      if (this.currentDiagnostics && this.diagnosticsOutputType !== outputType) {
+        this.flushDiagnostics(false);
+        this.currentDiagnostics = '';
+      }
+
+      this.diagnosticsOutputType = outputType;
+      this.currentDiagnostics += this.currentDiagnostics ? `\n${line}` : line;
+      this.scheduleDiagnosticsFlush();
     });
   }
 
@@ -253,6 +279,8 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
     this.lastActivity = new Date();
     this.status = 'working';
     this.currentOutput = '';
+    this.currentDiagnostics = '';
+    this.diagnosticsOutputType = 'info';
     this.currentRunToolCalls = 0;
     this.currentResultEmitted = false;
     this.currentRunStartedAt = Date.now();
@@ -268,6 +296,7 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
         this.currentOutput = result.assistantResponse;
       }
       this.flushOutput(true);
+      this.flushDiagnostics(true);
       this.emitRunResult(result);
 
       this.status = 'idle';
@@ -280,6 +309,7 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       this.flushOutput(true);
+      this.flushDiagnostics(true);
 
       this.status = 'idle';
       this.plugin.emit('status', {
@@ -304,7 +334,8 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
   private async runMessage(message: string): Promise<GeminiRunResult> {
     const options = this.config.options || {};
     const runOptions = this.buildRunOptions(options);
-    const continueConversation = options.continueConversation !== false;
+    // Only continue if explicitly set to true (new sessions default to false)
+    const continueConversation = options.continueConversation === true;
 
     if (!continueConversation) {
       return this.client.startSession(message, { ...runOptions, resume: undefined });
@@ -437,6 +468,56 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
       outputType: 'stdout',
       timestamp: new Date()
     });
+
+    // Clear output after final flush to prevent resend
+    if (isComplete) {
+      this.currentOutput = '';
+    }
+  }
+
+  private scheduleDiagnosticsFlush(): void {
+    if (this.diagnosticsTimer) return;
+    this.diagnosticsTimer = setTimeout(() => {
+      this.diagnosticsTimer = null;
+      this.flushDiagnostics(false);
+    }, this.OUTPUT_THROTTLE_MS);
+  }
+
+  private flushDiagnostics(isComplete: boolean): void {
+    if (this.diagnosticsTimer && isComplete) {
+      clearTimeout(this.diagnosticsTimer);
+      this.diagnosticsTimer = null;
+    }
+
+    if (!this.currentDiagnostics.trim()) return;
+
+    this.plugin.emit('output', {
+      sessionId: this.sessionId,
+      content: this.currentDiagnostics,
+      isComplete,
+      outputType: this.diagnosticsOutputType,
+      timestamp: new Date()
+    });
+
+    // Clear diagnostics after final flush to prevent resend
+    if (isComplete) {
+      this.currentDiagnostics = '';
+    }
+  }
+
+  private shouldIgnoreStderrLine(line: string): boolean {
+    if (line.includes('Loaded cached credentials')) return true;
+    if (/^\[DEBUG\]\s+\[MemoryDiscovery\]/.test(line)) return true;
+    if (/^\[DEBUG\]\s+\[BfsFileSearch\]/.test(line)) return true;
+    if (/^\[DEBUG\]\s+\[ImportProcessor\]/.test(line)) return true;
+    return false;
+  }
+
+  private classifyStderrLine(line: string): 'info' | 'stderr' {
+    if (/^\[DEBUG\]/.test(line)) return 'info';
+    if (/^\[INFO\]/.test(line)) return 'info';
+    if (/^\[WARN(ING)?\]/.test(line)) return 'info';
+    return 'stderr';
   }
 
   private emitRunResult(result: GeminiRunResult): void {
@@ -447,7 +528,9 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
     const isError = result.status === 'error';
     const summary = isError
       ? (result.error?.message || 'Gemini execution failed')
-      : (this.currentOutput.trim() || result.assistantResponse || 'Completed');
+      : this.currentRunToolCalls > 0
+        ? `Completed successfully with ${this.currentRunToolCalls} tool call${this.currentRunToolCalls === 1 ? '' : 's'}.`
+        : 'Completed successfully.';
 
     this.plugin.emit('result', {
       sessionId: this.sessionId,

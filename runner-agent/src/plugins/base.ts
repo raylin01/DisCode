@@ -64,6 +64,8 @@ export interface PluginOptions {
     jsonSchema?: Record<string, any> | string;
     /** Permission mode */
     permissionMode?: 'default' | 'acceptEdits';
+    /** Auto-approve safe tools only (autoSafe mode) */
+    autoApproveSafe?: boolean;
     /** Allow skipping permissions dangerously */
     allowDangerouslySkipPermissions?: boolean;
     /** Allowed tools list */
@@ -274,6 +276,11 @@ export interface ResultEvent {
     timestamp: Date;
 }
 
+export interface CliSessionIdEvent {
+    sessionId: string;
+    cliSessionId: string;
+}
+
 // ============================================================================
 // Plugin Interface
 // ============================================================================
@@ -317,6 +324,7 @@ export interface CliPlugin extends EventEmitter {
     on(event: 'tool_execution', listener: (data: ToolExecutionEvent) => void): this;
     on(event: 'tool_result', listener: (data: ToolResultEvent) => void): this;
     on(event: 'result', listener: (data: ResultEvent) => void): this;
+    on(event: 'cli_session_id', listener: (data: CliSessionIdEvent) => void): this;
 
     emit(event: 'output', data: OutputEvent): boolean;
     emit(event: 'approval', data: ApprovalEvent): boolean;
@@ -327,6 +335,7 @@ export interface CliPlugin extends EventEmitter {
     emit(event: 'tool_execution', data: ToolExecutionEvent): boolean;
     emit(event: 'tool_result', data: ToolResultEvent): boolean;
     emit(event: 'result', data: ResultEvent): boolean;
+    emit(event: 'cli_session_id', data: CliSessionIdEvent): boolean;
 }
 
 // ============================================================================

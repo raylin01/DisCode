@@ -14,6 +14,20 @@ import { getSessionSyncService } from '../../services/session-sync.js';
 import { permissionStateStore } from '../../permissions/state-store.js';
 import type { RunnerInfo, Session } from '../../../../shared/types.ts';
 
+/**
+ * Helper to add timeout to async operations
+ * Returns null if timeout is reached
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T | null> {
+    return Promise.race([
+        promise,
+        new Promise<null>(resolve => setTimeout(() => {
+            console.warn(`[end-session] Timeout (${ms}ms) reached for: ${label}`);
+            resolve(null);
+        }, ms))
+    ]);
+}
+
 async function resolveRunnerIdFromChannelContext(interaction: any, sourceChannel?: any): Promise<string | undefined> {
     const categoryManager = getCategoryManager();
     if (!categoryManager) return undefined;
@@ -393,6 +407,9 @@ export async function handleStatus(interaction: any, userId: string): Promise<vo
  * Handle /end-session command
  */
 export async function handleEndSession(interaction: any, userId: string): Promise<void> {
+    // Defer the interaction immediately to prevent timeout
+    await interaction.deferReply({ flags: 64 });
+
     const sessionId = interaction.options.getString('session');
     let targetSessionId: string | null = null;
 
@@ -406,12 +423,11 @@ export async function handleEndSession(interaction: any, userId: string): Promis
                 targetSessionId = session.sessionId;
             } else if (sessionsInThread.length > 0) {
                 const latestSession = sessionsInThread[0];
-                await interaction.reply({
+                await interaction.editReply({
                     embeds: [createInfoEmbed(
                         'Session Already Ended',
                         `The most recent session in this thread (\`${latestSession.sessionId}\`) is already ended.`
-                    )],
-                    flags: 64
+                    )]
                 });
                 return;
             }
@@ -419,12 +435,11 @@ export async function handleEndSession(interaction: any, userId: string): Promis
             if (!targetSessionId) {
                 const syncedEntry = getSessionSyncService()?.getSessionByThreadId(channel.id);
                 if (syncedEntry) {
-                    await interaction.reply({
+                    await interaction.editReply({
                         embeds: [createInfoEmbed(
                             'No Active Discord Session',
                             'This is a synced thread. Use `/resume` to take control before using `/end-session`.'
-                        )],
-                        flags: 64
+                        )]
                     });
                     return;
                 }
@@ -432,9 +447,8 @@ export async function handleEndSession(interaction: any, userId: string): Promis
         }
 
         if (!targetSessionId) {
-            await interaction.reply({
-                embeds: [createInfoEmbed('No Session Found', 'Please run this command from a session thread or specify a session ID.')],
-                flags: 64
+            await interaction.editReply({
+                embeds: [createInfoEmbed('No Session Found', 'Please run this command from a session thread or specify a session ID.')]
             });
             return;
         }
@@ -444,9 +458,8 @@ export async function handleEndSession(interaction: any, userId: string): Promis
 
     const session = storage.getSession(targetSessionId);
     if (!session) {
-        await interaction.reply({
-            embeds: [createErrorEmbed('Session Not Found', `Session \`${targetSessionId}\` not found.`)],
-            flags: 64
+        await interaction.editReply({
+            embeds: [createErrorEmbed('Session Not Found', `Session \`${targetSessionId}\` not found.`)]
         });
         return;
     }
@@ -465,42 +478,40 @@ export async function handleEndSession(interaction: any, userId: string): Promis
     }
 
     if (!runner || !storage.canUserAccessRunner(userId, session.runnerId)) {
-        await interaction.reply({
-            embeds: [createErrorEmbed('Access Denied', 'You do not have permission to end this session.')],
-            flags: 64
+        await interaction.editReply({
+            embeds: [createErrorEmbed('Access Denied', 'You do not have permission to end this session.')]
         });
         return;
     }
 
     if (session.status !== 'active') {
-        await interaction.reply({
-            embeds: [createInfoEmbed('Session Already Ended', `Session \`${targetSessionId}\` is already ended.`)],
-            flags: 64
+        await interaction.editReply({
+            embeds: [createInfoEmbed('Session Already Ended', `Session \`${targetSessionId}\` is already ended.`)]
         });
         return;
     }
 
-    const runnerNotified = await endSession(targetSessionId, userId);
+    // End the session
+    const runnerNotified = await endSessionWithCleanup(targetSessionId, userId, interaction.user.id);
 
-    await interaction.reply({
+    await interaction.editReply({
         embeds: [createSuccessEmbed(
             'Session Ended',
             runnerNotified
                 ? `Session \`${targetSessionId}\` has been ended and the thread archived.`
                 : `Session \`${targetSessionId}\` was ended locally and the thread archived (runner was offline).`
-        )],
-        flags: 64
+        )]
     });
 }
 
 /**
- * End a session and cleanup
+ * End a session with full cleanup: notify runner, remove user, archive thread
  */
-export async function endSession(sessionId: string, userId: string): Promise<boolean> {
+async function endSessionWithCleanup(sessionId: string, userId: string, discordUserId: string): Promise<boolean> {
     const session = storage.getSession(sessionId);
     if (!session) return false;
 
-    // Notify runner to stop watching
+    // 1. Notify runner to stop watching
     let runnerNotified = false;
     const ws = botState.runnerConnections.get(session.runnerId);
     if (ws) {
@@ -511,37 +522,90 @@ export async function endSession(sessionId: string, userId: string): Promise<boo
         runnerNotified = true;
     }
 
-    // Update session status
+    // 2. Update session status
     session.status = 'ended';
     storage.updateSession(session.sessionId, session);
 
-    // Clean up state
+    // 3. Clean up bot state
     botState.sessionStatuses.delete(sessionId);
     botState.streamingMessages.delete(sessionId);
     botState.allowedTools.delete(sessionId);
     botState.actionItems.delete(sessionId);
 
-    await getCategoryManager()?.updateRunnerStats(session.runnerId);
+    // Update stats non-blocking (fire and forget) to avoid slowing down the command
+    getCategoryManager()?.updateRunnerStats(session.runnerId).catch(err => {
+        console.warn(`[end-session] Failed to update runner stats:`, err.message);
+    });
 
-    // Archive the thread
+    console.log(`Session ${sessionId} ended by ${userId}`);
+
+    // 4. Archive the thread (with user removal and final message)
+    // Use timeouts to prevent hanging on slow Discord API calls
+    const THREAD_OP_TIMEOUT = 5000; // 5 seconds per operation
+
     try {
-        const thread = await botState.client.channels.fetch(session.threadId);
+        const thread = await withTimeout(
+            botState.client.channels.fetch(session.threadId),
+            THREAD_OP_TIMEOUT,
+            'fetch thread'
+        );
+
         if (thread && thread.isThread()) {
+            // Send final message
             const embed = new EmbedBuilder()
                 .setColor(0xFF6600)
                 .setTitle('Session Ended')
-                .setDescription(`Session ended by <@${userId}>`)
+                .setDescription(`Session ended by <@${discordUserId}>`)
                 .setTimestamp();
 
-            await thread.send({ embeds: [embed] });
-            await thread.setArchived(true);
+            const sendResult = await withTimeout(
+                thread.send({ embeds: [embed] }),
+                THREAD_OP_TIMEOUT,
+                'send end message'
+            );
+
+            if (sendResult) {
+                console.log(`Sent end message to thread ${session.threadId}`);
+            }
+
+            // Remove the user from the thread
+            try {
+                await withTimeout(
+                    thread.members.remove(discordUserId) as Promise<any>,
+                    THREAD_OP_TIMEOUT,
+                    'remove user from thread'
+                );
+                console.log(`Removed user ${discordUserId} from thread ${session.threadId}`);
+            } catch (removeError: any) {
+                // This may fail if user isn't in the thread, which is fine
+                console.log(`Could not remove user from thread: ${removeError?.message || removeError}`);
+            }
+
+            // Archive the thread
+            const archiveResult = await withTimeout(
+                thread.setArchived(true) as Promise<any>,
+                THREAD_OP_TIMEOUT,
+                'archive thread'
+            );
+
+            if (archiveResult) {
+                console.log(`Archived thread ${session.threadId}`);
+            }
+        } else if (thread === null) {
+            console.warn(`[end-session] Timed out fetching thread ${session.threadId}`);
         }
     } catch (error) {
-        console.error(`Failed to archive thread for session ${sessionId}:`, error);
+        console.error(`Failed to cleanup thread for session ${sessionId}:`, error);
     }
 
-    console.log(`Session ${sessionId} ended by ${userId}`);
     return runnerNotified;
+}
+
+/**
+ * End a session and cleanup (legacy function for backward compatibility)
+ */
+export async function endSession(sessionId: string, userId: string): Promise<boolean> {
+    return endSessionWithCleanup(sessionId, userId, userId);
 }
 
 /**

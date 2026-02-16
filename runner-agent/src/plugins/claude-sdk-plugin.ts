@@ -17,6 +17,8 @@ import {
     PluginType
 } from './base.js';
 import { SkillManager } from '../utils/skill-manager.js';
+import { shouldAutoApproveInSafeMode, getDangerousReason } from '../permissions/safe-tools.js';
+import { getConfig } from '../config.js';
 
 // Import from our new library
 import { 
@@ -65,6 +67,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     private currentActivity: string | null = null;
     private currentThinking = '';
     private currentOutputType: 'stdout' | 'thinking' = 'stdout';
+    private lastAssistantOutput = '';
 
 
     // Plan Mode State
@@ -82,6 +85,9 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         currentOptions?: Array<{ label: string; value: string }>;
         currentMultiSelect?: boolean;
     } | null = null;
+
+    // Auto-approve safe mode flag
+    private autoApproveSafe: boolean = false;
 
     // Permission request tracking
     private pendingPermissions = new Map<string, {
@@ -131,6 +137,9 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         const allowDangerouslySkipPermissions =
             options.allowDangerouslySkipPermissions ?? options.skipPermissions ?? false;
 
+        // Store autoApproveSafe flag for use in permission handling
+        this.autoApproveSafe = options.autoApproveSafe ?? false;
+
         // Initialize the Claude Client
         this.client = new ClaudeClient({
             cwd: config.cwd || process.cwd(),
@@ -142,7 +151,8 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             env: {
                 ...process.env,
                 ...options.env,
-                DISCODE_SESSION_ID: this.sessionId
+                DISCODE_SESSION_ID: this.sessionId,
+                DISCODE_HTTP_PORT: String(getConfig().httpPort)
             },
             includePartialMessages: options.includePartialMessages,
             permissionPromptTool: options.permissionPromptTool,
@@ -199,6 +209,14 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                 mcpServers: message.mcp_servers,
                 timestamp: new Date()
             });
+
+            // Emit CLI session ID for persistence (enables resume after restart)
+            if (message.session_id) {
+                this.plugin.emit('cli_session_id', {
+                    sessionId: this.sessionId,
+                    cliSessionId: message.session_id
+                });
+            }
         });
 
         // Text Streaming (accumulated mode with throttling)
@@ -209,6 +227,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                 this.currentOutputType = 'stdout';
             }
             // Store latest accumulated content and schedule throttled emit
+            this.lastAssistantOutput = accumulatedText;
             this.pendingStdoutContent = accumulatedText;
             this.scheduleThrottledOutput();
         });
@@ -230,8 +249,14 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
         // Full Messages (Assistant)
         this.client.on('message', (message: AssistantMessage) => {
-            this.flushTextBuffer(true, this.currentOutputType);
-            this.flushThrottledOutput();  // Ensure any pending throttled content is sent
+            // Flush any pending throttled content with isComplete: true
+            // This ensures Discord clears its streaming state and prevents duplicate messages
+            this.flushThrottledOutput(true);
+
+            // Clear the output buffers to prevent reuse
+            this.lastAssistantOutput = '';
+            this.currentThinking = '';
+
             this.status = 'idle';
             this.setActivity(null);
 
@@ -274,8 +299,36 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             const toolNameForLog = request.subtype === 'can_use_tool' ? (request.tool_name || 'n/a') : 'n/a';
 
             console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] control_request: id=${req.request_id} subtype=${request.subtype} tool=${toolNameForLog}`);
-            
+
             if (request.subtype === 'can_use_tool') {
+                // Auto-approve safe tools if in autoApproveSafe mode
+                if (this.autoApproveSafe) {
+                    const toolName = request.tool_name || '';
+                    const input = request.input || {};
+
+                    if (shouldAutoApproveInSafeMode(toolName, input)) {
+                        console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Auto-approving safe tool: ${toolName}`);
+
+                        // Send auto-approval response
+                        const responseData: ControlResponseData = {
+                            behavior: 'allow',
+                            updatedInput: input,
+                            message: 'Auto-approved (safe operation)'
+                        };
+                        this.client.sendControlResponse(req.request_id, responseData).catch((err) => {
+                            this.plugin.emit('error', {
+                                sessionId: this.sessionId,
+                                error: err.message,
+                                fatal: false
+                            });
+                        });
+                        return;
+                    } else {
+                        const reason = toolName === 'Bash' ? getDangerousReason(input?.command || '') : undefined;
+                        console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Tool ${toolName} requires approval in autoSafe mode${reason ? `: ${reason}` : ''}`);
+                    }
+                }
+
                 if (request.tool_name === 'AskUserQuestion') {
                     this.handleAskUserQuestion(req.request_id, request).catch((err) => {
                         this.plugin.emit('error', {
@@ -439,9 +492,24 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
         // Result events - surfaces final session summary
         this.client.on('result', (result: ResultMessage) => {
+            const normalizedResult = this.normalizeForComparison(result.result || '');
+            const normalizedLastOutput = this.normalizeForComparison(this.lastAssistantOutput || '');
+            const duplicateOfLastOutput = Boolean(
+                normalizedResult &&
+                normalizedLastOutput &&
+                (
+                    normalizedResult === normalizedLastOutput ||
+                    normalizedLastOutput.includes(normalizedResult) ||
+                    normalizedResult.includes(normalizedLastOutput)
+                )
+            );
+            const summary = result.subtype === 'error'
+                ? (result.error || result.result || 'Claude execution failed')
+                : (duplicateOfLastOutput ? 'Completed successfully.' : (result.result || 'Completed successfully.'));
+
             this.plugin.emit('result', {
                 sessionId: this.sessionId,
-                result: result.result,
+                result: summary,
                 subtype: result.subtype,
                 durationMs: result.duration_ms,
                 durationApiMs: result.duration_api_ms,
@@ -468,6 +536,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     async sendMessage(message: string): Promise<void> {
         this.status = 'working';
         this.lastActivity = new Date();
+        this.lastAssistantOutput = '';
         await this.client.sendMessage(message);
     }
 
@@ -477,6 +546,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     async sendMessageWithImages(text: string, images: Array<{ data: string; mediaType: string }>): Promise<void> {
         this.status = 'working';
         this.lastActivity = new Date();
+        this.lastAssistantOutput = '';
 
         const content: Array<{ type: string; [key: string]: any }> = [];
 
@@ -904,30 +974,30 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         }, this.OUTPUT_THROTTLE_MS);
     }
 
-    private flushThrottledOutput(): void {
+    private flushThrottledOutput(isComplete: boolean = false): void {
         if (this.outputThrottleTimer) {
             clearTimeout(this.outputThrottleTimer);
             this.outputThrottleTimer = null;
         }
-        
+
         // Emit stdout if we have pending content
         if (this.pendingStdoutContent) {
             this.plugin.emit('output', {
                 sessionId: this.sessionId,
                 content: this.pendingStdoutContent,
-                isComplete: false,
+                isComplete,
                 outputType: 'stdout',
                 timestamp: new Date()
             });
             this.pendingStdoutContent = '';
         }
-        
+
         // Emit thinking if we have pending content
         if (this.pendingThinkingContent) {
             this.plugin.emit('output', {
                 sessionId: this.sessionId,
                 content: this.pendingThinkingContent,
-                isComplete: false,
+                isComplete,
                 outputType: 'thinking',
                 timestamp: new Date()
             });
@@ -944,6 +1014,10 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                  timestamp: new Date()
              });
         }
+    }
+
+    private normalizeForComparison(value: string): string {
+        return value.replace(/\s+/g, ' ').trim();
     }
 }
 

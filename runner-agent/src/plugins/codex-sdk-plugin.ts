@@ -12,6 +12,8 @@ import {
   SessionConfig,
   SessionStatus
 } from './base.js';
+import { isBashCommandSafe, getDangerousReason } from '../permissions/safe-tools.js';
+import { getConfig } from '../config.js';
 import {
   CodexClient,
   AskForApproval,
@@ -66,6 +68,9 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
     proposedAmendment?: string[] | null;
   }>();
 
+  // Auto-approve safe mode flag
+  private autoApproveSafe: boolean = false;
+
   private static readonly DEFAULT_DENY_MESSAGE = 'The user does not want to proceed with this tool use.';
 
   private pendingQuestion: {
@@ -82,6 +87,10 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
     this.config = config;
     this.createdAt = new Date();
     this.lastActivity = new Date();
+
+    // Store autoApproveSafe flag for use in approval handling
+    const options = config.options || {};
+    this.autoApproveSafe = options.autoApproveSafe ?? false;
   }
 
   async initializeThread(): Promise<void> {
@@ -131,6 +140,12 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
     this.emit('ready');
 
     this.plugin.registerThread(this.threadId, this);
+
+    // Emit CLI session ID for persistence (enables resume after restart)
+    this.plugin.emit('cli_session_id', {
+      sessionId: this.sessionId,
+      cliSessionId: this.threadId
+    });
 
     this.plugin.emit('metadata', {
       sessionId: this.sessionId,
@@ -415,6 +430,21 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
   }
 
   private handleCommandApproval(requestId: string | number, params: CommandExecutionRequestApprovalParams): void {
+    // Auto-approve safe commands if in autoApproveSafe mode
+    if (this.autoApproveSafe && params.command) {
+      if (isBashCommandSafe(params.command)) {
+        console.log(`[CodexSDK ${this.sessionId.slice(0, 8)}] Auto-approving safe command: ${params.command.slice(0, 50)}...`);
+        const response: CommandExecutionRequestApprovalResponse = {
+          decision: 'accept'
+        };
+        this.plugin.client.sendResponse(requestId, response);
+        return;
+      } else {
+        const reason = getDangerousReason(params.command);
+        console.log(`[CodexSDK ${this.sessionId.slice(0, 8)}] Command requires approval in autoSafe mode${reason ? `: ${reason}` : ''}`);
+      }
+    }
+
     const approvalId = `${this.sessionId}-${Date.now()}-${randomUUID().slice(0, 8)}`;
     this.pendingApprovals.set(approvalId, {
       approvalId,
@@ -453,6 +483,11 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
   }
 
   private handleFileApproval(requestId: string | number, params: FileChangeRequestApprovalParams): void {
+    // File changes are never auto-approved in autoSafe mode since they modify the filesystem
+    if (this.autoApproveSafe) {
+      console.log(`[CodexSDK ${this.sessionId.slice(0, 8)}] File change requires approval in autoSafe mode: ${params.reason}`);
+    }
+
     const approvalId = `${this.sessionId}-${Date.now()}-${randomUUID().slice(0, 8)}`;
     this.pendingApprovals.set(approvalId, {
       approvalId,
@@ -606,6 +641,14 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
     if (outputType === 'stdout' && isComplete) {
       this.completedOutputEmitted = true;
     }
+    // Clear output after final flush to prevent resend
+    if (isComplete) {
+      if (outputType === 'thinking') {
+        this.currentThinking = '';
+      } else {
+        this.currentOutput = '';
+      }
+    }
   }
 }
 
@@ -620,10 +663,22 @@ export class CodexSDKPlugin extends BasePlugin {
 
   constructor() {
     super();
+    // Note: DISCODE_HTTP_PORT is set in initialize() to ensure config is loaded
     this.client = new CodexClient();
   }
 
   async initialize(): Promise<void> {
+    // Set environment variables for the Codex process
+    // This needs to be done before start() is called
+    const config = getConfig();
+    if (!this.client['options']) {
+      (this.client as any).options = {};
+    }
+    (this.client as any).options.env = {
+      ...((this.client as any).options.env || {}),
+      DISCODE_HTTP_PORT: String(config.httpPort)
+    };
+
     await super.initialize();
     this.attachClientListeners();
   }

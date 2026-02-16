@@ -143,7 +143,9 @@ class GeminiClient extends events_1.EventEmitter {
         if (!value || typeof value !== 'object')
             return false;
         const event = value;
-        if (typeof event.type !== 'string' || typeof event.timestamp !== 'string')
+        if (typeof event.type !== 'string')
+            return false;
+        if (event.timestamp !== undefined && typeof event.timestamp !== 'string')
             return false;
         return Object.values(types_js_1.JsonStreamEventType).includes(event.type);
     }

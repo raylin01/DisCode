@@ -8,6 +8,8 @@ export interface SessionMetadata {
     plugin?: 'tmux' | 'print' | 'stream' | 'claude-sdk' | 'codex-sdk' | 'gemini-sdk';
     folderPath?: string;
     runnerId: string;
+    /** CLI's internal session ID for resumption after restart */
+    cliSessionId?: string;
 }
 
 export interface PendingApproval {

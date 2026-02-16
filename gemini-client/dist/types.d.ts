@@ -41,7 +41,7 @@ export declare enum JsonStreamEventType {
 }
 export interface BaseJsonStreamEvent {
     type: JsonStreamEventType;
-    timestamp: string;
+    timestamp?: string;
 }
 export interface InitEvent extends BaseJsonStreamEvent {
     type: JsonStreamEventType.INIT;

@@ -22,6 +22,7 @@ import {
     ToolExecutionEvent,
     ToolResultEvent,
     ResultEvent,
+    CliSessionIdEvent,
 } from './base.js';
 import { TmuxPlugin } from './tmux-plugin.js';
 import { PrintPlugin } from './print-plugin.js';
@@ -298,6 +299,10 @@ export class PluginManager extends EventEmitter {
         plugin.on('result', (data: ResultEvent) => {
             this.emit('result', data);
         });
+
+        plugin.on('cli_session_id', (data: CliSessionIdEvent) => {
+            this.emit('cli_session_id', data);
+        });
     }
 
     on(event: 'output', listener: (data: OutputEvent) => void): this;
@@ -311,6 +316,7 @@ export class PluginManager extends EventEmitter {
     on(event: 'tool_execution', listener: (data: ToolExecutionEvent) => void): this;
     on(event: 'tool_result', listener: (data: ToolResultEvent) => void): this;
     on(event: 'result', listener: (data: ResultEvent) => void): this;
+    on(event: 'cli_session_id', listener: (data: CliSessionIdEvent) => void): this;
     on(event: string, listener: (...args: any[]) => void): this {
         return super.on(event, listener);
     }

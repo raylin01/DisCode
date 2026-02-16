@@ -18,6 +18,7 @@ import { handleWebSocketMessage } from './handlers/index.js';
 import { wirePluginEvents } from './plugin-events.js';
 import { AssistantManager } from './assistant-manager.js';
 import { getSyncService } from './services/sync-service.js';
+import { sessionStorage } from './storage.js';
 import type { SessionMetadata, PendingApproval, PendingMessage, CliPaths, PendingApprovalRequestInfo } from './types.js';
 
 // Load configuration
@@ -111,8 +112,29 @@ async function startup(): Promise<void> {
     await pluginManager.initialize();
     console.log('  ✓ PluginManager initialized');
 
+    // Load persisted sessions into memory
+    console.log('\nLoading persisted sessions...');
+    const persistedSessions = sessionStorage.getAllSessions();
+    for (const [id, session] of persistedSessions) {
+      sessionMetadata.set(id, {
+        sessionId: session.sessionId,
+        cliType: session.cliType,
+        plugin: session.plugin,
+        folderPath: session.folderPath,
+        runnerId: session.runnerId,
+        cliSessionId: session.cliSessionId
+      });
+    }
+    console.log(`  ✓ Loaded ${persistedSessions.size} persisted sessions`);
+
+    // Cleanup old sessions (7 days default)
+    const cleaned = sessionStorage.cleanupOldSessions();
+    if (cleaned > 0) {
+      console.log(`  ✓ Cleaned up ${cleaned} old sessions`);
+    }
+
     // Wire plugin events to WebSocket
-    wirePluginEvents(pluginManager, wsManager, { pendingApprovalRequests });
+    wirePluginEvents(pluginManager, wsManager, { pendingApprovalRequests, sessionMetadata });
 
     // Initialize AssistantManager if enabled
     if (config.assistant.enabled) {

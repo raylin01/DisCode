@@ -1,7 +1,7 @@
 import type { RunnerInfo } from '../../../shared/types.js';
 
 export interface SessionStartOptions {
-    approvalMode?: 'manual' | 'auto';
+    approvalMode?: 'manual' | 'autoSafe' | 'auto';
     skipPermissions?: boolean;
     thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'auto' | 'default_on';
     approvalPolicy?: 'untrusted' | 'on-failure' | 'on-request' | 'never';
@@ -27,6 +27,10 @@ export function buildSessionStartOptions(
     // Map UI approval mode -> runner option
     if (options.approvalMode === 'auto') {
         options.skipPermissions = true;
+    } else if (options.approvalMode === 'autoSafe') {
+        // autoSafe mode: skip permissions for safe tools only
+        options.skipPermissions = false;
+        options.autoApproveSafe = true;
     } else if (options.approvalMode === 'manual') {
         options.skipPermissions = false;
     }

@@ -677,6 +677,45 @@ async function handleRegister(ws: any, data: any): Promise<void> {
             type: 'registered',
             data: { runnerId: data.runnerId, cliTypes: data.cliTypes, reclaimed: true }
         }));
+
+        // Attempt to reattach active sessions after runner reclaim
+        try {
+            const activeSessions = storage.getRunnerSessions(data.runnerId).filter(s => s.status === 'active');
+            for (const session of activeSessions) {
+                const isSdkSession =
+                    session.plugin === 'claude-sdk' ||
+                    session.plugin === 'codex-sdk' ||
+                    session.plugin === 'gemini-sdk';
+
+                if (isSdkSession) {
+                    botState.suppressSessionReadyNotification.add(session.sessionId);
+                }
+
+                const startOptions = buildSessionStartOptions(
+                    tokenInUse,
+                    undefined,
+                    undefined,
+                    session.cliType
+                );
+                ws.send(JSON.stringify({
+                    type: 'session_start',
+                    data: {
+                        sessionId: session.sessionId,
+                        runnerId: data.runnerId,
+                        cliType: session.cliType,
+                        plugin: session.plugin,
+                        folderPath: session.folderPath,
+                        resume: true,
+                        options: startOptions
+                    }
+                }));
+            }
+            if (activeSessions.length > 0) {
+                console.log(`[Reclaim] Sent reattach for ${activeSessions.length} active sessions`);
+            }
+        } catch (error) {
+            console.warn('[Reclaim] Failed to reattach active sessions:', error);
+        }
         return;
     }
 
@@ -794,14 +833,12 @@ async function handleRegister(ws: any, data: any): Promise<void> {
                     botState.suppressSessionReadyNotification.add(session.sessionId);
                 }
 
-                const persistedResumeSessionId = typeof (session.options as any)?.resumeSessionId === 'string'
-                    ? (session.options as any).resumeSessionId
-                    : undefined;
-                const resumeSessionId = persistedResumeSessionId || (session.plugin === 'claude-sdk' ? session.sessionId : undefined);
+                // Bot is not authoritative for CLI session IDs - runner handles resume logic
+                // Just pass the session ID and let runner look up CLI session ID from its storage
                 const startOptions = buildSessionStartOptions(
                     storage.getRunner(data.runnerId),
                     undefined,
-                    resumeSessionId ? { resumeSessionId } : undefined,
+                    undefined, // Don't pass resumeSessionId - runner is authoritative
                     session.cliType
                 );
                 wsConn.send(JSON.stringify({
@@ -812,7 +849,7 @@ async function handleRegister(ws: any, data: any): Promise<void> {
                         cliType: session.cliType,
                         plugin: session.plugin,
                         folderPath: session.folderPath,
-                        resume: Boolean(resumeSessionId),
+                        resume: true, // Always resume for SDK sessions - runner will find CLI ID
                         options: startOptions
                     }
                 }));
@@ -831,6 +868,11 @@ async function handleHeartbeat(ws: any, data: any): Promise<void> {
     (ws as any).runnerId = data.runnerId;
     (ws as any).lastPongAt = Date.now();
     clearOfflineTimer(data.runnerId);
+
+    // Store memory usage from heartbeat
+    if (typeof data.memoryMb === 'number') {
+        botState.runnerMemoryUsage.set(data.runnerId, data.memoryMb);
+    }
 
     if (!botState.runnerConnections.has(data.runnerId)) {
         botState.runnerConnections.set(data.runnerId, ws);
@@ -1527,8 +1569,17 @@ async function handleSessionReady(data: any): Promise<void> {
         console.error(`[handleSessionReady] Session not found: ${sessionId}`);
         return;
     }
+
+    // Check if this is a one-shot suppression (for reconnect reattach flows)
     const suppressReadyNotice = botState.suppressSessionReadyNotification.delete(sessionId)
         && (session.plugin === 'claude-sdk' || session.plugin === 'codex-sdk' || session.plugin === 'gemini-sdk');
+
+    // Check if we've already sent the ready notification for this session
+    // This prevents duplicate pings when the CLI emits multiple 'ready' events
+    if (botState.sessionReadyNotified.has(sessionId)) {
+        console.log(`[handleSessionReady] Session ${sessionId} already notified, skipping duplicate ready notification`);
+        return;
+    }
 
     // Mark session as active
     session.status = 'active';
@@ -1571,6 +1622,9 @@ async function handleSessionReady(data: any): Promise<void> {
                     content,
                     embeds: [readyEmbed]
                 });
+
+                // Mark this session as having received its ready notification
+                botState.sessionReadyNotified.add(sessionId);
             }
 
             // Update ephemeral message if we have the token
@@ -1794,20 +1848,43 @@ async function handleDiscordAction(data: any): Promise<void> {
         if (action === 'send_message') {
             const { embeds, files } = data;
 
+            console.log(`[DiscordAction] send_message - content: ${content?.substring(0, 50)}, embeds: ${embeds?.length || 0}, files: ${files?.length || 0}`);
+
             // Process files if present
-            const messageFiles = [];
+            const messageFiles: { attachment: Buffer; name: string }[] = [];
             if (files && Array.isArray(files)) {
                 for (const f of files) {
+                    console.log(`[DiscordAction] Processing file: ${f.name}, content length: ${f.content?.length || 0}`);
                     if (f.name && f.content) {
-                        messageFiles.push({
-                            attachment: Buffer.from(f.content, 'base64'),
-                            name: f.name
-                        });
+                        try {
+                            const buffer = Buffer.from(f.content, 'base64');
+                            messageFiles.push({
+                                attachment: buffer,
+                                name: f.name
+                            });
+                            console.log(`[DiscordAction] File buffer created: ${buffer.length} bytes`);
+                        } catch (bufErr) {
+                            console.error(`[DiscordAction] Failed to create buffer for file ${f.name}:`, bufErr);
+                        }
                     }
                 }
             }
 
-            await thread.send({ content, embeds, files: messageFiles.length > 0 ? messageFiles : undefined });
+            // Build message options
+            const messageOptions: any = {};
+            if (content) messageOptions.content = content;
+            if (embeds && embeds.length > 0) messageOptions.embeds = embeds;
+            if (messageFiles.length > 0) messageOptions.files = messageFiles;
+
+            console.log(`[DiscordAction] Sending message with ${messageFiles.length} files, options:`, JSON.stringify({
+                hasContent: !!content,
+                hasEmbeds: !!(embeds?.length),
+                fileCount: messageFiles.length,
+                fileNames: messageFiles.map(f => f.name)
+            }));
+
+            await thread.send(messageOptions);
+            console.log(`[DiscordAction] Message sent successfully`);
         } else if (action === 'update_channel') {
             console.log(`[DiscordAction] Updating channel ${session.threadId} with name: "${name}"`);
 
@@ -2079,6 +2156,71 @@ async function handleToolExecution(data: any): Promise<void> {
 }
 
 /**
+ * Format tool input for Discord embed display
+ * Parses JSON input and shows each key as a field with value as code block
+ */
+function formatToolInputForEmbed(input: any, maxValueLength: number = 200): { name: string; value: string; inline: boolean }[] {
+    const fields: { name: string; value: string; inline: boolean }[] = [];
+
+    if (!input) return fields;
+
+    // Try to parse as object
+    let parsedInput: Record<string, any> | null = null;
+    if (typeof input === 'string') {
+        try {
+            parsedInput = JSON.parse(input);
+        } catch {
+            // Not valid JSON, treat as single string
+        }
+    } else if (typeof input === 'object' && input !== null && !Array.isArray(input)) {
+        parsedInput = input;
+    }
+
+    // If we have a parsed object, show each key as a field
+    if (parsedInput && Object.keys(parsedInput).length > 0) {
+        for (const [key, value] of Object.entries(parsedInput)) {
+            let valueStr: string;
+            if (typeof value === 'string') {
+                valueStr = value;
+            } else if (value === null || value === undefined) {
+                valueStr = '(empty)';
+            } else {
+                valueStr = JSON.stringify(value);
+            }
+
+            // Truncate value if needed
+            const truncated = valueStr.length > maxValueLength
+                ? valueStr.slice(0, maxValueLength) + '...'
+                : valueStr;
+
+            // Escape backticks to prevent code block issues
+            const escaped = truncated.replace(/`/g, "'");
+
+            fields.push({
+                name: key,
+                value: `\`${escaped}\``,
+                inline: false
+            });
+
+            // Limit to 5 fields to avoid embed limits
+            if (fields.length >= 5) break;
+        }
+        return fields;
+    }
+
+    // Fallback: show as single code block (original behavior)
+    const inputStr = typeof input === 'string' ? input : JSON.stringify(input, null, 2);
+    const inputDisplay = inputStr.length > 300 ? inputStr.slice(0, 300) + '...' : inputStr;
+    fields.push({
+        name: 'Input',
+        value: `\`\`\`json\n${inputDisplay}\n\`\`\``,
+        inline: false
+    });
+
+    return fields;
+}
+
+/**
  * Handle tool result events - show success (green) or failure (red)
  */
 async function handleToolResult(data: any): Promise<void> {
@@ -2087,7 +2229,7 @@ async function handleToolResult(data: any): Promise<void> {
     // Get the original execution info
     const execution = pendingToolExecutions.get(toolUseId);
     pendingToolExecutions.delete(toolUseId);
-    
+
     const toolName = execution?.toolName || 'Tool';
     const input = execution?.input;
 
@@ -2114,24 +2256,21 @@ async function handleToolResult(data: any): Promise<void> {
             .setDescription(`**${statusText}** - Auto-executed tool`)
             .setTimestamp(new Date(timestamp));
 
-        // Show input (truncated)
+        // Show input with improved formatting
         if (input) {
-            const inputStr = typeof input === 'string' ? input : JSON.stringify(input, null, 2);
-            const inputDisplay = inputStr.length > 300 ? inputStr.slice(0, 300) + '...' : inputStr;
-            embed.addFields({ 
-                name: 'Input', 
-                value: `\`\`\`json\n${inputDisplay}\n\`\`\``, 
-                inline: false 
-            });
+            const inputFields = formatToolInputForEmbed(input);
+            for (const field of inputFields) {
+                embed.addFields(field);
+            }
         }
 
         // Show output/error (truncated)
         if (content) {
             const contentDisplay = content.length > 300 ? content.slice(0, 300) + '...' : content;
-            embed.addFields({ 
-                name: isError ? 'Error' : 'Output', 
-                value: `\`\`\`\n${contentDisplay}\n\`\`\``, 
-                inline: false 
+            embed.addFields({
+                name: isError ? 'Error' : 'Output',
+                value: `\`\`\`\n${contentDisplay}\n\`\`\``,
+                inline: false
             });
         }
 

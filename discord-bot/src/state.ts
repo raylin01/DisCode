@@ -53,7 +53,7 @@ export interface SessionCreationState {
     folder?: string; // Pre-selected folder (for "New Session" button)
     folderPath?: string;
     options?: {
-        approvalMode?: 'manual' | 'auto';
+        approvalMode?: 'manual' | 'autoSafe' | 'auto';
         skipPermissions?: boolean;
         thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'auto' | 'default_on';
         maxThinkingTokens?: number;
@@ -139,5 +139,11 @@ export const codexThreadCache = new Map<string, { runnerId: string; cwd?: string
 // One-shot suppression for reconnect reattach flows (sessionId -> suppress next session_ready post)
 export const suppressSessionReadyNotification = new Set<string>();
 
+// Track sessions that have already received "Session Ready" notification (to prevent duplicate pings)
+export const sessionReadyNotified = new Set<string>();
+
 // Pending attach-to-approve fallback notices (sessionId -> timeout + target thread)
 export const pendingSyncedAttachFallbacks = new Map<string, { threadId: string; timeout: NodeJS.Timeout }>();
+
+// Runner memory tracking (runnerId -> memory in MB)
+export const runnerMemoryUsage = new Map<string, number>();

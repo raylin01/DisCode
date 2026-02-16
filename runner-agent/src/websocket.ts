@@ -176,6 +176,10 @@ export class WebSocketManager extends EventEmitter {
     }
 
     private sendHeartbeat(): void {
+        // Get memory usage
+        const mem = process.memoryUsage();
+        const memoryMb = Math.round(mem.heapUsed / 1024 / 1024); // Heap used in MB
+
         this.send({
             type: 'heartbeat',
             data: {
@@ -183,6 +187,7 @@ export class WebSocketManager extends EventEmitter {
                 runnerName: this.config.runnerName,
                 cliTypes: this.config.cliTypes,
                 defaultWorkspace: this.config.defaultWorkspace,
+                memoryMb,
                 timestamp: new Date().toISOString()
             }
         });
