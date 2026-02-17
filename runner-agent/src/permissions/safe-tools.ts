@@ -144,8 +144,9 @@ const DANGEROUS_BASH_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
     { pattern: /\btar\s+.*--absolute-names\b/, reason: 'Absolute path extraction' },
     { pattern: /\bunzip\s+.*-d\s*\//, reason: 'Extraction to root' },
 
-    // File overwriting
-    { pattern: />\s*\//, reason: 'File overwrite with >' },
+    // File overwriting (but not stderr redirection like 2>/dev/null)
+    { pattern: /(?<![0-9])>\s*\//, reason: 'File overwrite with >' },
+    { pattern: />>\s*\//, reason: 'File append with >>' },
     { pattern: /\btee\s+.*\//, reason: 'File overwrite with tee' },
 
     // Fork bomb detection
@@ -218,6 +219,28 @@ const SAFE_BASH_PATTERNS: Array<RegExp> = [
     /\bgit\s+shortlog\b/,
     /\bgit\s+blame\b/,
     /\bgit\s+count\b/,
+    /\bgit\s+fetch\b/,
+    /\bgit\s+pull\b/,
+    /\bgit\s+clone\b/,
+    /\bgit\s+add\b/,
+    /\bgit\s+commit\b/,
+    /\bgit\s+checkout\b/,
+    /\bgit\s+switch\b/,
+    /\bgit\s+merge\b/,
+    /\bgit\s+rebase\b/,
+    /\bgit\s+cherry-pick\b/,
+    /\bgit\s+stash\b/,
+    /\bgit\s+restore\b/,
+    /\bgit\s+rm\b/,
+    /\bgit\s+mv\b/,
+    /\bgit\s+init\b/,
+    /\bgit\s+config\b/,
+    /\bgit\s+check-ignore\b/,
+    /\bgit\s+check-attr\b/,
+    /\bgit\s+for-each-ref\b/,
+    /\bgit\s+update-ref\b/,
+    /\bgit\s+gc\b/,
+    /\bgit\s+prune\b/,
 
     // System info (read-only)
     /\bpwd\b/,
@@ -332,6 +355,17 @@ const SAFE_BASH_PATTERNS: Array<RegExp> = [
     /\bfalse\b/,
     /\btest\s+/,
     /\b\[\s+/,
+
+    // DisCode discord integration scripts
+    /discord-integration\/bin\/(send-to-discord|update-channel)\.sh/,
+    /\.claude\/skills\/discord-integration\/bin\//,
+    /runner-agent\/resources\/skills\/discord-integration\/bin\//,
+
+    // Curl for safe operations (GET requests, fetching URLs)
+    /\bcurl\s+(-s|--silent|-I|-L|--location)\b/,
+
+    // Sw_vers (macOS version info)
+    /\bsw_vers\b/,
 ];
 
 // ============================================================================

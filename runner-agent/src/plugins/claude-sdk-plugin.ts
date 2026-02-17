@@ -948,6 +948,21 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         this.status = 'offline';
     }
 
+    /**
+     * Get pending permissions map for permission sync handler
+     */
+    getPendingPermissions(): Map<string, ClaudePendingApproval> {
+        // Convert PendingApprovalTracker to a Map for compatibility
+        const map = new Map<string, ClaudePendingApproval>();
+        for (const key of this.pendingPermissions.keys()) {
+            const entry = this.pendingPermissions.get(key);
+            if (entry) {
+                map.set(key, entry);
+            }
+        }
+        return map;
+    }
+
     // Property implementation for isReady
     get isReady(): boolean {
         return this.status === 'idle';

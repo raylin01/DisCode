@@ -120,6 +120,14 @@ class GeminiSDKSession extends BaseSDKSession {
     this.isReady = false;
   }
 
+  /**
+   * Get pending permissions map for permission sync handler
+   * Gemini CLI stream-json mode does not currently support interactive approval callbacks.
+   */
+  getPendingPermissions(): Map<string, { requestId: string; toolName: string; input: Record<string, any>; createdAt: number }> {
+    return new Map();
+  }
+
   private setupClientListeners(): void {
     this.client.on('ready', (geminiSessionId) => {
       // Emit CLI session ID for persistence (enables resume after restart)

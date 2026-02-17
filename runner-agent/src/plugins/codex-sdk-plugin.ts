@@ -214,6 +214,10 @@ class CodexSDKSession extends BaseSDKSession {
     const pending = this.pendingApprovals.get(approvalId);
     if (!pending) return;
 
+    // Log user decision
+    const isApproved = optionNumber === '1' || optionNumber.toLowerCase() === 'yes' ||
+                       optionNumber === '3' || optionNumber.toLowerCase() === 'always';
+
     if (pending.kind === 'command') {
       const response: CommandExecutionRequestApprovalResponse = {
         decision: this.mapCommandDecision(optionNumber, pending.proposedAmendment || null)
@@ -275,6 +279,13 @@ class CodexSDKSession extends BaseSDKSession {
     this.messageQueue.clear();
     this.status = 'offline';
     this.isReady = false;
+  }
+
+  /**
+   * Get pending permissions map for permission sync handler
+   */
+  getPendingPermissions(): Map<string, CodexApprovalEntry> {
+    return new Map(this.pendingApprovals);
   }
 
   private mapCommandDecision(optionNumber: string, amendment: string[] | null) {
@@ -412,7 +423,7 @@ class CodexSDKSession extends BaseSDKSession {
         this.codexPlugin.client.sendResponse(requestId, response);
         return;
       } else {
-        const reason = getDangerousReason(params.command);
+        const reason = getDangerousReason(params.command) || 'No safe pattern matched';
         console.log(`[CodexSDK ${this.sessionId.slice(0, 8)}] Command requires approval in autoSafe mode${reason ? `: ${reason}` : ''}`);
       }
     }
