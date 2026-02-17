@@ -1,12 +1,13 @@
 /**
  * Channel Utilities
- * 
+ *
  * Helper functions for managing Discord channels, categories, and permissions.
  */
 
 import { ChannelType } from 'discord.js';
 import * as botState from '../state.js';
 import { storage } from '../storage.js';
+import { getCategoryManager } from '../services/category-manager.js';
 import type { RunnerInfo } from '../../../shared/types.ts';
 
 /**
@@ -145,8 +146,17 @@ export async function getOrCreateRunnerChannel(runner: RunnerInfo, guildId: stri
 
 /**
  * Update channel permissions for a runner when users are added/removed
+ * This updates both old private channels and new category-based channels
  */
 export async function updateRunnerChannelPermissions(runner: RunnerInfo): Promise<void> {
+    // Sync category-based channel permissions (new system)
+    // Force update because we're explicitly adding/removing a user
+    const categoryManager = getCategoryManager();
+    if (categoryManager) {
+        await categoryManager.syncCategoryPermissions(runner.runnerId, true);
+    }
+
+    // Also update old private channel if it exists (legacy support)
     if (!runner.privateChannelId) {
         return;
     }
@@ -157,12 +167,24 @@ export async function updateRunnerChannelPermissions(runner: RunnerInfo): Promis
             return;
         }
 
-        // Update permission overwrites for all authorized users
-        for (const userId of runner.authorizedUsers) {
-            const existingOverwrite = channel.permissionOverwrites.cache.get(userId);
+        // Get current authorized users from the permission overwrites
+        const currentAuthorizedUsers = new Set<string>();
+        channel.permissionOverwrites.cache.forEach((overwrite, id) => {
+            // Skip @everyone and the owner
+            if (id === channel.guild.roles.everyone.id || id === runner.ownerId) {
+                return;
+            }
+            // If they have ViewChannel permission, they're authorized
+            if (overwrite.allow.has('ViewChannel')) {
+                currentAuthorizedUsers.add(id);
+            }
+        });
 
-            if (!existingOverwrite) {
-                // Add permission for this user
+        const newAuthorizedUsers = new Set(runner.authorizedUsers);
+
+        // Add permissions for new users
+        for (const userId of newAuthorizedUsers) {
+            if (!currentAuthorizedUsers.has(userId) && userId !== runner.ownerId) {
                 await channel.permissionOverwrites.create(userId, {
                     ViewChannel: true,
                     ReadMessageHistory: true,
@@ -172,6 +194,14 @@ export async function updateRunnerChannelPermissions(runner: RunnerInfo): Promis
                     SendMessagesInThreads: true
                 });
                 console.log(`Added permissions for user ${userId} in runner channel ${runner.privateChannelId}`);
+            }
+        }
+
+        // Remove permissions for users no longer authorized
+        for (const userId of currentAuthorizedUsers) {
+            if (!newAuthorizedUsers.has(userId)) {
+                await channel.permissionOverwrites.delete(userId);
+                console.log(`Removed permissions for user ${userId} in runner channel ${runner.privateChannelId}`);
             }
         }
     } catch (error) {

@@ -439,6 +439,9 @@ export async function handleUnshareRunner(interaction: any, userId: string): Pro
     runner.authorizedUsers.splice(index, 1);
     storage.registerRunner(runner);
 
+    // Update channel permissions to remove access
+    await updateRunnerChannelPermissions(runner);
+
     await interaction.reply({
         embeds: [new EmbedBuilder()
             .setColor(0xFF9900)

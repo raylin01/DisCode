@@ -16,6 +16,7 @@ import {
     VoiceChannel,
     ChannelType,
     PermissionFlagsBits,
+    OverwriteType,
     EmbedBuilder,
     ActionRowBuilder,
     ButtonBuilder,
@@ -61,11 +62,48 @@ export interface ProjectStats {
 // Category Manager
 // ============================================================================
 
+/**
+ * Build permission overwrites for a runner's channels
+ * - Denies ViewChannel to @everyone
+ * - Allows full access to owner and authorized users
+ */
+function buildChannelPermissionOverwrites(
+    runner: { ownerId: string; authorizedUsers: string[] },
+    everyoneRoleId: string
+): Array<{ id: string; deny?: string[]; allow?: string[] }> {
+    const overwrites: Array<{ id: string; deny?: string[]; allow?: string[] }> = [
+        {
+            id: everyoneRoleId,
+            deny: ['ViewChannel', 'ReadMessageHistory', 'SendMessages']
+        }
+    ];
+
+    // Add owner permissions
+    if (runner.ownerId) {
+        overwrites.push({
+            id: runner.ownerId,
+            allow: ['ViewChannel', 'ReadMessageHistory', 'SendMessages', 'CreatePublicThreads', 'CreatePrivateThreads', 'ManageThreads', 'SendMessagesInThreads']
+        });
+    }
+
+    // Add authorized users (excluding owner)
+    for (const userId of runner.authorizedUsers) {
+        if (userId && userId !== runner.ownerId) {
+            overwrites.push({
+                id: userId,
+                allow: ['ViewChannel', 'ReadMessageHistory', 'SendMessages', 'CreatePublicThreads', 'CreatePrivateThreads', 'SendMessagesInThreads']
+            });
+        }
+    }
+
+    return overwrites;
+}
+
 export class CategoryManager {
     private client: Client;
     private categories = new Map<string, RunnerCategory>();  // runnerId -> category
     private lastPublishedRunnerStats = new Map<string, { activeSessions: number; pendingActions: number; memoryMb?: number }>();
-    
+
     constructor(client: Client) {
         this.client = client;
     }
@@ -76,7 +114,7 @@ export class CategoryManager {
     async initialize(): Promise<void> {
         console.log('[CategoryManager] Initializing from storage...');
         const runners = storage.data.runners;
-        
+
         for (const runnerId in runners) {
             const runner = runners[runnerId];
             if (runner.discordState && runner.discordState.categoryId) {
@@ -108,6 +146,9 @@ export class CategoryManager {
                         this.categories.set(runnerId, runnerCategory);
                         await this.ensureControlChannelLocked(runnerCategory);
                         console.log(`[CategoryManager] Restored category for runner ${runner.name} with ${projectsMap.size} projects`);
+
+                        // Sync permissions on startup to fix any channels created before security fix
+                        await this.syncCategoryPermissions(runnerId);
                     }
                 } catch (error) {
                     console.error(`[CategoryManager] Failed to restore category for ${runner.name}:`, error);
@@ -145,7 +186,7 @@ export class CategoryManager {
              if (existingCategory) {
                  // It exists, so we should have loaded it on init.
              // If not, load it now.
-             
+
              // Restore projects from storage
              const projectsMap = new Map<string, ProjectChannel>();
              if (runner.discordState.projects) {
@@ -169,30 +210,36 @@ export class CategoryManager {
              };
              this.categories.set(runnerId, restoredCategory);
              await this.ensureControlChannelLocked(restoredCategory);
+             // Ensure permissions are up to date on restore
+             await this.syncCategoryPermissions(runnerId);
              return restoredCategory;
              }
         }
 
         const guild = await this.client.guilds.fetch(guildId);
-        
-        // Create the main category
+
+        // Build permission overwrites - deny everyone, allow owner + authorized users
+        const permissionOverwrites = buildChannelPermissionOverwrites(
+            runner || { ownerId: '', authorizedUsers: [] },
+            guild.roles.everyone.id
+        );
+
+        console.log(`[CategoryManager] Creating category for ${runnerName} with ${permissionOverwrites.length} permission overwrites`);
+
+        // Create the main category with restricted permissions
         const category = await guild.channels.create({
             name: `🖥️ ${runnerName}`,
-            type: ChannelType.GuildCategory
+            type: ChannelType.GuildCategory,
+            permissionOverwrites: permissionOverwrites as any
         });
 
-        // Create stats voice channels (locked - no one can join)
+        // Create stats channels with same permissions (inherits from category, but explicit for safety)
         const sessionsChannel = await guild.channels.create({
             name: '📊-0-active',
             type: ChannelType.GuildText,
             parent: category.id,
             position: 0,
-            permissionOverwrites: [
-                {
-                    id: guild.roles.everyone.id,
-                    deny: [PermissionFlagsBits.SendMessages]  // Read-only
-                }
-            ]
+            permissionOverwrites: permissionOverwrites as any
         });
 
         const pendingChannel = await guild.channels.create({
@@ -200,26 +247,16 @@ export class CategoryManager {
             type: ChannelType.GuildText,
             parent: category.id,
             position: 1,
-            permissionOverwrites: [
-                {
-                    id: guild.roles.everyone.id,
-                    deny: [PermissionFlagsBits.SendMessages]
-                }
-            ]
+            permissionOverwrites: permissionOverwrites as any
         });
 
-        // Create runner control channel
+        // Create runner control channel with same permissions
         const controlChannel = await guild.channels.create({
             name: 'runner-control',
             type: ChannelType.GuildText,
             parent: category.id,
             topic: `Control channel for ${runnerName}. Use /sync-projects to discover projects.`,
-            permissionOverwrites: [
-                {
-                    id: guild.roles.everyone.id,
-                    deny: [PermissionFlagsBits.SendMessages]
-                }
-            ]
+            permissionOverwrites: permissionOverwrites as any
         });
 
         const runnerCategory: RunnerCategory = {
@@ -279,15 +316,23 @@ export class CategoryManager {
         }
 
         const guild = await this.client.guilds.fetch(runnerCategory.guildId);
-        
+        const runner = storage.getRunner(runnerId);
+
+        // Build permission overwrites - deny everyone, allow owner + authorized users
+        const permissionOverwrites = buildChannelPermissionOverwrites(
+            runner || { ownerId: '', authorizedUsers: [] },
+            guild.roles.everyone.id
+        );
+
         // Extract folder name from path
         const folderName = projectPath.split('/').pop() || 'unknown';
-        
+
         const channel = await guild.channels.create({
             name: `project-${folderName.toLowerCase()}`,
             type: ChannelType.GuildText,
             parent: runnerCategory.categoryId,
-            topic: `Project: ${projectPath}`
+            topic: `Project: ${projectPath}`,
+            permissionOverwrites: permissionOverwrites as any
         });
 
         const projectChannel: ProjectChannel = {
@@ -355,6 +400,154 @@ export class CategoryManager {
         }
 
         return this.createProjectChannel(runnerId, projectPath);
+    }
+
+    /**
+     * Check if a channel already has the correct permissions
+     * Returns true if permissions are already correct (no migration needed)
+     */
+    private channelHasCorrectPermissions(
+        channel: any,
+        runner: { ownerId: string; authorizedUsers: string[] },
+        everyoneRoleId: string
+    ): boolean {
+        if (!channel || !channel.permissionOverwrites) return false;
+
+        const cache = channel.permissionOverwrites.cache;
+
+        // Check @everyone is denied ViewChannel
+        const everyoneOverwrite = cache.get(everyoneRoleId);
+        if (!everyoneOverwrite || !everyoneOverwrite.deny.has('ViewChannel')) {
+            return false;
+        }
+
+        // Check owner has ViewChannel
+        if (runner.ownerId) {
+            const ownerOverwrite = cache.get(runner.ownerId);
+            if (!ownerOverwrite || !ownerOverwrite.allow.has('ViewChannel')) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Apply permission overwrites to a channel using create() for each user/role
+     * Only modifies if permissions are not already correct
+     */
+    private async applyPermissionsToChannel(
+        channel: any,
+        runner: { ownerId: string; authorizedUsers: string[] },
+        guild: any,
+        channelName: string,
+        forceUpdate: boolean = false
+    ): Promise<void> {
+        if (!channel) {
+            console.log(`[CategoryManager] Channel ${channelName} not found, skipping`);
+            return;
+        }
+
+        const everyoneRoleId = guild.roles.everyone.id;
+
+        // Check if already correct (skip unless forced)
+        if (!forceUpdate && this.channelHasCorrectPermissions(channel, runner, everyoneRoleId)) {
+            console.log(`[CategoryManager] ✓ ${channelName} already has correct permissions, skipping`);
+            return;
+        }
+
+        try {
+            // Clear existing overwrites first
+            const existingIds = [...channel.permissionOverwrites.cache.keys()];
+            for (const id of existingIds) {
+                await channel.permissionOverwrites.delete(id).catch(() => {});
+            }
+
+            // Create overwrite for @everyone (deny all)
+            await channel.permissionOverwrites.create(everyoneRoleId, {
+                ViewChannel: false,
+                ReadMessageHistory: false,
+                SendMessages: false
+            }, { type: OverwriteType.Role });
+
+            // Create overwrite for owner (allow all)
+            if (runner.ownerId) {
+                await channel.permissionOverwrites.create(runner.ownerId, {
+                    ViewChannel: true,
+                    ReadMessageHistory: true,
+                    SendMessages: true,
+                    CreatePublicThreads: true,
+                    CreatePrivateThreads: true,
+                    ManageThreads: true,
+                    SendMessagesInThreads: true
+                }, { type: OverwriteType.Member });
+            }
+
+            // Create overwrites for authorized users
+            for (const userId of runner.authorizedUsers) {
+                if (userId && userId !== runner.ownerId) {
+                    await channel.permissionOverwrites.create(userId, {
+                        ViewChannel: true,
+                        ReadMessageHistory: true,
+                        SendMessages: true,
+                        CreatePublicThreads: true,
+                        CreatePrivateThreads: true,
+                        SendMessagesInThreads: true
+                    }, { type: OverwriteType.Member });
+                }
+            }
+
+            console.log(`[CategoryManager] ✓ Migrated permissions for ${channelName}`);
+        } catch (error) {
+            console.error(`[CategoryManager] ✗ Error applying permissions to ${channelName}:`, error);
+        }
+    }
+
+    /**
+     * Sync permissions on all channels for a runner
+     * @param runnerId The runner ID
+     * @param forceUpdate If true, always update even if permissions look correct (use when sharing/unsharing)
+     */
+    async syncCategoryPermissions(runnerId: string, forceUpdate: boolean = false): Promise<void> {
+        const runnerCategory = this.categories.get(runnerId);
+        const runner = storage.getRunner(runnerId);
+        if (!runnerCategory || !runner) {
+            console.log(`[CategoryManager] Cannot sync permissions - runner or category not found: ${runnerId}`);
+            return;
+        }
+
+        try {
+            const guild = await this.client.guilds.fetch(runnerCategory.guildId);
+
+            console.log(`[CategoryManager] Syncing permissions for runner ${runner.name}${forceUpdate ? ' (forced)' : ''}`);
+
+            // Update category itself
+            const category = await this.client.channels.fetch(runnerCategory.categoryId);
+            await this.applyPermissionsToChannel(category, runner, guild, `category for ${runner.name}`, forceUpdate);
+
+            // Update stats channels
+            for (const [key, channelId] of Object.entries(runnerCategory.statsChannelIds)) {
+                if (!channelId) continue;
+                const channel = await this.client.channels.fetch(channelId);
+                await this.applyPermissionsToChannel(channel, runner, guild, `stats channel (${key})`, forceUpdate);
+            }
+
+            // Update control channel
+            if (runnerCategory.controlChannelId) {
+                const controlChannel = await this.client.channels.fetch(runnerCategory.controlChannelId);
+                await this.applyPermissionsToChannel(controlChannel, runner, guild, 'control channel', forceUpdate);
+            }
+
+            // Update all project channels
+            for (const project of runnerCategory.projects.values()) {
+                const channel = await this.client.channels.fetch(project.channelId);
+                await this.applyPermissionsToChannel(channel, runner, guild, `project ${project.projectPath}`, forceUpdate);
+            }
+
+            console.log(`[CategoryManager] Synced permissions for runner ${runner.name} (${runner.authorizedUsers.length} authorized users)`);
+        } catch (error) {
+            console.error(`[CategoryManager] Error syncing permissions for runner ${runnerId}:`, error);
+        }
     }
 
     /**
