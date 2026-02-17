@@ -14,7 +14,6 @@ vi.mock('os', () => ({
 
 describe('loadConfigFile', () => {
   beforeEach(() => {
-    vi.mock('fs');
     vi.clearAllMocks();
     delete process.env.DISCODE_CONFIG_PATH;
   });
@@ -207,10 +206,10 @@ describe('loadConfig', () => {
   let originalExit: any;
 
   beforeEach(() => {
-    vi.mock('fs');
     vi.clearAllMocks();
     originalExit = process.exit;
     process.exit = vi.fn() as any;
+    resetConfig();
   });
 
   afterEach(() => {
@@ -220,9 +219,12 @@ describe('loadConfig', () => {
     delete process.env.DISCODE_BOT_URL;
     delete process.env.DISCODE_RUNNER_NAME;
     delete process.env.DISCODE_HTTP_PORT;
+    resetConfig();
   });
 
   it('should exit when DISCODE_TOKEN is missing', () => {
+    // Ensure token is not set
+    delete process.env.DISCODE_TOKEN;
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
     loadConfig();
@@ -414,7 +416,6 @@ describe('getConfig (singleton)', () => {
   let originalExit: any;
 
   beforeEach(() => {
-    vi.mock('fs');
     vi.clearAllMocks();
     originalExit = process.exit;
     process.exit = vi.fn() as any;

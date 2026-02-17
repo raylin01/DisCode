@@ -1,17 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
-import { RunnerSyncService } from '../../src/services/sync-service';
+import { describe, it, expect } from 'vitest';
+import { extractCodexStructuredMessages } from '../../src/services/codex-sync';
 
-describe('RunnerSyncService codex structured extraction', () => {
-  function createService(): RunnerSyncService {
-    const wsManager = {
-      runnerId: 'runner-1',
-      send: vi.fn()
-    } as any;
-    return new RunnerSyncService(wsManager, { codexPath: null });
-  }
-
+describe('Codex structured extraction', () => {
   it('maps codex turn items into structured synced messages', () => {
-    const service = createService();
     const thread = {
       id: 'thread-1',
       turns: [
@@ -42,7 +33,7 @@ describe('RunnerSyncService codex structured extraction', () => {
       ]
     } as any;
 
-    const messages = (service as any).extractCodexStructuredMessages(thread);
+    const messages = extractCodexStructuredMessages(thread);
     const blockTypes = messages.map((message: any) => message.content?.[0]?.type);
 
     expect(blockTypes).toContain('text');
@@ -53,7 +44,6 @@ describe('RunnerSyncService codex structured extraction', () => {
   });
 
   it('falls back to safe text summary for unknown item types', () => {
-    const service = createService();
     const thread = {
       id: 'thread-2',
       turns: [
@@ -66,7 +56,7 @@ describe('RunnerSyncService codex structured extraction', () => {
       ]
     } as any;
 
-    const messages = (service as any).extractCodexStructuredMessages(thread);
+    const messages = extractCodexStructuredMessages(thread);
 
     expect(messages.length).toBe(1);
     expect(messages[0].content[0].type).toBe('text');
@@ -74,7 +64,6 @@ describe('RunnerSyncService codex structured extraction', () => {
   });
 
   it('produces deterministic turn:item:block ids for dedup stability', () => {
-    const service = createService();
     const thread = {
       id: 'thread-3',
       turns: [
@@ -88,8 +77,8 @@ describe('RunnerSyncService codex structured extraction', () => {
       ]
     } as any;
 
-    const first = (service as any).extractCodexStructuredMessages(thread).map((m: any) => m.id);
-    const second = (service as any).extractCodexStructuredMessages(thread).map((m: any) => m.id);
+    const first = extractCodexStructuredMessages(thread).map((m: any) => m.id);
+    const second = extractCodexStructuredMessages(thread).map((m: any) => m.id);
 
     expect(first).toEqual(second);
     expect(first).toEqual(['turn-dedup:item-a:0', 'turn-dedup:item-b:0']);

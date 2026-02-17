@@ -150,7 +150,6 @@ describe('stripAnsi', () => {
 
 describe('findCliPath', () => {
   beforeEach(() => {
-    vi.mock('fs');
     vi.clearAllMocks();
   });
 
@@ -285,7 +284,6 @@ describe('expandPath', () => {
 
 describe('validateOrCreateFolder', () => {
   beforeEach(() => {
-    vi.mock('fs');
     vi.clearAllMocks();
   });
 

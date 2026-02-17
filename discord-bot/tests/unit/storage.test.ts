@@ -8,8 +8,6 @@ describe('Storage', () => {
   let mockDataDir: string;
 
   beforeEach(() => {
-    vi.mock('fs');
-    vi.mock('js-yaml');
     vi.clearAllMocks();
 
     mockDataDir = './data';

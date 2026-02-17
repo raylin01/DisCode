@@ -1,17 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
-import { RunnerSyncService } from '../../src/services/sync-service';
+import { describe, it, expect } from 'vitest';
+import { extractGeminiStructuredMessages } from '../../src/services/gemini-sync';
 
-describe('RunnerSyncService gemini structured extraction', () => {
-  function createService(): RunnerSyncService {
-    const wsManager = {
-      runnerId: 'runner-1',
-      send: vi.fn()
-    } as any;
-    return new RunnerSyncService(wsManager, { codexPath: null });
-  }
-
+describe('Gemini structured extraction', () => {
   it('maps Gemini messages into structured synced blocks', () => {
-    const service = createService();
     const transcript = [
       {
         id: 'm1',
@@ -50,7 +41,7 @@ describe('RunnerSyncService gemini structured extraction', () => {
       }
     ];
 
-    const messages = (service as any).extractGeminiStructuredMessages(transcript, 'session-1');
+    const messages = extractGeminiStructuredMessages(transcript, 'session-1');
     const blockTypes = messages.map((message: any) => message.content?.[0]?.type);
 
     expect(blockTypes).toContain('text');
@@ -62,7 +53,6 @@ describe('RunnerSyncService gemini structured extraction', () => {
   });
 
   it('falls back to safe text summary for unknown Gemini entries', () => {
-    const service = createService();
     const transcript = [
       {
         id: 'm4',
@@ -71,7 +61,7 @@ describe('RunnerSyncService gemini structured extraction', () => {
       }
     ];
 
-    const messages = (service as any).extractGeminiStructuredMessages(transcript, 'session-2');
+    const messages = extractGeminiStructuredMessages(transcript, 'session-2');
 
     expect(messages.length).toBe(1);
     expect(messages[0].content[0].type).toBe('text');
@@ -79,14 +69,13 @@ describe('RunnerSyncService gemini structured extraction', () => {
   });
 
   it('produces deterministic ids for Gemini structured extraction', () => {
-    const service = createService();
     const transcript = [
       { id: 'a', type: 'user', content: 'A' },
       { id: 'b', type: 'gemini', content: 'B' }
     ];
 
-    const first = (service as any).extractGeminiStructuredMessages(transcript, 'session-det').map((m: any) => m.id);
-    const second = (service as any).extractGeminiStructuredMessages(transcript, 'session-det').map((m: any) => m.id);
+    const first = extractGeminiStructuredMessages(transcript, 'session-det').map((m: any) => m.id);
+    const second = extractGeminiStructuredMessages(transcript, 'session-det').map((m: any) => m.id);
 
     expect(first).toEqual(second);
     expect(first).toEqual(['gemini-session-det:a:0', 'gemini-session-det:b:0']);

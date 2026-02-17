@@ -20,7 +20,8 @@ describe('SessionSyncService postSessionMessages', () => {
   it('renders assistant synced text via Agent Output embed', async () => {
     const service = new SessionSyncService({} as any);
     const sent: any[] = [];
-    (service as any).sendThreadMessage = vi.fn(async (_thread: any, payload: any) => {
+    // Mock the queueManager's sendThreadMessage method
+    (service as any).queueManager.sendThreadMessage = vi.fn(async (_thread: any, payload: any) => {
       sent.push(payload);
     });
 
@@ -40,7 +41,7 @@ describe('SessionSyncService postSessionMessages', () => {
   it('renders tool_use and tool_result blocks as embeds', async () => {
     const service = new SessionSyncService({} as any);
     const sent: any[] = [];
-    (service as any).sendThreadMessage = vi.fn(async (_thread: any, payload: any) => {
+    (service as any).queueManager.sendThreadMessage = vi.fn(async (_thread: any, payload: any) => {
       sent.push(payload);
     });
 
@@ -66,7 +67,7 @@ describe('SessionSyncService postSessionMessages', () => {
   it('renders approval_needed with attach button for sync format v2', async () => {
     const service = new SessionSyncService({} as any);
     const sent: any[] = [];
-    (service as any).sendThreadMessage = vi.fn(async (_thread: any, payload: any) => {
+    (service as any).queueManager.sendThreadMessage = vi.fn(async (_thread: any, payload: any) => {
       sent.push(payload);
     });
 
@@ -97,7 +98,7 @@ describe('SessionSyncService postSessionMessages', () => {
   it('renders Claude transcript wrapper messages with tool embeds and Agent Output text', async () => {
     const service = new SessionSyncService({} as any);
     const sent: any[] = [];
-    (service as any).sendThreadMessage = vi.fn(async (_thread: any, payload: any) => {
+    (service as any).queueManager.sendThreadMessage = vi.fn(async (_thread: any, payload: any) => {
       sent.push(payload);
     });
 

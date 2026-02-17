@@ -8,6 +8,7 @@ discord-bot/data/*
 internal/
 .claude/
 .gemini/
+.desloppify/
 
 # VS Code extensions (local reference only)
 claude-code-ext/

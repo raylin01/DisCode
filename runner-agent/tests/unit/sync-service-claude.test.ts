@@ -1,17 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
-import { RunnerSyncService } from '../../src/services/sync-service';
+import { describe, it, expect } from 'vitest';
+import { extractClaudeStructuredMessages } from '../../src/services/claude-sync';
 
-describe('RunnerSyncService claude structured extraction', () => {
-  function createService(): RunnerSyncService {
-    const wsManager = {
-      runnerId: 'runner-1',
-      send: vi.fn()
-    } as any;
-    return new RunnerSyncService(wsManager, { codexPath: null });
-  }
-
+describe('Claude structured extraction', () => {
   it('maps Claude transcript records into structured synced blocks', () => {
-    const service = createService();
     const transcript = [
       { type: 'queue-operation', operation: 'dequeue' },
       {
@@ -67,7 +58,7 @@ describe('RunnerSyncService claude structured extraction', () => {
       }
     ];
 
-    const messages = (service as any).extractClaudeStructuredMessages(transcript);
+    const messages = extractClaudeStructuredMessages(transcript);
     const blockTypes = messages.map((message: any) => message.content?.[0]?.type);
 
     expect(blockTypes).toContain('text');
@@ -80,7 +71,6 @@ describe('RunnerSyncService claude structured extraction', () => {
   });
 
   it('produces deterministic ids for Claude structured extraction', () => {
-    const service = createService();
     const transcript = [
       {
         type: 'assistant',
@@ -104,8 +94,8 @@ describe('RunnerSyncService claude structured extraction', () => {
       }
     ];
 
-    const first = (service as any).extractClaudeStructuredMessages(transcript).map((message: any) => message.id);
-    const second = (service as any).extractClaudeStructuredMessages(transcript).map((message: any) => message.id);
+    const first = extractClaudeStructuredMessages(transcript).map((message: any) => message.id);
+    const second = extractClaudeStructuredMessages(transcript).map((message: any) => message.id);
 
     expect(first).toEqual(second);
     expect(first).toEqual(['claude-session-det:uuid-a:0', 'claude-session-det:uuid-b:0']);
