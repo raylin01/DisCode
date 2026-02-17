@@ -1,0 +1,2203 @@
+{
+  "version": 1,
+  "created": "2026-02-16T23:04:36+00:00",
+  "last_scan": "2026-02-16T23:05:47+00:00",
+  "scan_count": 1,
+  "score": 95.9,
+  "stats": {
+    "total": 101,
+    "open": 3,
+    "fixed": 2,
+    "auto_resolved": 0,
+    "wontfix": 96,
+    "false_positive": 0,
+    "by_tier": {
+      "1": {
+        "open": 0,
+        "fixed": 2,
+        "auto_resolved": 0,
+        "wontfix": 0,
+        "false_positive": 0
+      },
+      "2": {
+        "open": 0,
+        "fixed": 0,
+        "auto_resolved": 0,
+        "wontfix": 63,
+        "false_positive": 0
+      },
+      "3": {
+        "open": 2,
+        "fixed": 0,
+        "auto_resolved": 0,
+        "wontfix": 28,
+        "false_positive": 0
+      },
+      "4": {
+        "open": 1,
+        "fixed": 0,
+        "auto_resolved": 0,
+        "wontfix": 5,
+        "false_positive": 0
+      }
+    }
+  },
+  "findings": {
+    "logs::claude-client/src/client.ts::ClaudeClient": {
+      "id": "logs::claude-client/src/client.ts::ClaudeClient",
+      "detector": "logs",
+      "file": "claude-client/src/client.ts",
+      "tier": 1,
+      "confidence": "high",
+      "summary": "1 tagged logs [ClaudeClient]",
+      "detail": {
+        "count": 1,
+        "lines": [
+          308
+        ]
+      },
+      "status": "fixed",
+      "note": "Removed tagged debug logs from package source.",
+      "first_seen": "2026-02-16T23:04:36+00:00",
+      "last_seen": "2026-02-16T23:04:36+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "logs::claude-client/src/client.ts::Claude CLI Stderr": {
+      "id": "logs::claude-client/src/client.ts::Claude CLI Stderr",
+      "detector": "logs",
+      "file": "claude-client/src/client.ts",
+      "tier": 1,
+      "confidence": "high",
+      "summary": "1 tagged logs [Claude CLI Stderr]",
+      "detail": {
+        "count": 1,
+        "lines": [
+          561
+        ]
+      },
+      "status": "fixed",
+      "note": "Removed tagged debug logs from package source.",
+      "first_seen": "2026-02-16T23:04:36+00:00",
+      "last_seen": "2026-02-16T23:04:36+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/client.ts::ClaudeClientConfig": {
+      "id": "exports::claude-client/src/client.ts::ClaudeClientConfig",
+      "detector": "exports",
+      "file": "claude-client/src/client.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ClaudeClientConfig",
+      "detail": {
+        "line": 35,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/client.ts::ToolUseStartEvent": {
+      "id": "exports::claude-client/src/client.ts::ToolUseStartEvent",
+      "detector": "exports",
+      "file": "claude-client/src/client.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ToolUseStartEvent",
+      "detail": {
+        "line": 201,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/client.ts::ToolResultEvent": {
+      "id": "exports::claude-client/src/client.ts::ToolResultEvent",
+      "detector": "exports",
+      "file": "claude-client/src/client.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ToolResultEvent",
+      "detail": {
+        "line": 207,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/client.ts::ClaudeClient": {
+      "id": "exports::claude-client/src/client.ts::ClaudeClient",
+      "detector": "exports",
+      "file": "claude-client/src/client.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ClaudeClient",
+      "detail": {
+        "line": 256,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/client.ts::SessionStatus": {
+      "id": "exports::claude-client/src/client.ts::SessionStatus",
+      "detector": "exports",
+      "file": "claude-client/src/client.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SessionStatus",
+      "detail": {
+        "line": 242,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/client.ts::PendingAction": {
+      "id": "exports::claude-client/src/client.ts::PendingAction",
+      "detector": "exports",
+      "file": "claude-client/src/client.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: PendingAction",
+      "detail": {
+        "line": 247,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/mcp.ts::McpHandler": {
+      "id": "exports::claude-client/src/mcp.ts::McpHandler",
+      "detector": "exports",
+      "file": "claude-client/src/mcp.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: McpHandler",
+      "detail": {
+        "line": 3,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/mcp.ts::McpHandlers": {
+      "id": "exports::claude-client/src/mcp.ts::McpHandlers",
+      "detector": "exports",
+      "file": "claude-client/src/mcp.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: McpHandlers",
+      "detail": {
+        "line": 5,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/mcp.ts::attachMcpHandlers": {
+      "id": "exports::claude-client/src/mcp.ts::attachMcpHandlers",
+      "detector": "exports",
+      "file": "claude-client/src/mcp.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: attachMcpHandlers",
+      "detail": {
+        "line": 32,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::ProjectInfo": {
+      "id": "exports::claude-client/src/sessions.ts::ProjectInfo",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ProjectInfo",
+      "detail": {
+        "line": 20,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::SessionEntry": {
+      "id": "exports::claude-client/src/sessions.ts::SessionEntry",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SessionEntry",
+      "detail": {
+        "line": 36,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::SessionMessage": {
+      "id": "exports::claude-client/src/sessions.ts::SessionMessage",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SessionMessage",
+      "detail": {
+        "line": 60,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::SessionDetails": {
+      "id": "exports::claude-client/src/sessions.ts::SessionDetails",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SessionDetails",
+      "detail": {
+        "line": 79,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::escapeProjectPath": {
+      "id": "exports::claude-client/src/sessions.ts::escapeProjectPath",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: escapeProjectPath",
+      "detail": {
+        "line": 100,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::unescapeProjectPath": {
+      "id": "exports::claude-client/src/sessions.ts::unescapeProjectPath",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: unescapeProjectPath",
+      "detail": {
+        "line": 109,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::getProjectStoragePath": {
+      "id": "exports::claude-client/src/sessions.ts::getProjectStoragePath",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: getProjectStoragePath",
+      "detail": {
+        "line": 134,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::listProjects": {
+      "id": "exports::claude-client/src/sessions.ts::listProjects",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: listProjects",
+      "detail": {
+        "line": 141,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::getSessionDetails": {
+      "id": "exports::claude-client/src/sessions.ts::getSessionDetails",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: getSessionDetails",
+      "detail": {
+        "line": 265,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::getMessagesSince": {
+      "id": "exports::claude-client/src/sessions.ts::getMessagesSince",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: getMessagesSince",
+      "detail": {
+        "line": 379,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::WatcherEvents": {
+      "id": "exports::claude-client/src/sessions.ts::WatcherEvents",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: WatcherEvents",
+      "detail": {
+        "line": 393,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::SessionWatcher": {
+      "id": "exports::claude-client/src/sessions.ts::SessionWatcher",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SessionWatcher",
+      "detail": {
+        "line": 408,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/task-queue.ts::TaskMessage": {
+      "id": "exports::claude-client/src/task-queue.ts::TaskMessage",
+      "detector": "exports",
+      "file": "claude-client/src/task-queue.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: TaskMessage",
+      "detail": {
+        "line": 1,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/task-queue.ts::TaskMessageQueue": {
+      "id": "exports::claude-client/src/task-queue.ts::TaskMessageQueue",
+      "detector": "exports",
+      "file": "claude-client/src/task-queue.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: TaskMessageQueue",
+      "detail": {
+        "line": 8,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/task-store.ts::TaskStatus": {
+      "id": "exports::claude-client/src/task-store.ts::TaskStatus",
+      "detector": "exports",
+      "file": "claude-client/src/task-store.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: TaskStatus",
+      "detail": {
+        "line": 3,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/task-store.ts::TaskRecord": {
+      "id": "exports::claude-client/src/task-store.ts::TaskRecord",
+      "detector": "exports",
+      "file": "claude-client/src/task-store.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: TaskRecord",
+      "detail": {
+        "line": 5,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/task-store.ts::TaskStore": {
+      "id": "exports::claude-client/src/task-store.ts::TaskStore",
+      "detector": "exports",
+      "file": "claude-client/src/task-store.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: TaskStore",
+      "detail": {
+        "line": 17,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::SystemMessage": {
+      "id": "exports::claude-client/src/types.ts::SystemMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SystemMessage",
+      "detail": {
+        "line": 13,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::StreamEventMessage": {
+      "id": "exports::claude-client/src/types.ts::StreamEventMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: StreamEventMessage",
+      "detail": {
+        "line": 29,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::StreamEvent": {
+      "id": "exports::claude-client/src/types.ts::StreamEvent",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: StreamEvent",
+      "detail": {
+        "line": 37,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ContentDelta": {
+      "id": "exports::claude-client/src/types.ts::ContentDelta",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ContentDelta",
+      "detail": {
+        "line": 45,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::Usage": {
+      "id": "exports::claude-client/src/types.ts::Usage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: Usage",
+      "detail": {
+        "line": 52,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::AssistantMessage": {
+      "id": "exports::claude-client/src/types.ts::AssistantMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: AssistantMessage",
+      "detail": {
+        "line": 60,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ContentBlock": {
+      "id": "exports::claude-client/src/types.ts::ContentBlock",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ContentBlock",
+      "detail": {
+        "line": 84,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::UserMessage": {
+      "id": "exports::claude-client/src/types.ts::UserMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: UserMessage",
+      "detail": {
+        "line": 92,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ControlRequestMessage": {
+      "id": "exports::claude-client/src/types.ts::ControlRequestMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ControlRequestMessage",
+      "detail": {
+        "line": 106,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ControlRequest": {
+      "id": "exports::claude-client/src/types.ts::ControlRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ControlRequest",
+      "detail": {
+        "line": 112,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::InitializeRequest": {
+      "id": "exports::claude-client/src/types.ts::InitializeRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: InitializeRequest",
+      "detail": {
+        "line": 121,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::CanUseToolRequest": {
+      "id": "exports::claude-client/src/types.ts::CanUseToolRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: CanUseToolRequest",
+      "detail": {
+        "line": 131,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::HookCallbackRequest": {
+      "id": "exports::claude-client/src/types.ts::HookCallbackRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: HookCallbackRequest",
+      "detail": {
+        "line": 142,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::McpMessageRequest": {
+      "id": "exports::claude-client/src/types.ts::McpMessageRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: McpMessageRequest",
+      "detail": {
+        "line": 149,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::SetPermissionModeRequest": {
+      "id": "exports::claude-client/src/types.ts::SetPermissionModeRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SetPermissionModeRequest",
+      "detail": {
+        "line": 155,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::SetModelRequest": {
+      "id": "exports::claude-client/src/types.ts::SetModelRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SetModelRequest",
+      "detail": {
+        "line": 160,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::SetMaxThinkingTokensRequest": {
+      "id": "exports::claude-client/src/types.ts::SetMaxThinkingTokensRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SetMaxThinkingTokensRequest",
+      "detail": {
+        "line": 165,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::InterruptRequest": {
+      "id": "exports::claude-client/src/types.ts::InterruptRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: InterruptRequest",
+      "detail": {
+        "line": 170,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::Suggestion": {
+      "id": "exports::claude-client/src/types.ts::Suggestion",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: Suggestion",
+      "detail": {
+        "line": 174,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::PermissionScope": {
+      "id": "exports::claude-client/src/types.ts::PermissionScope",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: PermissionScope",
+      "detail": {
+        "line": 180,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ControlResponseMessage": {
+      "id": "exports::claude-client/src/types.ts::ControlResponseMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ControlResponseMessage",
+      "detail": {
+        "line": 185,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ControlResponseEnvelope": {
+      "id": "exports::claude-client/src/types.ts::ControlResponseEnvelope",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ControlResponseEnvelope",
+      "detail": {
+        "line": 195,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ControlResponseData": {
+      "id": "exports::claude-client/src/types.ts::ControlResponseData",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ControlResponseData",
+      "detail": {
+        "line": 206,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::KeepAliveMessage": {
+      "id": "exports::claude-client/src/types.ts::KeepAliveMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: KeepAliveMessage",
+      "detail": {
+        "line": 218,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ControlCancelRequestMessage": {
+      "id": "exports::claude-client/src/types.ts::ControlCancelRequestMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ControlCancelRequestMessage",
+      "detail": {
+        "line": 225,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::McpMessageEvent": {
+      "id": "exports::claude-client/src/types.ts::McpMessageEvent",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: McpMessageEvent",
+      "detail": {
+        "line": 230,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::HookCallbackEvent": {
+      "id": "exports::claude-client/src/types.ts::HookCallbackEvent",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: HookCallbackEvent",
+      "detail": {
+        "line": 237,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::TaskMessageEvent": {
+      "id": "exports::claude-client/src/types.ts::TaskMessageEvent",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: TaskMessageEvent",
+      "detail": {
+        "line": 245,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ClaudeSupportedModel": {
+      "id": "exports::claude-client/src/types.ts::ClaudeSupportedModel",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ClaudeSupportedModel",
+      "detail": {
+        "line": 252,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ClaudeSupportedModelsResponse": {
+      "id": "exports::claude-client/src/types.ts::ClaudeSupportedModelsResponse",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ClaudeSupportedModelsResponse",
+      "detail": {
+        "line": 259,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::InputMessage": {
+      "id": "exports::claude-client/src/types.ts::InputMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: InputMessage",
+      "detail": {
+        "line": 268,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::UserInputMessage": {
+      "id": "exports::claude-client/src/types.ts::UserInputMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: UserInputMessage",
+      "detail": {
+        "line": 272,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ProtocolError": {
+      "id": "exports::claude-client/src/types.ts::ProtocolError",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ProtocolError",
+      "detail": {
+        "line": 281,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ResultMessage": {
+      "id": "exports::claude-client/src/types.ts::ResultMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ResultMessage",
+      "detail": {
+        "line": 288,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::CliMessage": {
+      "id": "exports::claude-client/src/types.ts::CliMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: CliMessage",
+      "detail": {
+        "line": 299,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "structural::claude-client/src/client.ts": {
+      "id": "structural::claude-client/src/client.ts",
+      "detector": "structural",
+      "file": "claude-client/src/client.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Needs decomposition: large (1195 LOC) / complexity score 17",
+      "detail": {
+        "loc": 1195,
+        "complexity_score": 17,
+        "complexity_signals": [
+          "destructure w/23 props",
+          "5 inline types"
+        ]
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "structural::claude-client/src/sessions.ts": {
+      "id": "structural::claude-client/src/sessions.ts",
+      "detector": "structural",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Needs decomposition: large (591 LOC)",
+      "detail": {
+        "loc": 591
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::claude-client/src/client.ts": {
+      "id": "orphaned::claude-client/src/client.ts",
+      "detector": "orphaned",
+      "file": "claude-client/src/client.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (1195 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 1195
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::claude-client/src/sessions.ts": {
+      "id": "orphaned::claude-client/src/sessions.ts",
+      "detector": "orphaned",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (591 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 591
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::claude-client/src/task-store.ts": {
+      "id": "orphaned::claude-client/src/task-store.ts",
+      "detector": "orphaned",
+      "file": "claude-client/src/task-store.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (74 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 74
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::claude-client/src/mcp.ts": {
+      "id": "orphaned::claude-client/src/mcp.ts",
+      "detector": "orphaned",
+      "file": "claude-client/src/mcp.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (65 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 65
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::claude-client/examples/events.ts": {
+      "id": "orphaned::claude-client/examples/events.ts",
+      "detector": "orphaned",
+      "file": "claude-client/examples/events.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (17 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 17
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::claude-client/examples/error-handling.ts": {
+      "id": "orphaned::claude-client/examples/error-handling.ts",
+      "detector": "orphaned",
+      "file": "claude-client/examples/error-handling.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (16 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 16
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::claude-client/examples/basic.ts": {
+      "id": "orphaned::claude-client/examples/basic.ts",
+      "detector": "orphaned",
+      "file": "claude-client/examples/basic.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (12 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 12
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "facade::claude-client/src/index.ts": {
+      "id": "facade::claude-client/src/index.ts",
+      "detector": "facade",
+      "file": "claude-client/src/index.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Re-export facade (6 LOC): imports from ./types.js, ./client.js, ./sessions.js, +3 (0 importers)",
+      "detail": {
+        "loc": 6,
+        "importers": 0,
+        "imports_from": [
+          "./types.js",
+          "./client.js",
+          "./sessions.js",
+          "./mcp.js",
+          "./task-store.js",
+          "./task-queue.js"
+        ],
+        "kind": "file"
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::claude-client/examples/events.ts::untested_module": {
+      "id": "test_coverage::claude-client/examples/events.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "claude-client/examples/events.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (17 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 17,
+        "importer_count": 0,
+        "loc_weight": 4.123105625617661
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::claude-client/src/task-queue.ts::untested_module": {
+      "id": "test_coverage::claude-client/src/task-queue.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "claude-client/src/task-queue.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (42 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 42,
+        "importer_count": 0,
+        "loc_weight": 6.48074069840786
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::claude-client/src/types.ts::untested_critical": {
+      "id": "test_coverage::claude-client/src/types.ts::untested_critical",
+      "detector": "test_coverage",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Untested critical module (309 LOC, 0 importers) \u2014 high blast radius",
+      "detail": {
+        "kind": "untested_critical",
+        "loc": 309,
+        "importer_count": 0,
+        "loc_weight": 17.578395831246947,
+        "complexity_score": 32
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::claude-client/src/mcp.ts::untested_module": {
+      "id": "test_coverage::claude-client/src/mcp.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "claude-client/src/mcp.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (65 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 65,
+        "importer_count": 0,
+        "loc_weight": 8.06225774829855
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::claude-client/src/sessions.ts::untested_module": {
+      "id": "test_coverage::claude-client/src/sessions.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (591 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 591,
+        "importer_count": 0,
+        "loc_weight": 24.310491562286437
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::claude-client/examples/error-handling.ts::untested_module": {
+      "id": "test_coverage::claude-client/examples/error-handling.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "claude-client/examples/error-handling.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (16 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 16,
+        "importer_count": 0,
+        "loc_weight": 4.0
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::claude-client/src/task-store.ts::untested_module": {
+      "id": "test_coverage::claude-client/src/task-store.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "claude-client/src/task-store.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (74 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 74,
+        "importer_count": 0,
+        "loc_weight": 8.602325267042627
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::claude-client/src/client.ts::untested_module": {
+      "id": "test_coverage::claude-client/src/client.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "claude-client/src/client.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (1195 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 1195,
+        "importer_count": 0,
+        "loc_weight": 34.56877203488721
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::claude-client/examples/basic.ts::untested_module": {
+      "id": "test_coverage::claude-client/examples/basic.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "claude-client/examples/basic.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (12 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 12,
+        "importer_count": 0,
+        "loc_weight": 3.4641016151377544
+      },
+      "status": "wontfix",
+      "note": "Library package modules are exported for external consumers; importer/count heuristics in this monorepo do not reflect npm usage.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:11:05+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/client.ts::any_type": {
+      "id": "smells::claude-client/src/client.ts::any_type",
+      "detector": "smells",
+      "file": "claude-client/src/client.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "12x Explicit `any` types",
+      "detail": {
+        "smell_id": "any_type",
+        "severity": "medium",
+        "count": 12,
+        "lines": [
+          225,
+          280,
+          706,
+          718,
+          734,
+          768,
+          782,
+          876,
+          990,
+          1105
+        ]
+      },
+      "status": "wontfix",
+      "note": "Dynamic CLI protocol payloads require permissive typing and selective casts; these are intentional interoperability tradeoffs for external tool messages.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:10:48+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/mcp.ts::any_type": {
+      "id": "smells::claude-client/src/mcp.ts::any_type",
+      "detector": "smells",
+      "file": "claude-client/src/mcp.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "6x Explicit `any` types",
+      "detail": {
+        "smell_id": "any_type",
+        "severity": "medium",
+        "count": 6,
+        "lines": [
+          3,
+          9,
+          17,
+          35,
+          36,
+          56
+        ]
+      },
+      "status": "wontfix",
+      "note": "Dynamic CLI protocol payloads require permissive typing and selective casts; these are intentional interoperability tradeoffs for external tool messages.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:10:48+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/sessions.ts::any_type": {
+      "id": "smells::claude-client/src/sessions.ts::any_type",
+      "detector": "smells",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "1x Explicit `any` types",
+      "detail": {
+        "smell_id": "any_type",
+        "severity": "medium",
+        "count": 1,
+        "lines": [
+          68
+        ]
+      },
+      "status": "wontfix",
+      "note": "Dynamic CLI protocol payloads require permissive typing and selective casts; these are intentional interoperability tradeoffs for external tool messages.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:10:48+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/task-queue.ts::any_type": {
+      "id": "smells::claude-client/src/task-queue.ts::any_type",
+      "detector": "smells",
+      "file": "claude-client/src/task-queue.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "1x Explicit `any` types",
+      "detail": {
+        "smell_id": "any_type",
+        "severity": "medium",
+        "count": 1,
+        "lines": [
+          4
+        ]
+      },
+      "status": "wontfix",
+      "note": "Dynamic CLI protocol payloads require permissive typing and selective casts; these are intentional interoperability tradeoffs for external tool messages.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:10:48+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/task-store.ts::any_type": {
+      "id": "smells::claude-client/src/task-store.ts::any_type",
+      "detector": "smells",
+      "file": "claude-client/src/task-store.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "4x Explicit `any` types",
+      "detail": {
+        "smell_id": "any_type",
+        "severity": "medium",
+        "count": 4,
+        "lines": [
+          11,
+          12,
+          51,
+          55
+        ]
+      },
+      "status": "wontfix",
+      "note": "Dynamic CLI protocol payloads require permissive typing and selective casts; these are intentional interoperability tradeoffs for external tool messages.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:10:48+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/types.ts::any_type": {
+      "id": "smells::claude-client/src/types.ts::any_type",
+      "detector": "smells",
+      "file": "claude-client/src/types.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "10x Explicit `any` types",
+      "detail": {
+        "smell_id": "any_type",
+        "severity": "medium",
+        "count": 10,
+        "lines": [
+          38,
+          39,
+          42,
+          123,
+          128,
+          152,
+          211,
+          232,
+          234,
+          248
+        ]
+      },
+      "status": "wontfix",
+      "note": "Dynamic CLI protocol payloads require permissive typing and selective casts; these are intentional interoperability tradeoffs for external tool messages.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:10:48+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/client.ts::as_any_cast": {
+      "id": "smells::claude-client/src/client.ts::as_any_cast",
+      "detector": "smells",
+      "file": "claude-client/src/client.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "6x `as any` type casts",
+      "detail": {
+        "smell_id": "as_any_cast",
+        "severity": "medium",
+        "count": 6,
+        "lines": [
+          872,
+          873,
+          932,
+          934,
+          944,
+          1182
+        ]
+      },
+      "status": "wontfix",
+      "note": "Dynamic CLI protocol payloads require permissive typing and selective casts; these are intentional interoperability tradeoffs for external tool messages.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:10:48+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/examples/error-handling.ts::console_error_no_throw": {
+      "id": "smells::claude-client/examples/error-handling.ts::console_error_no_throw",
+      "detector": "smells",
+      "file": "claude-client/examples/error-handling.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "2x console.error without throw/return",
+      "detail": {
+        "smell_id": "console_error_no_throw",
+        "severity": "medium",
+        "count": 2,
+        "lines": [
+          6,
+          13
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/sessions.ts::console_error_no_throw": {
+      "id": "smells::claude-client/src/sessions.ts::console_error_no_throw",
+      "detector": "smells",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "3x console.error without throw/return",
+      "detail": {
+        "smell_id": "console_error_no_throw",
+        "severity": "medium",
+        "count": 3,
+        "lines": [
+          468,
+          477,
+          502
+        ]
+      },
+      "status": "wontfix",
+      "note": "Dynamic CLI protocol payloads require permissive typing and selective casts; these are intentional interoperability tradeoffs for external tool messages.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:10:48+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/examples/error-handling.ts::swallowed_error": {
+      "id": "smells::claude-client/examples/error-handling.ts::swallowed_error",
+      "detector": "smells",
+      "file": "claude-client/examples/error-handling.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "1x Catch blocks that only log (swallowed errors)",
+      "detail": {
+        "smell_id": "swallowed_error",
+        "severity": "medium",
+        "count": 1,
+        "lines": [
+          12
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/sessions.ts::swallowed_error": {
+      "id": "smells::claude-client/src/sessions.ts::swallowed_error",
+      "detector": "smells",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "2x Catch blocks that only log (swallowed errors)",
+      "detail": {
+        "smell_id": "swallowed_error",
+        "severity": "medium",
+        "count": 2,
+        "lines": [
+          183,
+          232
+        ]
+      },
+      "status": "wontfix",
+      "note": "Dynamic CLI protocol payloads require permissive typing and selective casts; these are intentional interoperability tradeoffs for external tool messages.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:10:48+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/mcp.ts::magic_number": {
+      "id": "smells::claude-client/src/mcp.ts::magic_number",
+      "detector": "smells",
+      "file": "claude-client/src/mcp.ts",
+      "tier": 3,
+      "confidence": "low",
+      "summary": "1x Magic numbers (>1000 in logic)",
+      "detail": {
+        "smell_id": "magic_number",
+        "severity": "low",
+        "count": 1,
+        "lines": [
+          21
+        ]
+      },
+      "status": "wontfix",
+      "note": "Dynamic CLI protocol payloads require permissive typing and selective casts; these are intentional interoperability tradeoffs for external tool messages.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:10:48+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/sessions.ts::magic_number": {
+      "id": "smells::claude-client/src/sessions.ts::magic_number",
+      "detector": "smells",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 3,
+      "confidence": "low",
+      "summary": "2x Magic numbers (>1000 in logic)",
+      "detail": {
+        "smell_id": "magic_number",
+        "severity": "low",
+        "count": 2,
+        "lines": [
+          450,
+          451
+        ]
+      },
+      "status": "wontfix",
+      "note": "Dynamic CLI protocol payloads require permissive typing and selective casts; these are intentional interoperability tradeoffs for external tool messages.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:10:48+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "subjective_review::claude-client/src/client.ts::unreviewed": {
+      "id": "subjective_review::claude-client/src/client.ts::unreviewed",
+      "detector": "subjective_review",
+      "file": "claude-client/src/client.ts",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 1195
+      },
+      "status": "wontfix",
+      "note": "Subjective design review is tracked outside the scanner and is not a release blocker for this package split.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:10:42+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "subjective_review::claude-client/src/mcp.ts::unreviewed": {
+      "id": "subjective_review::claude-client/src/mcp.ts::unreviewed",
+      "detector": "subjective_review",
+      "file": "claude-client/src/mcp.ts",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 65
+      },
+      "status": "wontfix",
+      "note": "Subjective design review is tracked outside the scanner and is not a release blocker for this package split.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:10:42+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "subjective_review::claude-client/src/sessions.ts::unreviewed": {
+      "id": "subjective_review::claude-client/src/sessions.ts::unreviewed",
+      "detector": "subjective_review",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 591
+      },
+      "status": "wontfix",
+      "note": "Subjective design review is tracked outside the scanner and is not a release blocker for this package split.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:10:42+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "subjective_review::claude-client/src/task-queue.ts::unreviewed": {
+      "id": "subjective_review::claude-client/src/task-queue.ts::unreviewed",
+      "detector": "subjective_review",
+      "file": "claude-client/src/task-queue.ts",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 42
+      },
+      "status": "wontfix",
+      "note": "Subjective design review is tracked outside the scanner and is not a release blocker for this package split.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:10:42+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "subjective_review::claude-client/src/task-store.ts::unreviewed": {
+      "id": "subjective_review::claude-client/src/task-store.ts::unreviewed",
+      "detector": "subjective_review",
+      "file": "claude-client/src/task-store.ts",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 74
+      },
+      "status": "wontfix",
+      "note": "Subjective design review is tracked outside the scanner and is not a release blocker for this package split.",
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": "2026-02-16T23:10:42+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "subjective_review::.::holistic_unreviewed": {
+      "id": "subjective_review::.::holistic_unreviewed",
+      "detector": "subjective_review",
+      "file": ".",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No holistic codebase review on record \u2014 run `desloppify review --prepare --holistic`",
+      "detail": {
+        "reason": "unreviewed"
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:05:47+00:00",
+      "last_seen": "2026-02-16T23:05:47+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    }
+  },
+  "subjective_assessments": {},
+  "tool_hash": "cc350aa13365",
+  "scan_path": "claude-client",
+  "strict_score": 0.8,
+  "scan_history": [
+    {
+      "timestamp": "2026-02-16T23:05:47+00:00",
+      "lang": null,
+      "objective_strict": null,
+      "objective_score": null,
+      "open": 101,
+      "diff_new": 101,
+      "diff_resolved": 0,
+      "dimension_scores": null
+    }
+  ],
+  "reminder_history": {
+    "report_scores": 1,
+    "auto_fixers_available": 1,
+    "dry_run_first": 1
+  }
+}

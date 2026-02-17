@@ -4,7 +4,7 @@
  * Resumes a synced session from VS Code or a previously ended Discord session.
  */
 
-import { ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
+import { ChatInputCommandInteraction } from 'discord.js';
 import { getSessionSyncService } from '../../services/session-sync.js';
 import { storage } from '../../storage.js';
 import * as botState from '../../state.js';

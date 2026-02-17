@@ -15,23 +15,17 @@
  * - If no hook event, it falls back to screen scraping (zero-config)
  */
 
-import { execFile, exec, ExecFileOptions } from 'child_process';
+import { execFile, exec } from 'child_process';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
 import { EventEmitter } from 'events';
 import {
-    BasePlugin,
-    PluginSession,
-    SessionConfig,
-    SessionStatus,
-    OutputEvent,
-    ApprovalEvent,
-    StatusEvent,
-    MetadataEvent,
-    HookEvent,
-    ToolExecutionEvent,
-    ToolResultEvent,
-    ApprovalOption
+  BasePlugin,
+  PluginSession,
+  SessionConfig,
+  SessionStatus,
+  HookEvent,
+  ApprovalOption
 } from './base.js';
 import { getPluginManager } from './plugin-manager.js';
 import { getParser, type CliParser } from './parsers/index.js';

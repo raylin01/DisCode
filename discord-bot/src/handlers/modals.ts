@@ -4,16 +4,18 @@
  * Handles all modal submissions from Discord UI.
  */
 
-import { EmbedBuilder, ChannelType, ButtonBuilder, ButtonStyle, ActionRowBuilder } from 'discord.js';
-import { randomUUID } from 'crypto';
+import {
+  EmbedBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ActionRowBuilder
+} from 'discord.js';
 import * as botState from '../state.js';
 import { storage } from '../storage.js';
 import { createErrorEmbed } from '../utils/embeds.js';
-import { getOrCreateRunnerChannel } from '../utils/channels.js';
 import { handleSessionReview } from './buttons.js';
 import { handleTellClaudeModal } from './permission-buttons.js';
 import { permissionStateStore } from '../permissions/state-store.js';
-import type { Session } from '../../../shared/types.ts';
 
 /**
  * Main modal submit dispatcher

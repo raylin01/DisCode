@@ -8,22 +8,12 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import * as botState from '../state.js';
 import { storage } from '../storage.js';
-import { createErrorEmbed } from '../utils/embeds.js';
 import { getCategoryManager } from '../services/category-manager.js';
 import { getSessionSyncService } from '../services/session-sync.js';
 import { listSessions } from '@raylin01/claude-client/sessions';
 import { cliToSdkPlugin } from './button-utils.js';
-import {
-    getRunnerIdFromContext,
-    getProjectPathFromContext,
-    getProjectChannelIdFromContext,
-    handleSessionReview
-} from './session-buttons.js';
-import {
-    safeDeferReply,
-    safeEditReply,
-    safeUpdate
-} from './interaction-safety.js';
+import { getRunnerIdFromContext, getProjectPathFromContext, getProjectChannelIdFromContext } from './session-buttons.js';
+import { safeDeferReply, safeEditReply } from './interaction-safety.js';
 
 // ---------------------------------------------------------------------------
 // Helpers (re-used from original buttons.ts)

@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, ButtonInteraction, EmbedBuilder } from 'discord.js';
+import { ChatInputCommandInteraction, ButtonInteraction } from 'discord.js';
 import { getSessionSyncService } from '../../services/session-sync.js';
 import { getCategoryManager } from '../../services/category-manager.js';
 import { storage } from '../../storage.js';

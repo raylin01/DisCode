@@ -9,9 +9,8 @@ import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilde
 import * as botState from '../state.js';
 
 import { storage } from '../storage.js';
-import { createErrorEmbed, createApprovalDecisionEmbed } from '../utils/embeds.js';
+import { createErrorEmbed } from '../utils/embeds.js';
 import { permissionStateStore, type PermissionRequest } from '../permissions/state-store.js';
-import { buildAlwaysButtonText } from '../permissions/ui-state.js';
 import { attemptPermissionReissue } from '../permissions/reissue.js';
 import { safeEditReply, safeReply } from './interaction-safety.js';
 

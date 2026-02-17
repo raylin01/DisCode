@@ -6,7 +6,6 @@
 
 import { EmbedBuilder } from 'discord.js';
 import { storage } from '../../storage.js';
-import { createInfoEmbed, createErrorEmbed } from '../../utils/embeds.js';
 
 /**
  * Handle /generate-token command

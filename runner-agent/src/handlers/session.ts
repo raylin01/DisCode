@@ -4,8 +4,6 @@
  * Handles session_start and session_end WebSocket messages.
  */
 
-import fs from 'fs';
-import WebSocket from 'ws';
 import type { PluginManager, PluginSession } from '../plugins/index.js';
 import type { PluginOptions } from '../plugins/base.js';
 import type { SessionMetadata, PendingApprovalRequestInfo } from '../types.js';

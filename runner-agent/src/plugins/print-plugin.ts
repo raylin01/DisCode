@@ -10,11 +10,10 @@
 
 import { spawn, ChildProcess } from 'child_process';
 import {
-    BasePlugin,
-    PluginSession,
-    SessionConfig,
-    SessionStatus,
-    OutputEvent,
+  BasePlugin,
+  PluginSession,
+  SessionConfig,
+  SessionStatus
 } from './base.js';
 import { SkillManager } from '../utils/skill-manager.js';
 import { getConfig } from '../config.js';

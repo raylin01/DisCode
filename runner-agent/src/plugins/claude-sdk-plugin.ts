@@ -7,8 +7,7 @@
 
 import { EventEmitter } from 'events';
 import { randomUUID } from 'crypto';
-import { appendFileSync, mkdirSync, readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, existsSync } from 'fs';
 import {
     BasePlugin,
     PluginSession,
@@ -16,23 +15,21 @@ import {
     SessionStatus,
     PluginType
 } from './base.js';
-import { SkillManager } from '../utils/skill-manager.js';
 import { shouldAutoApproveInSafeMode, getDangerousReason } from '../permissions/safe-tools.js';
 import { getConfig } from '../config.js';
 
 // Import from our new library
-import { 
-    ClaudeClient, 
-    AssistantMessage, 
-    StreamEventMessage, 
-    ControlRequestMessage,
-    ControlResponseData,
-    Suggestion,
-    PermissionScope,
-    ToolUseStartEvent,
-    ToolResultEvent,
-    ResultMessage,
-    ClaudeSupportedModel
+import {
+  ClaudeClient,
+  AssistantMessage,
+  ControlRequestMessage,
+  ControlResponseData,
+  Suggestion,
+  PermissionScope,
+  ToolUseStartEvent,
+  ToolResultEvent,
+  ResultMessage,
+  ClaudeSupportedModel
 } from '@raylin01/claude-client';
 
 // ============================================================================

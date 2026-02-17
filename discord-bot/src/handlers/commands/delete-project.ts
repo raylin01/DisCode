@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, PermissionsBitField, ChannelType } from 'discord.js';
+import { ChatInputCommandInteraction } from 'discord.js';
 import { storage } from '../../storage.js';
 import { getCategoryManager } from '../../services/category-manager.js';
 import { getSessionSyncService } from '../../services/session-sync.js';

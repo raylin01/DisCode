@@ -1,0 +1,5576 @@
+{
+  "version": 1,
+  "created": "2026-02-16T23:06:20+00:00",
+  "last_scan": "2026-02-16T23:14:09+00:00",
+  "scan_count": 4,
+  "score": 95.9,
+  "stats": {
+    "total": 39,
+    "open": 1,
+    "fixed": 0,
+    "auto_resolved": 0,
+    "wontfix": 38,
+    "false_positive": 0,
+    "by_tier": {
+      "2": {
+        "open": 0,
+        "fixed": 0,
+        "auto_resolved": 0,
+        "wontfix": 23,
+        "false_positive": 0
+      },
+      "3": {
+        "open": 0,
+        "fixed": 0,
+        "auto_resolved": 0,
+        "wontfix": 13,
+        "false_positive": 0
+      },
+      "4": {
+        "open": 1,
+        "fixed": 0,
+        "auto_resolved": 0,
+        "wontfix": 2,
+        "false_positive": 0
+      }
+    }
+  },
+  "findings": {
+    "exports::claude-client/src/client.ts::ClaudeClientConfig": {
+      "id": "exports::claude-client/src/client.ts::ClaudeClientConfig",
+      "detector": "exports",
+      "file": "claude-client/src/client.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ClaudeClientConfig",
+      "detail": {
+        "line": 35,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/client.ts::ToolUseStartEvent": {
+      "id": "exports::claude-client/src/client.ts::ToolUseStartEvent",
+      "detector": "exports",
+      "file": "claude-client/src/client.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ToolUseStartEvent",
+      "detail": {
+        "line": 201,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/client.ts::ToolResultEvent": {
+      "id": "exports::claude-client/src/client.ts::ToolResultEvent",
+      "detector": "exports",
+      "file": "claude-client/src/client.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ToolResultEvent",
+      "detail": {
+        "line": 207,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/client.ts::ClaudeClient": {
+      "id": "exports::claude-client/src/client.ts::ClaudeClient",
+      "detector": "exports",
+      "file": "claude-client/src/client.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ClaudeClient",
+      "detail": {
+        "line": 256,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/client.ts::SessionStatus": {
+      "id": "exports::claude-client/src/client.ts::SessionStatus",
+      "detector": "exports",
+      "file": "claude-client/src/client.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SessionStatus",
+      "detail": {
+        "line": 242,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/client.ts::PendingAction": {
+      "id": "exports::claude-client/src/client.ts::PendingAction",
+      "detector": "exports",
+      "file": "claude-client/src/client.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: PendingAction",
+      "detail": {
+        "line": 247,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/mcp.ts::McpHandler": {
+      "id": "exports::claude-client/src/mcp.ts::McpHandler",
+      "detector": "exports",
+      "file": "claude-client/src/mcp.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: McpHandler",
+      "detail": {
+        "line": 3,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/mcp.ts::McpHandlers": {
+      "id": "exports::claude-client/src/mcp.ts::McpHandlers",
+      "detector": "exports",
+      "file": "claude-client/src/mcp.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: McpHandlers",
+      "detail": {
+        "line": 5,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/mcp.ts::attachMcpHandlers": {
+      "id": "exports::claude-client/src/mcp.ts::attachMcpHandlers",
+      "detector": "exports",
+      "file": "claude-client/src/mcp.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: attachMcpHandlers",
+      "detail": {
+        "line": 32,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::ProjectInfo": {
+      "id": "exports::claude-client/src/sessions.ts::ProjectInfo",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ProjectInfo",
+      "detail": {
+        "line": 20,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::SessionEntry": {
+      "id": "exports::claude-client/src/sessions.ts::SessionEntry",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SessionEntry",
+      "detail": {
+        "line": 36,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::SessionMessage": {
+      "id": "exports::claude-client/src/sessions.ts::SessionMessage",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SessionMessage",
+      "detail": {
+        "line": 60,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::SessionDetails": {
+      "id": "exports::claude-client/src/sessions.ts::SessionDetails",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SessionDetails",
+      "detail": {
+        "line": 79,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::escapeProjectPath": {
+      "id": "exports::claude-client/src/sessions.ts::escapeProjectPath",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: escapeProjectPath",
+      "detail": {
+        "line": 100,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::unescapeProjectPath": {
+      "id": "exports::claude-client/src/sessions.ts::unescapeProjectPath",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: unescapeProjectPath",
+      "detail": {
+        "line": 109,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::getProjectStoragePath": {
+      "id": "exports::claude-client/src/sessions.ts::getProjectStoragePath",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: getProjectStoragePath",
+      "detail": {
+        "line": 134,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::listProjects": {
+      "id": "exports::claude-client/src/sessions.ts::listProjects",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: listProjects",
+      "detail": {
+        "line": 141,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::getSessionDetails": {
+      "id": "exports::claude-client/src/sessions.ts::getSessionDetails",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: getSessionDetails",
+      "detail": {
+        "line": 265,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::getMessagesSince": {
+      "id": "exports::claude-client/src/sessions.ts::getMessagesSince",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: getMessagesSince",
+      "detail": {
+        "line": 379,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::WatcherEvents": {
+      "id": "exports::claude-client/src/sessions.ts::WatcherEvents",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: WatcherEvents",
+      "detail": {
+        "line": 393,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/sessions.ts::SessionWatcher": {
+      "id": "exports::claude-client/src/sessions.ts::SessionWatcher",
+      "detector": "exports",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SessionWatcher",
+      "detail": {
+        "line": 408,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/task-queue.ts::TaskMessage": {
+      "id": "exports::claude-client/src/task-queue.ts::TaskMessage",
+      "detector": "exports",
+      "file": "claude-client/src/task-queue.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: TaskMessage",
+      "detail": {
+        "line": 1,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/task-queue.ts::TaskMessageQueue": {
+      "id": "exports::claude-client/src/task-queue.ts::TaskMessageQueue",
+      "detector": "exports",
+      "file": "claude-client/src/task-queue.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: TaskMessageQueue",
+      "detail": {
+        "line": 8,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/task-store.ts::TaskStatus": {
+      "id": "exports::claude-client/src/task-store.ts::TaskStatus",
+      "detector": "exports",
+      "file": "claude-client/src/task-store.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: TaskStatus",
+      "detail": {
+        "line": 3,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/task-store.ts::TaskRecord": {
+      "id": "exports::claude-client/src/task-store.ts::TaskRecord",
+      "detector": "exports",
+      "file": "claude-client/src/task-store.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: TaskRecord",
+      "detail": {
+        "line": 5,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/task-store.ts::TaskStore": {
+      "id": "exports::claude-client/src/task-store.ts::TaskStore",
+      "detector": "exports",
+      "file": "claude-client/src/task-store.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: TaskStore",
+      "detail": {
+        "line": 17,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::SystemMessage": {
+      "id": "exports::claude-client/src/types.ts::SystemMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SystemMessage",
+      "detail": {
+        "line": 13,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::StreamEventMessage": {
+      "id": "exports::claude-client/src/types.ts::StreamEventMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: StreamEventMessage",
+      "detail": {
+        "line": 29,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::StreamEvent": {
+      "id": "exports::claude-client/src/types.ts::StreamEvent",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: StreamEvent",
+      "detail": {
+        "line": 37,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ContentDelta": {
+      "id": "exports::claude-client/src/types.ts::ContentDelta",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ContentDelta",
+      "detail": {
+        "line": 45,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::Usage": {
+      "id": "exports::claude-client/src/types.ts::Usage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: Usage",
+      "detail": {
+        "line": 52,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::AssistantMessage": {
+      "id": "exports::claude-client/src/types.ts::AssistantMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: AssistantMessage",
+      "detail": {
+        "line": 60,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ContentBlock": {
+      "id": "exports::claude-client/src/types.ts::ContentBlock",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ContentBlock",
+      "detail": {
+        "line": 84,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::UserMessage": {
+      "id": "exports::claude-client/src/types.ts::UserMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: UserMessage",
+      "detail": {
+        "line": 92,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ControlRequestMessage": {
+      "id": "exports::claude-client/src/types.ts::ControlRequestMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ControlRequestMessage",
+      "detail": {
+        "line": 106,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ControlRequest": {
+      "id": "exports::claude-client/src/types.ts::ControlRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ControlRequest",
+      "detail": {
+        "line": 112,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::InitializeRequest": {
+      "id": "exports::claude-client/src/types.ts::InitializeRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: InitializeRequest",
+      "detail": {
+        "line": 121,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::CanUseToolRequest": {
+      "id": "exports::claude-client/src/types.ts::CanUseToolRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: CanUseToolRequest",
+      "detail": {
+        "line": 131,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::HookCallbackRequest": {
+      "id": "exports::claude-client/src/types.ts::HookCallbackRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: HookCallbackRequest",
+      "detail": {
+        "line": 142,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::McpMessageRequest": {
+      "id": "exports::claude-client/src/types.ts::McpMessageRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: McpMessageRequest",
+      "detail": {
+        "line": 149,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::SetPermissionModeRequest": {
+      "id": "exports::claude-client/src/types.ts::SetPermissionModeRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SetPermissionModeRequest",
+      "detail": {
+        "line": 155,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::SetModelRequest": {
+      "id": "exports::claude-client/src/types.ts::SetModelRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SetModelRequest",
+      "detail": {
+        "line": 160,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::SetMaxThinkingTokensRequest": {
+      "id": "exports::claude-client/src/types.ts::SetMaxThinkingTokensRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SetMaxThinkingTokensRequest",
+      "detail": {
+        "line": 165,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::InterruptRequest": {
+      "id": "exports::claude-client/src/types.ts::InterruptRequest",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: InterruptRequest",
+      "detail": {
+        "line": 170,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::Suggestion": {
+      "id": "exports::claude-client/src/types.ts::Suggestion",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: Suggestion",
+      "detail": {
+        "line": 174,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::PermissionScope": {
+      "id": "exports::claude-client/src/types.ts::PermissionScope",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: PermissionScope",
+      "detail": {
+        "line": 180,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ControlResponseMessage": {
+      "id": "exports::claude-client/src/types.ts::ControlResponseMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ControlResponseMessage",
+      "detail": {
+        "line": 185,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ControlResponseEnvelope": {
+      "id": "exports::claude-client/src/types.ts::ControlResponseEnvelope",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ControlResponseEnvelope",
+      "detail": {
+        "line": 195,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ControlResponseData": {
+      "id": "exports::claude-client/src/types.ts::ControlResponseData",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ControlResponseData",
+      "detail": {
+        "line": 206,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::KeepAliveMessage": {
+      "id": "exports::claude-client/src/types.ts::KeepAliveMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: KeepAliveMessage",
+      "detail": {
+        "line": 218,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ControlCancelRequestMessage": {
+      "id": "exports::claude-client/src/types.ts::ControlCancelRequestMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ControlCancelRequestMessage",
+      "detail": {
+        "line": 225,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::McpMessageEvent": {
+      "id": "exports::claude-client/src/types.ts::McpMessageEvent",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: McpMessageEvent",
+      "detail": {
+        "line": 230,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::HookCallbackEvent": {
+      "id": "exports::claude-client/src/types.ts::HookCallbackEvent",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: HookCallbackEvent",
+      "detail": {
+        "line": 237,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::TaskMessageEvent": {
+      "id": "exports::claude-client/src/types.ts::TaskMessageEvent",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: TaskMessageEvent",
+      "detail": {
+        "line": 245,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ClaudeSupportedModel": {
+      "id": "exports::claude-client/src/types.ts::ClaudeSupportedModel",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ClaudeSupportedModel",
+      "detail": {
+        "line": 252,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ClaudeSupportedModelsResponse": {
+      "id": "exports::claude-client/src/types.ts::ClaudeSupportedModelsResponse",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ClaudeSupportedModelsResponse",
+      "detail": {
+        "line": 259,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::InputMessage": {
+      "id": "exports::claude-client/src/types.ts::InputMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: InputMessage",
+      "detail": {
+        "line": 268,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::UserInputMessage": {
+      "id": "exports::claude-client/src/types.ts::UserInputMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: UserInputMessage",
+      "detail": {
+        "line": 272,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ProtocolError": {
+      "id": "exports::claude-client/src/types.ts::ProtocolError",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ProtocolError",
+      "detail": {
+        "line": 281,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::ResultMessage": {
+      "id": "exports::claude-client/src/types.ts::ResultMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ResultMessage",
+      "detail": {
+        "line": 288,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::claude-client/src/types.ts::CliMessage": {
+      "id": "exports::claude-client/src/types.ts::CliMessage",
+      "detector": "exports",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: CliMessage",
+      "detail": {
+        "line": 299,
+        "kind": null
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "structural::claude-client/src/client.ts": {
+      "id": "structural::claude-client/src/client.ts",
+      "detector": "structural",
+      "file": "claude-client/src/client.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Needs decomposition: large (1191 LOC) / complexity score 17",
+      "detail": {
+        "loc": 1191,
+        "complexity_score": 17,
+        "complexity_signals": [
+          "destructure w/23 props",
+          "5 inline types"
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "structural::claude-client/src/sessions.ts": {
+      "id": "structural::claude-client/src/sessions.ts",
+      "detector": "structural",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Needs decomposition: large (594 LOC)",
+      "detail": {
+        "loc": 594
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::claude-client/src/client.ts": {
+      "id": "orphaned::claude-client/src/client.ts",
+      "detector": "orphaned",
+      "file": "claude-client/src/client.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (1191 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 1191
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::claude-client/src/sessions.ts": {
+      "id": "orphaned::claude-client/src/sessions.ts",
+      "detector": "orphaned",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (594 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 594
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::claude-client/src/task-store.ts": {
+      "id": "orphaned::claude-client/src/task-store.ts",
+      "detector": "orphaned",
+      "file": "claude-client/src/task-store.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (74 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 74
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::claude-client/src/mcp.ts": {
+      "id": "orphaned::claude-client/src/mcp.ts",
+      "detector": "orphaned",
+      "file": "claude-client/src/mcp.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (65 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 65
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "facade::claude-client/src/index.ts": {
+      "id": "facade::claude-client/src/index.ts",
+      "detector": "facade",
+      "file": "claude-client/src/index.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Re-export facade (6 LOC): imports from ./types.js, ./client.js, ./sessions.js, +3 (0 importers)",
+      "detail": {
+        "loc": 6,
+        "importers": 0,
+        "imports_from": [
+          "./types.js",
+          "./client.js",
+          "./sessions.js",
+          "./mcp.js",
+          "./task-store.js",
+          "./task-queue.js"
+        ],
+        "kind": "file"
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::claude-client/src/task-store.ts::untested_module": {
+      "id": "test_coverage::claude-client/src/task-store.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "claude-client/src/task-store.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (74 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 74,
+        "importer_count": 0,
+        "loc_weight": 8.602325267042627
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::claude-client/src/task-queue.ts::untested_module": {
+      "id": "test_coverage::claude-client/src/task-queue.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "claude-client/src/task-queue.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (42 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 42,
+        "importer_count": 0,
+        "loc_weight": 6.48074069840786
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::claude-client/src/mcp.ts::untested_module": {
+      "id": "test_coverage::claude-client/src/mcp.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "claude-client/src/mcp.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (65 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 65,
+        "importer_count": 0,
+        "loc_weight": 8.06225774829855
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::claude-client/src/sessions.ts::untested_module": {
+      "id": "test_coverage::claude-client/src/sessions.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (594 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 594,
+        "importer_count": 0,
+        "loc_weight": 24.372115213907882
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::claude-client/src/types.ts::untested_critical": {
+      "id": "test_coverage::claude-client/src/types.ts::untested_critical",
+      "detector": "test_coverage",
+      "file": "claude-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Untested critical module (309 LOC, 0 importers) \u2014 high blast radius",
+      "detail": {
+        "kind": "untested_critical",
+        "loc": 309,
+        "importer_count": 0,
+        "loc_weight": 17.578395831246947,
+        "complexity_score": 32
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::claude-client/src/client.ts::untested_module": {
+      "id": "test_coverage::claude-client/src/client.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "claude-client/src/client.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (1191 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 1191,
+        "importer_count": 0,
+        "loc_weight": 34.51086785347479
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/client.ts::any_type": {
+      "id": "smells::claude-client/src/client.ts::any_type",
+      "detector": "smells",
+      "file": "claude-client/src/client.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "12x Explicit `any` types",
+      "detail": {
+        "smell_id": "any_type",
+        "severity": "medium",
+        "count": 12,
+        "lines": [
+          225,
+          280,
+          702,
+          714,
+          730,
+          764,
+          778,
+          872,
+          986,
+          1101
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/mcp.ts::any_type": {
+      "id": "smells::claude-client/src/mcp.ts::any_type",
+      "detector": "smells",
+      "file": "claude-client/src/mcp.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "6x Explicit `any` types",
+      "detail": {
+        "smell_id": "any_type",
+        "severity": "medium",
+        "count": 6,
+        "lines": [
+          3,
+          9,
+          17,
+          35,
+          36,
+          56
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/sessions.ts::any_type": {
+      "id": "smells::claude-client/src/sessions.ts::any_type",
+      "detector": "smells",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "1x Explicit `any` types",
+      "detail": {
+        "smell_id": "any_type",
+        "severity": "medium",
+        "count": 1,
+        "lines": [
+          68
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/task-queue.ts::any_type": {
+      "id": "smells::claude-client/src/task-queue.ts::any_type",
+      "detector": "smells",
+      "file": "claude-client/src/task-queue.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "1x Explicit `any` types",
+      "detail": {
+        "smell_id": "any_type",
+        "severity": "medium",
+        "count": 1,
+        "lines": [
+          4
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/task-store.ts::any_type": {
+      "id": "smells::claude-client/src/task-store.ts::any_type",
+      "detector": "smells",
+      "file": "claude-client/src/task-store.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "4x Explicit `any` types",
+      "detail": {
+        "smell_id": "any_type",
+        "severity": "medium",
+        "count": 4,
+        "lines": [
+          11,
+          12,
+          51,
+          55
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/types.ts::any_type": {
+      "id": "smells::claude-client/src/types.ts::any_type",
+      "detector": "smells",
+      "file": "claude-client/src/types.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "10x Explicit `any` types",
+      "detail": {
+        "smell_id": "any_type",
+        "severity": "medium",
+        "count": 10,
+        "lines": [
+          38,
+          39,
+          42,
+          123,
+          128,
+          152,
+          211,
+          232,
+          234,
+          248
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/client.ts::as_any_cast": {
+      "id": "smells::claude-client/src/client.ts::as_any_cast",
+      "detector": "smells",
+      "file": "claude-client/src/client.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "6x `as any` type casts",
+      "detail": {
+        "smell_id": "as_any_cast",
+        "severity": "medium",
+        "count": 6,
+        "lines": [
+          868,
+          869,
+          928,
+          930,
+          940,
+          1178
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/sessions.ts::console_error_no_throw": {
+      "id": "smells::claude-client/src/sessions.ts::console_error_no_throw",
+      "detector": "smells",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "3x console.error without throw/return",
+      "detail": {
+        "smell_id": "console_error_no_throw",
+        "severity": "medium",
+        "count": 3,
+        "lines": [
+          468,
+          477,
+          502
+        ]
+      },
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:08:47+00:00",
+      "resolved_at": "2026-02-16T23:10:31+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/sessions.ts::swallowed_error": {
+      "id": "smells::claude-client/src/sessions.ts::swallowed_error",
+      "detector": "smells",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "2x Catch blocks that only log (swallowed errors)",
+      "detail": {
+        "smell_id": "swallowed_error",
+        "severity": "medium",
+        "count": 2,
+        "lines": [
+          183,
+          232
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/mcp.ts::magic_number": {
+      "id": "smells::claude-client/src/mcp.ts::magic_number",
+      "detector": "smells",
+      "file": "claude-client/src/mcp.ts",
+      "tier": 3,
+      "confidence": "low",
+      "summary": "1x Magic numbers (>1000 in logic)",
+      "detail": {
+        "smell_id": "magic_number",
+        "severity": "low",
+        "count": 1,
+        "lines": [
+          21
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::claude-client/src/sessions.ts::magic_number": {
+      "id": "smells::claude-client/src/sessions.ts::magic_number",
+      "detector": "smells",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 3,
+      "confidence": "low",
+      "summary": "2x Magic numbers (>1000 in logic)",
+      "detail": {
+        "smell_id": "magic_number",
+        "severity": "low",
+        "count": 2,
+        "lines": [
+          450,
+          451
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "subjective_review::claude-client/src/client.ts::unreviewed": {
+      "id": "subjective_review::claude-client/src/client.ts::unreviewed",
+      "detector": "subjective_review",
+      "file": "claude-client/src/client.ts",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 1191
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "subjective_review::claude-client/src/mcp.ts::unreviewed": {
+      "id": "subjective_review::claude-client/src/mcp.ts::unreviewed",
+      "detector": "subjective_review",
+      "file": "claude-client/src/mcp.ts",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 65
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "subjective_review::claude-client/src/sessions.ts::unreviewed": {
+      "id": "subjective_review::claude-client/src/sessions.ts::unreviewed",
+      "detector": "subjective_review",
+      "file": "claude-client/src/sessions.ts",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 594
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "subjective_review::claude-client/src/task-queue.ts::unreviewed": {
+      "id": "subjective_review::claude-client/src/task-queue.ts::unreviewed",
+      "detector": "subjective_review",
+      "file": "claude-client/src/task-queue.ts",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 42
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "subjective_review::claude-client/src/task-store.ts::unreviewed": {
+      "id": "subjective_review::claude-client/src/task-store.ts::unreviewed",
+      "detector": "subjective_review",
+      "file": "claude-client/src/task-store.ts",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 74
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:10:31+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "subjective_review::.::holistic_unreviewed": {
+      "id": "subjective_review::.::holistic_unreviewed",
+      "detector": "subjective_review",
+      "file": ".",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No holistic codebase review on record \u2014 run `desloppify review --prepare --holistic`",
+      "detail": {
+        "reason": "unreviewed"
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:08:47+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/client.ts::CodexClientOptions": {
+      "id": "exports::codex-client/src/client.ts::CodexClientOptions",
+      "detector": "exports",
+      "file": "codex-client/src/client.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: CodexClientOptions",
+      "detail": {
+        "line": 56,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/client.ts::CodexClient": {
+      "id": "exports::codex-client/src/client.ts::CodexClient",
+      "detector": "exports",
+      "file": "codex-client/src/client.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: CodexClient",
+      "detail": {
+        "line": 71,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::JsonValue": {
+      "id": "exports::codex-client/src/types.ts::JsonValue",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: JsonValue",
+      "detail": {
+        "line": 1,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::AskForApproval": {
+      "id": "exports::codex-client/src/types.ts::AskForApproval",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: AskForApproval",
+      "detail": {
+        "line": 3,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SandboxMode": {
+      "id": "exports::codex-client/src/types.ts::SandboxMode",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SandboxMode",
+      "detail": {
+        "line": 4,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::NetworkAccess": {
+      "id": "exports::codex-client/src/types.ts::NetworkAccess",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: NetworkAccess",
+      "detail": {
+        "line": 5,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SandboxPolicy": {
+      "id": "exports::codex-client/src/types.ts::SandboxPolicy",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SandboxPolicy",
+      "detail": {
+        "line": 6,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ReasoningEffort": {
+      "id": "exports::codex-client/src/types.ts::ReasoningEffort",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ReasoningEffort",
+      "detail": {
+        "line": 11,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ReasoningSummary": {
+      "id": "exports::codex-client/src/types.ts::ReasoningSummary",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ReasoningSummary",
+      "detail": {
+        "line": 12,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::InputModality": {
+      "id": "exports::codex-client/src/types.ts::InputModality",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: InputModality",
+      "detail": {
+        "line": 13,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::MergeStrategy": {
+      "id": "exports::codex-client/src/types.ts::MergeStrategy",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: MergeStrategy",
+      "detail": {
+        "line": 14,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SkillScope": {
+      "id": "exports::codex-client/src/types.ts::SkillScope",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SkillScope",
+      "detail": {
+        "line": 15,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ReasoningEffortOption": {
+      "id": "exports::codex-client/src/types.ts::ReasoningEffortOption",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ReasoningEffortOption",
+      "detail": {
+        "line": 17,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ClientInfo": {
+      "id": "exports::codex-client/src/types.ts::ClientInfo",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ClientInfo",
+      "detail": {
+        "line": 22,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::InitializeParams": {
+      "id": "exports::codex-client/src/types.ts::InitializeParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: InitializeParams",
+      "detail": {
+        "line": 28,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::UserInput": {
+      "id": "exports::codex-client/src/types.ts::UserInput",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: UserInput",
+      "detail": {
+        "line": 33,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::Thread": {
+      "id": "exports::codex-client/src/types.ts::Thread",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: Thread",
+      "detail": {
+        "line": 40,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SubAgentSource": {
+      "id": "exports::codex-client/src/types.ts::SubAgentSource",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SubAgentSource",
+      "detail": {
+        "line": 55,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SessionSource": {
+      "id": "exports::codex-client/src/types.ts::SessionSource",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SessionSource",
+      "detail": {
+        "line": 61,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::GitInfo": {
+      "id": "exports::codex-client/src/types.ts::GitInfo",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: GitInfo",
+      "detail": {
+        "line": 69,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::Turn": {
+      "id": "exports::codex-client/src/types.ts::Turn",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: Turn",
+      "detail": {
+        "line": 75,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadStartParams": {
+      "id": "exports::codex-client/src/types.ts::ThreadStartParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadStartParams",
+      "detail": {
+        "line": 83,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadStartResponse": {
+      "id": "exports::codex-client/src/types.ts::ThreadStartResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadStartResponse",
+      "detail": {
+        "line": 99,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::TurnStartParams": {
+      "id": "exports::codex-client/src/types.ts::TurnStartParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: TurnStartParams",
+      "detail": {
+        "line": 109,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::TurnStartResponse": {
+      "id": "exports::codex-client/src/types.ts::TurnStartResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: TurnStartResponse",
+      "detail": {
+        "line": 123,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::TurnInterruptParams": {
+      "id": "exports::codex-client/src/types.ts::TurnInterruptParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: TurnInterruptParams",
+      "detail": {
+        "line": 127,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::TurnInterruptResponse": {
+      "id": "exports::codex-client/src/types.ts::TurnInterruptResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: TurnInterruptResponse",
+      "detail": {
+        "line": 132,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ExecPolicyAmendment": {
+      "id": "exports::codex-client/src/types.ts::ExecPolicyAmendment",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ExecPolicyAmendment",
+      "detail": {
+        "line": 134,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::CommandExecutionRequestApprovalParams": {
+      "id": "exports::codex-client/src/types.ts::CommandExecutionRequestApprovalParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: CommandExecutionRequestApprovalParams",
+      "detail": {
+        "line": 136,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::CommandExecutionApprovalDecision": {
+      "id": "exports::codex-client/src/types.ts::CommandExecutionApprovalDecision",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: CommandExecutionApprovalDecision",
+      "detail": {
+        "line": 147,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::CommandExecutionRequestApprovalResponse": {
+      "id": "exports::codex-client/src/types.ts::CommandExecutionRequestApprovalResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: CommandExecutionRequestApprovalResponse",
+      "detail": {
+        "line": 154,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::FileChangeRequestApprovalParams": {
+      "id": "exports::codex-client/src/types.ts::FileChangeRequestApprovalParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: FileChangeRequestApprovalParams",
+      "detail": {
+        "line": 158,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::FileChangeApprovalDecision": {
+      "id": "exports::codex-client/src/types.ts::FileChangeApprovalDecision",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: FileChangeApprovalDecision",
+      "detail": {
+        "line": 166,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::FileChangeRequestApprovalResponse": {
+      "id": "exports::codex-client/src/types.ts::FileChangeRequestApprovalResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: FileChangeRequestApprovalResponse",
+      "detail": {
+        "line": 168,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ToolRequestUserInputOption": {
+      "id": "exports::codex-client/src/types.ts::ToolRequestUserInputOption",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ToolRequestUserInputOption",
+      "detail": {
+        "line": 172,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ToolRequestUserInputQuestion": {
+      "id": "exports::codex-client/src/types.ts::ToolRequestUserInputQuestion",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ToolRequestUserInputQuestion",
+      "detail": {
+        "line": 177,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ToolRequestUserInputParams": {
+      "id": "exports::codex-client/src/types.ts::ToolRequestUserInputParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ToolRequestUserInputParams",
+      "detail": {
+        "line": 186,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ToolRequestUserInputAnswer": {
+      "id": "exports::codex-client/src/types.ts::ToolRequestUserInputAnswer",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ToolRequestUserInputAnswer",
+      "detail": {
+        "line": 193,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ToolRequestUserInputResponse": {
+      "id": "exports::codex-client/src/types.ts::ToolRequestUserInputResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ToolRequestUserInputResponse",
+      "detail": {
+        "line": 197,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::Model": {
+      "id": "exports::codex-client/src/types.ts::Model",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: Model",
+      "detail": {
+        "line": 201,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ModelListParams": {
+      "id": "exports::codex-client/src/types.ts::ModelListParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ModelListParams",
+      "detail": {
+        "line": 214,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ModelListResponse": {
+      "id": "exports::codex-client/src/types.ts::ModelListResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ModelListResponse",
+      "detail": {
+        "line": 219,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SetDefaultModelParams": {
+      "id": "exports::codex-client/src/types.ts::SetDefaultModelParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SetDefaultModelParams",
+      "detail": {
+        "line": 224,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SetDefaultModelResponse": {
+      "id": "exports::codex-client/src/types.ts::SetDefaultModelResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SetDefaultModelResponse",
+      "detail": {
+        "line": 229,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::AppInfo": {
+      "id": "exports::codex-client/src/types.ts::AppInfo",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: AppInfo",
+      "detail": {
+        "line": 231,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::AppsListParams": {
+      "id": "exports::codex-client/src/types.ts::AppsListParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: AppsListParams",
+      "detail": {
+        "line": 242,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::AppsListResponse": {
+      "id": "exports::codex-client/src/types.ts::AppsListResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: AppsListResponse",
+      "detail": {
+        "line": 247,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SkillsListParams": {
+      "id": "exports::codex-client/src/types.ts::SkillsListParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SkillsListParams",
+      "detail": {
+        "line": 252,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SkillInterface": {
+      "id": "exports::codex-client/src/types.ts::SkillInterface",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SkillInterface",
+      "detail": {
+        "line": 257,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SkillToolDependency": {
+      "id": "exports::codex-client/src/types.ts::SkillToolDependency",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SkillToolDependency",
+      "detail": {
+        "line": 266,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SkillDependencies": {
+      "id": "exports::codex-client/src/types.ts::SkillDependencies",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SkillDependencies",
+      "detail": {
+        "line": 275,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SkillMetadata": {
+      "id": "exports::codex-client/src/types.ts::SkillMetadata",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SkillMetadata",
+      "detail": {
+        "line": 279,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SkillErrorInfo": {
+      "id": "exports::codex-client/src/types.ts::SkillErrorInfo",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SkillErrorInfo",
+      "detail": {
+        "line": 290,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SkillsListEntry": {
+      "id": "exports::codex-client/src/types.ts::SkillsListEntry",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SkillsListEntry",
+      "detail": {
+        "line": 295,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SkillsListResponse": {
+      "id": "exports::codex-client/src/types.ts::SkillsListResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SkillsListResponse",
+      "detail": {
+        "line": 301,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SkillsRemoteReadParams": {
+      "id": "exports::codex-client/src/types.ts::SkillsRemoteReadParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SkillsRemoteReadParams",
+      "detail": {
+        "line": 305,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::RemoteSkillSummary": {
+      "id": "exports::codex-client/src/types.ts::RemoteSkillSummary",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: RemoteSkillSummary",
+      "detail": {
+        "line": 307,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SkillsRemoteReadResponse": {
+      "id": "exports::codex-client/src/types.ts::SkillsRemoteReadResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SkillsRemoteReadResponse",
+      "detail": {
+        "line": 313,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SkillsRemoteWriteParams": {
+      "id": "exports::codex-client/src/types.ts::SkillsRemoteWriteParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SkillsRemoteWriteParams",
+      "detail": {
+        "line": 317,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SkillsRemoteWriteResponse": {
+      "id": "exports::codex-client/src/types.ts::SkillsRemoteWriteResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SkillsRemoteWriteResponse",
+      "detail": {
+        "line": 322,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SkillsConfigWriteParams": {
+      "id": "exports::codex-client/src/types.ts::SkillsConfigWriteParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SkillsConfigWriteParams",
+      "detail": {
+        "line": 328,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::SkillsConfigWriteResponse": {
+      "id": "exports::codex-client/src/types.ts::SkillsConfigWriteResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: SkillsConfigWriteResponse",
+      "detail": {
+        "line": 333,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ConfigReadParams": {
+      "id": "exports::codex-client/src/types.ts::ConfigReadParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ConfigReadParams",
+      "detail": {
+        "line": 337,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ConfigReadResponse": {
+      "id": "exports::codex-client/src/types.ts::ConfigReadResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ConfigReadResponse",
+      "detail": {
+        "line": 342,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ConfigEdit": {
+      "id": "exports::codex-client/src/types.ts::ConfigEdit",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ConfigEdit",
+      "detail": {
+        "line": 348,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ConfigBatchWriteParams": {
+      "id": "exports::codex-client/src/types.ts::ConfigBatchWriteParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ConfigBatchWriteParams",
+      "detail": {
+        "line": 354,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ConfigValueWriteParams": {
+      "id": "exports::codex-client/src/types.ts::ConfigValueWriteParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ConfigValueWriteParams",
+      "detail": {
+        "line": 360,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ConfigRequirements": {
+      "id": "exports::codex-client/src/types.ts::ConfigRequirements",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ConfigRequirements",
+      "detail": {
+        "line": 368,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadSortKey": {
+      "id": "exports::codex-client/src/types.ts::ThreadSortKey",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadSortKey",
+      "detail": {
+        "line": 374,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadSourceKind": {
+      "id": "exports::codex-client/src/types.ts::ThreadSourceKind",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadSourceKind",
+      "detail": {
+        "line": 375,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadListParams": {
+      "id": "exports::codex-client/src/types.ts::ThreadListParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadListParams",
+      "detail": {
+        "line": 387,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadListResponse": {
+      "id": "exports::codex-client/src/types.ts::ThreadListResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadListResponse",
+      "detail": {
+        "line": 396,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadLoadedListParams": {
+      "id": "exports::codex-client/src/types.ts::ThreadLoadedListParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadLoadedListParams",
+      "detail": {
+        "line": 401,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadLoadedListResponse": {
+      "id": "exports::codex-client/src/types.ts::ThreadLoadedListResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadLoadedListResponse",
+      "detail": {
+        "line": 406,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadReadParams": {
+      "id": "exports::codex-client/src/types.ts::ThreadReadParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadReadParams",
+      "detail": {
+        "line": 411,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadReadResponse": {
+      "id": "exports::codex-client/src/types.ts::ThreadReadResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadReadResponse",
+      "detail": {
+        "line": 416,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadResumeParams": {
+      "id": "exports::codex-client/src/types.ts::ThreadResumeParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadResumeParams",
+      "detail": {
+        "line": 420,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadResumeResponse": {
+      "id": "exports::codex-client/src/types.ts::ThreadResumeResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadResumeResponse",
+      "detail": {
+        "line": 435,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadForkParams": {
+      "id": "exports::codex-client/src/types.ts::ThreadForkParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadForkParams",
+      "detail": {
+        "line": 445,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadForkResponse": {
+      "id": "exports::codex-client/src/types.ts::ThreadForkResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadForkResponse",
+      "detail": {
+        "line": 458,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadArchiveParams": {
+      "id": "exports::codex-client/src/types.ts::ThreadArchiveParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadArchiveParams",
+      "detail": {
+        "line": 468,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadArchiveResponse": {
+      "id": "exports::codex-client/src/types.ts::ThreadArchiveResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadArchiveResponse",
+      "detail": {
+        "line": 472,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadUnarchiveParams": {
+      "id": "exports::codex-client/src/types.ts::ThreadUnarchiveParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadUnarchiveParams",
+      "detail": {
+        "line": 474,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadUnarchiveResponse": {
+      "id": "exports::codex-client/src/types.ts::ThreadUnarchiveResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadUnarchiveResponse",
+      "detail": {
+        "line": 478,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadSetNameParams": {
+      "id": "exports::codex-client/src/types.ts::ThreadSetNameParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadSetNameParams",
+      "detail": {
+        "line": 482,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadSetNameResponse": {
+      "id": "exports::codex-client/src/types.ts::ThreadSetNameResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadSetNameResponse",
+      "detail": {
+        "line": 487,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadCompactStartParams": {
+      "id": "exports::codex-client/src/types.ts::ThreadCompactStartParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadCompactStartParams",
+      "detail": {
+        "line": 489,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadCompactStartResponse": {
+      "id": "exports::codex-client/src/types.ts::ThreadCompactStartResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadCompactStartResponse",
+      "detail": {
+        "line": 493,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadRollbackParams": {
+      "id": "exports::codex-client/src/types.ts::ThreadRollbackParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadRollbackParams",
+      "detail": {
+        "line": 495,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::ThreadRollbackResponse": {
+      "id": "exports::codex-client/src/types.ts::ThreadRollbackResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ThreadRollbackResponse",
+      "detail": {
+        "line": 500,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::DynamicToolCallParams": {
+      "id": "exports::codex-client/src/types.ts::DynamicToolCallParams",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: DynamicToolCallParams",
+      "detail": {
+        "line": 504,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::DynamicToolCallOutputContentItem": {
+      "id": "exports::codex-client/src/types.ts::DynamicToolCallOutputContentItem",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: DynamicToolCallOutputContentItem",
+      "detail": {
+        "line": 512,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::DynamicToolCallResponse": {
+      "id": "exports::codex-client/src/types.ts::DynamicToolCallResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: DynamicToolCallResponse",
+      "detail": {
+        "line": 516,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::CodexServerRequest": {
+      "id": "exports::codex-client/src/types.ts::CodexServerRequest",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: CodexServerRequest",
+      "detail": {
+        "line": 521,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::CodexServerNotification": {
+      "id": "exports::codex-client/src/types.ts::CodexServerNotification",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: CodexServerNotification",
+      "detail": {
+        "line": 528,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::codex-client/src/types.ts::CodexRpcResponse": {
+      "id": "exports::codex-client/src/types.ts::CodexRpcResponse",
+      "detector": "exports",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: CodexRpcResponse",
+      "detail": {
+        "line": 551,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "structural::codex-client/src/types.ts": {
+      "id": "structural::codex-client/src/types.ts",
+      "detector": "structural",
+      "file": "codex-client/src/types.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Needs decomposition: large (555 LOC) / complexity score 91",
+      "detail": {
+        "loc": 555,
+        "complexity_score": 91,
+        "complexity_signals": [
+          "94 inline types"
+        ]
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "structural::codex-client/src/client.ts": {
+      "id": "structural::codex-client/src/client.ts",
+      "detector": "structural",
+      "file": "codex-client/src/client.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Needs decomposition: complexity score 41",
+      "detail": {
+        "complexity_score": 41,
+        "complexity_signals": [
+          "destructure w/49 props"
+        ],
+        "loc": 369
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::codex-client/src/client.ts": {
+      "id": "orphaned::codex-client/src/client.ts",
+      "detector": "orphaned",
+      "file": "codex-client/src/client.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (369 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 369
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::codex-client/examples/events.ts": {
+      "id": "orphaned::codex-client/examples/events.ts",
+      "detector": "orphaned",
+      "file": "codex-client/examples/events.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (17 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 17
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::codex-client/examples/error-handling.ts": {
+      "id": "orphaned::codex-client/examples/error-handling.ts",
+      "detector": "orphaned",
+      "file": "codex-client/examples/error-handling.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (16 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 16
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "facade::codex-client/src/index.ts": {
+      "id": "facade::codex-client/src/index.ts",
+      "detector": "facade",
+      "file": "codex-client/src/index.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Re-export facade (2 LOC): imports from ./types.js, ./client.js (0 importers)",
+      "detail": {
+        "loc": 2,
+        "importers": 0,
+        "imports_from": [
+          "./types.js",
+          "./client.js"
+        ],
+        "kind": "file"
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::codex-client/src/client.ts::untested_critical": {
+      "id": "test_coverage::codex-client/src/client.ts::untested_critical",
+      "detector": "test_coverage",
+      "file": "codex-client/src/client.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Untested critical module (369 LOC, 0 importers) \u2014 high blast radius",
+      "detail": {
+        "kind": "untested_critical",
+        "loc": 369,
+        "importer_count": 0,
+        "loc_weight": 19.209372712298546,
+        "complexity_score": 41
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::codex-client/examples/error-handling.ts::untested_module": {
+      "id": "test_coverage::codex-client/examples/error-handling.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "codex-client/examples/error-handling.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (16 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 16,
+        "importer_count": 0,
+        "loc_weight": 4.0
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::codex-client/src/types.ts::untested_critical": {
+      "id": "test_coverage::codex-client/src/types.ts::untested_critical",
+      "detector": "test_coverage",
+      "file": "codex-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Untested critical module (555 LOC, 0 importers) \u2014 high blast radius",
+      "detail": {
+        "kind": "untested_critical",
+        "loc": 555,
+        "importer_count": 0,
+        "loc_weight": 23.558437978779494,
+        "complexity_score": 91
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::codex-client/examples/events.ts::untested_module": {
+      "id": "test_coverage::codex-client/examples/events.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "codex-client/examples/events.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (17 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 17,
+        "importer_count": 0,
+        "loc_weight": 4.123105625617661
+      },
+      "status": "wontfix",
+      "note": "Codex client is a public npm library; dead-export/importer heuristics are expected in-package and do not indicate unreachable public API.",
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": "2026-02-16T23:12:55+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::codex-client/src/client.ts::any_type": {
+      "id": "smells::codex-client/src/client.ts::any_type",
+      "detector": "smells",
+      "file": "codex-client/src/client.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "6x Explicit `any` types",
+      "detail": {
+        "smell_id": "any_type",
+        "severity": "medium",
+        "count": 6,
+        "lines": [
+          67,
+          159,
+          200,
+          207,
+          220,
+          224
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::codex-client/src/types.ts::any_type": {
+      "id": "smells::codex-client/src/types.ts::any_type",
+      "detector": "smells",
+      "file": "codex-client/src/types.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "19x Explicit `any` types",
+      "detail": {
+        "smell_id": "any_type",
+        "severity": "medium",
+        "count": 19,
+        "lines": [
+          52,
+          78,
+          79,
+          80,
+          95,
+          96,
+          143,
+          345,
+          422,
+          526
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::codex-client/examples/error-handling.ts::console_error_no_throw": {
+      "id": "smells::codex-client/examples/error-handling.ts::console_error_no_throw",
+      "detector": "smells",
+      "file": "codex-client/examples/error-handling.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "2x console.error without throw/return",
+      "detail": {
+        "smell_id": "console_error_no_throw",
+        "severity": "medium",
+        "count": 2,
+        "lines": [
+          6,
+          13
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::codex-client/examples/events.ts::console_error_no_throw": {
+      "id": "smells::codex-client/examples/events.ts::console_error_no_throw",
+      "detector": "smells",
+      "file": "codex-client/examples/events.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "1x console.error without throw/return",
+      "detail": {
+        "smell_id": "console_error_no_throw",
+        "severity": "medium",
+        "count": 1,
+        "lines": [
+          13
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::codex-client/examples/error-handling.ts::swallowed_error": {
+      "id": "smells::codex-client/examples/error-handling.ts::swallowed_error",
+      "detector": "smells",
+      "file": "codex-client/examples/error-handling.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "1x Catch blocks that only log (swallowed errors)",
+      "detail": {
+        "smell_id": "swallowed_error",
+        "severity": "medium",
+        "count": 1,
+        "lines": [
+          12
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "subjective_review::codex-client/src/client.ts::unreviewed": {
+      "id": "subjective_review::codex-client/src/client.ts::unreviewed",
+      "detector": "subjective_review",
+      "file": "codex-client/src/client.ts",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 369
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-02-16T23:12:22+00:00",
+      "last_seen": "2026-02-16T23:12:22+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/client.ts::GeminiClient": {
+      "id": "exports::gemini-client/src/client.ts::GeminiClient",
+      "detector": "exports",
+      "file": "gemini-client/src/client.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: GeminiClient",
+      "detail": {
+        "line": 49,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/sessions.ts::getGeminiChatsPath": {
+      "id": "exports::gemini-client/src/sessions.ts::getGeminiChatsPath",
+      "detector": "exports",
+      "file": "gemini-client/src/sessions.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: getGeminiChatsPath",
+      "detail": {
+        "line": 239,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::GeminiOutputFormat": {
+      "id": "exports::gemini-client/src/types.ts::GeminiOutputFormat",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: GeminiOutputFormat",
+      "detail": {
+        "line": 1,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::GeminiApprovalMode": {
+      "id": "exports::gemini-client/src/types.ts::GeminiApprovalMode",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: GeminiApprovalMode",
+      "detail": {
+        "line": 2,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::GeminiClientOptions": {
+      "id": "exports::gemini-client/src/types.ts::GeminiClientOptions",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: GeminiClientOptions",
+      "detail": {
+        "line": 4,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::GeminiRunOptions": {
+      "id": "exports::gemini-client/src/types.ts::GeminiRunOptions",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: GeminiRunOptions",
+      "detail": {
+        "line": 22,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::JsonStreamEventType": {
+      "id": "exports::gemini-client/src/types.ts::JsonStreamEventType",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: JsonStreamEventType",
+      "detail": {
+        "line": 36,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::BaseJsonStreamEvent": {
+      "id": "exports::gemini-client/src/types.ts::BaseJsonStreamEvent",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: BaseJsonStreamEvent",
+      "detail": {
+        "line": 45,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::InitEvent": {
+      "id": "exports::gemini-client/src/types.ts::InitEvent",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: InitEvent",
+      "detail": {
+        "line": 50,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::MessageEvent": {
+      "id": "exports::gemini-client/src/types.ts::MessageEvent",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: MessageEvent",
+      "detail": {
+        "line": 56,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::ToolUseEvent": {
+      "id": "exports::gemini-client/src/types.ts::ToolUseEvent",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ToolUseEvent",
+      "detail": {
+        "line": 63,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::ToolResultEvent": {
+      "id": "exports::gemini-client/src/types.ts::ToolResultEvent",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ToolResultEvent",
+      "detail": {
+        "line": 70,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::ErrorEvent": {
+      "id": "exports::gemini-client/src/types.ts::ErrorEvent",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ErrorEvent",
+      "detail": {
+        "line": 81,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::StreamStats": {
+      "id": "exports::gemini-client/src/types.ts::StreamStats",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: StreamStats",
+      "detail": {
+        "line": 87,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::ResultEvent": {
+      "id": "exports::gemini-client/src/types.ts::ResultEvent",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ResultEvent",
+      "detail": {
+        "line": 97,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::JsonStreamEvent": {
+      "id": "exports::gemini-client/src/types.ts::JsonStreamEvent",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: JsonStreamEvent",
+      "detail": {
+        "line": 107,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::GeminiRunResult": {
+      "id": "exports::gemini-client/src/types.ts::GeminiRunResult",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: GeminiRunResult",
+      "detail": {
+        "line": 115,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::GeminiSessionMessage": {
+      "id": "exports::gemini-client/src/types.ts::GeminiSessionMessage",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: GeminiSessionMessage",
+      "detail": {
+        "line": 131,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::GeminiSessionRecord": {
+      "id": "exports::gemini-client/src/types.ts::GeminiSessionRecord",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: GeminiSessionRecord",
+      "detail": {
+        "line": 139,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::GeminiSessionInfo": {
+      "id": "exports::gemini-client/src/types.ts::GeminiSessionInfo",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: GeminiSessionInfo",
+      "detail": {
+        "line": 148,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::GeminiSessionLocatorOptions": {
+      "id": "exports::gemini-client/src/types.ts::GeminiSessionLocatorOptions",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: GeminiSessionLocatorOptions",
+      "detail": {
+        "line": 162,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "exports::gemini-client/src/types.ts::ResolvedGeminiSession": {
+      "id": "exports::gemini-client/src/types.ts::ResolvedGeminiSession",
+      "detector": "exports",
+      "file": "gemini-client/src/types.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Dead export: ResolvedGeminiSession",
+      "detail": {
+        "line": 169,
+        "kind": null
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::gemini-client/src/client.ts": {
+      "id": "orphaned::gemini-client/src/client.ts",
+      "detector": "orphaned",
+      "file": "gemini-client/src/client.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (362 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 362
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::gemini-client/src/sessions.ts": {
+      "id": "orphaned::gemini-client/src/sessions.ts",
+      "detector": "orphaned",
+      "file": "gemini-client/src/sessions.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (241 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 241
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::gemini-client/examples/error-handling.ts": {
+      "id": "orphaned::gemini-client/examples/error-handling.ts",
+      "detector": "orphaned",
+      "file": "gemini-client/examples/error-handling.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (11 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 11
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "orphaned::gemini-client/examples/events.ts": {
+      "id": "orphaned::gemini-client/examples/events.ts",
+      "detector": "orphaned",
+      "file": "gemini-client/examples/events.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (10 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 10
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "facade::gemini-client/src/index.ts": {
+      "id": "facade::gemini-client/src/index.ts",
+      "detector": "facade",
+      "file": "gemini-client/src/index.ts",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Re-export facade (3 LOC): imports from ./types.js, ./sessions.js, ./client.js (0 importers)",
+      "detail": {
+        "loc": 3,
+        "importers": 0,
+        "imports_from": [
+          "./types.js",
+          "./sessions.js",
+          "./client.js"
+        ],
+        "kind": "file"
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::gemini-client/src/client.ts::untested_module": {
+      "id": "test_coverage::gemini-client/src/client.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "gemini-client/src/client.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (362 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 362,
+        "importer_count": 0,
+        "loc_weight": 19.026297590440446
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::gemini-client/src/sessions.ts::untested_module": {
+      "id": "test_coverage::gemini-client/src/sessions.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "gemini-client/src/sessions.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (241 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 241,
+        "importer_count": 0,
+        "loc_weight": 15.524174696260024
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::gemini-client/examples/error-handling.ts::untested_module": {
+      "id": "test_coverage::gemini-client/examples/error-handling.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "gemini-client/examples/error-handling.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (11 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 11,
+        "importer_count": 0,
+        "loc_weight": 3.3166247903554
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::gemini-client/examples/events.ts::untested_module": {
+      "id": "test_coverage::gemini-client/examples/events.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "gemini-client/examples/events.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (10 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 10,
+        "importer_count": 0,
+        "loc_weight": 3.1622776601683795
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "test_coverage::gemini-client/src/types.ts::untested_module": {
+      "id": "test_coverage::gemini-client/src/types.ts::untested_module",
+      "detector": "test_coverage",
+      "file": "gemini-client/src/types.ts",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (173 LOC, 0 importers)",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 173,
+        "importer_count": 0,
+        "loc_weight": 13.152946437965905
+      },
+      "status": "wontfix",
+      "note": "Gemini client modules are intentionally exported for external npm consumers; importer-based findings are expected for package boundaries.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:15+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::gemini-client/examples/error-handling.ts::console_error_no_throw": {
+      "id": "smells::gemini-client/examples/error-handling.ts::console_error_no_throw",
+      "detector": "smells",
+      "file": "gemini-client/examples/error-handling.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "1x console.error without throw/return",
+      "detail": {
+        "smell_id": "console_error_no_throw",
+        "severity": "medium",
+        "count": 1,
+        "lines": [
+          8
+        ]
+      },
+      "status": "wontfix",
+      "note": "These are acceptable for lightweight examples and dynamic session sorting; deeper style review is tracked separately from this extraction release.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:25+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::gemini-client/examples/events.ts::console_error_no_throw": {
+      "id": "smells::gemini-client/examples/events.ts::console_error_no_throw",
+      "detector": "smells",
+      "file": "gemini-client/examples/events.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "1x console.error without throw/return",
+      "detail": {
+        "smell_id": "console_error_no_throw",
+        "severity": "medium",
+        "count": 1,
+        "lines": [
+          8
+        ]
+      },
+      "status": "wontfix",
+      "note": "These are acceptable for lightweight examples and dynamic session sorting; deeper style review is tracked separately from this extraction release.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:25+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::gemini-client/examples/error-handling.ts::swallowed_error": {
+      "id": "smells::gemini-client/examples/error-handling.ts::swallowed_error",
+      "detector": "smells",
+      "file": "gemini-client/examples/error-handling.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "1x Catch blocks that only log (swallowed errors)",
+      "detail": {
+        "smell_id": "swallowed_error",
+        "severity": "medium",
+        "count": 1,
+        "lines": [
+          7
+        ]
+      },
+      "status": "wontfix",
+      "note": "These are acceptable for lightweight examples and dynamic session sorting; deeper style review is tracked separately from this extraction release.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:25+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "smells::gemini-client/src/sessions.ts::sort_no_comparator": {
+      "id": "smells::gemini-client/src/sessions.ts::sort_no_comparator",
+      "detector": "smells",
+      "file": "gemini-client/src/sessions.ts",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "1x .sort() without comparator function",
+      "detail": {
+        "smell_id": "sort_no_comparator",
+        "severity": "medium",
+        "count": 1,
+        "lines": [
+          130
+        ]
+      },
+      "status": "wontfix",
+      "note": "These are acceptable for lightweight examples and dynamic session sorting; deeper style review is tracked separately from this extraction release.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:25+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "subjective_review::gemini-client/src/client.ts::unreviewed": {
+      "id": "subjective_review::gemini-client/src/client.ts::unreviewed",
+      "detector": "subjective_review",
+      "file": "gemini-client/src/client.ts",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 362
+      },
+      "status": "wontfix",
+      "note": "These are acceptable for lightweight examples and dynamic session sorting; deeper style review is tracked separately from this extraction release.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:25+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    },
+    "subjective_review::gemini-client/src/sessions.ts::unreviewed": {
+      "id": "subjective_review::gemini-client/src/sessions.ts::unreviewed",
+      "detector": "subjective_review",
+      "file": "gemini-client/src/sessions.ts",
+      "tier": 4,
+      "confidence": "low",
+      "summary": "No design review on record \u2014 run `desloppify review --prepare`",
+      "detail": {
+        "reason": "unreviewed",
+        "loc": 241
+      },
+      "status": "wontfix",
+      "note": "These are acceptable for lightweight examples and dynamic session sorting; deeper style review is tracked separately from this extraction release.",
+      "first_seen": "2026-02-16T23:14:09+00:00",
+      "last_seen": "2026-02-16T23:14:09+00:00",
+      "resolved_at": "2026-02-16T23:14:25+00:00",
+      "reopen_count": 0,
+      "lang": "typescript",
+      "zone": "production"
+    }
+  },
+  "subjective_assessments": {},
+  "strict_score": 0.0,
+  "zone_distribution": {
+    "production": 7
+  },
+  "tool_hash": "cc350aa13365",
+  "potentials": {
+    "typescript": {
+      "logs": 7,
+      "unused": 7,
+      "exports": 23,
+      "deprecated": 0,
+      "structural": 7,
+      "flat_dirs": 2,
+      "props": 1,
+      "single_use": 0,
+      "coupling": 0,
+      "cycles": 6,
+      "orphaned": 6,
+      "patterns": 1,
+      "naming": 2,
+      "facade": 6,
+      "test_coverage": 54,
+      "smells": 7,
+      "react": 0,
+      "security": 7,
+      "subjective_review": 2,
+      "dupes": 13
+    }
+  },
+  "codebase_metrics": {
+    "typescript": {
+      "total_files": 7,
+      "total_loc": 808,
+      "total_directories": 2
+    }
+  },
+  "scan_completeness": {
+    "typescript": "full"
+  },
+  "scan_path": "gemini-client",
+  "dimension_scores": {
+    "File health": {
+      "score": 100.0,
+      "strict": 100.0,
+      "checks": 7,
+      "issues": 0,
+      "tier": 3,
+      "detectors": {
+        "structural": {
+          "potential": 7,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        }
+      }
+    },
+    "Code quality": {
+      "score": 100.0,
+      "strict": 54.5,
+      "checks": 62,
+      "issues": 0,
+      "tier": 3,
+      "detectors": {
+        "unused": {
+          "potential": 7,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        },
+        "logs": {
+          "potential": 7,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        },
+        "exports": {
+          "potential": 23,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        },
+        "props": {
+          "potential": 1,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        },
+        "smells": {
+          "potential": 7,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        },
+        "orphaned": {
+          "potential": 6,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        },
+        "flat_dirs": {
+          "potential": 2,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        },
+        "naming": {
+          "potential": 2,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        },
+        "facade": {
+          "potential": 6,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        },
+        "patterns": {
+          "potential": 1,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        }
+      }
+    },
+    "Duplication": {
+      "score": 100.0,
+      "strict": 100.0,
+      "checks": 13,
+      "issues": 0,
+      "tier": 3,
+      "detectors": {
+        "dupes": {
+          "potential": 13,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        }
+      }
+    },
+    "Test health": {
+      "score": 99.5,
+      "strict": 1.6,
+      "checks": 56,
+      "issues": 1,
+      "tier": 4,
+      "detectors": {
+        "test_coverage": {
+          "potential": 54,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        },
+        "subjective_review": {
+          "potential": 2,
+          "pass_rate": 0.85,
+          "issues": 1,
+          "weighted_failures": 0.3
+        }
+      }
+    },
+    "Security": {
+      "score": 100.0,
+      "strict": 100.0,
+      "checks": 13,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "security": {
+          "potential": 7,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        },
+        "cycles": {
+          "potential": 6,
+          "pass_rate": 1.0,
+          "issues": 0,
+          "weighted_failures": 0.0
+        }
+      }
+    },
+    "Naming Quality": {
+      "score": 0.0,
+      "strict": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0
+        }
+      }
+    },
+    "Error Consistency": {
+      "score": 0.0,
+      "strict": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0
+        }
+      }
+    },
+    "Abstraction Fit": {
+      "score": 0.0,
+      "strict": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0
+        }
+      }
+    },
+    "Logic Clarity": {
+      "score": 0.0,
+      "strict": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0
+        }
+      }
+    },
+    "AI Generated Debt": {
+      "score": 0.0,
+      "strict": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0
+        }
+      }
+    },
+    "Type Safety": {
+      "score": 0.0,
+      "strict": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0
+        }
+      }
+    },
+    "Contract Coherence": {
+      "score": 0.0,
+      "strict": 0.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.0,
+          "issues": 0,
+          "weighted_failures": 10.0
+        }
+      }
+    }
+  },
+  "objective_score": 74.8,
+  "objective_strict": 31.2,
+  "scan_history": [
+    {
+      "timestamp": "2026-02-16T23:08:47+00:00",
+      "lang": "typescript",
+      "objective_strict": 18.9,
+      "objective_score": 18.9,
+      "open": 91,
+      "diff_new": 91,
+      "diff_resolved": 0,
+      "dimension_scores": {
+        "File health": {
+          "score": 80.0,
+          "strict": 80.0
+        },
+        "Code quality": {
+          "score": 27.9,
+          "strict": 27.9
+        },
+        "Duplication": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Test health": {
+          "score": 3.5,
+          "strict": 3.5
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Naming Quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error Consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction Fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic Clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI Generated Debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type Safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contract Coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-02-16T23:10:31+00:00",
+      "lang": "typescript",
+      "objective_strict": 18.9,
+      "objective_score": 18.9,
+      "open": 90,
+      "diff_new": 0,
+      "diff_resolved": 1,
+      "dimension_scores": {
+        "File health": {
+          "score": 80.0,
+          "strict": 80.0
+        },
+        "Code quality": {
+          "score": 27.9,
+          "strict": 27.9
+        },
+        "Duplication": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Test health": {
+          "score": 3.4,
+          "strict": 3.4
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Naming Quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error Consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction Fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic Clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI Generated Debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type Safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contract Coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-02-16T23:12:22+00:00",
+      "lang": "typescript",
+      "objective_strict": 16.3,
+      "objective_score": 16.3,
+      "open": 113,
+      "diff_new": 112,
+      "diff_resolved": 0,
+      "dimension_scores": {
+        "File health": {
+          "score": 76.7,
+          "strict": 76.7
+        },
+        "Code quality": {
+          "score": 20.8,
+          "strict": 20.8
+        },
+        "Duplication": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Test health": {
+          "score": 1.0,
+          "strict": 1.0
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Naming Quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error Consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction Fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic Clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI Generated Debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type Safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contract Coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-02-16T23:14:09+00:00",
+      "lang": "typescript",
+      "objective_strict": 31.2,
+      "objective_score": 31.2,
+      "open": 39,
+      "diff_new": 38,
+      "diff_resolved": 0,
+      "dimension_scores": {
+        "File health": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Code quality": {
+          "score": 54.5,
+          "strict": 54.5
+        },
+        "Duplication": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Test health": {
+          "score": 1.6,
+          "strict": 1.6
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Naming Quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error Consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction Fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic Clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI Generated Debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type Safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contract Coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    }
+  ],
+  "reminder_history": {
+    "report_scores": 4,
+    "auto_fixers_available": 3,
+    "dry_run_first": 3,
+    "feedback_nudge": 3,
+    "stagnant_nudge": 9
+  }
+}

@@ -12,7 +12,7 @@ import { storage } from '../storage.js';
 import { createErrorEmbed, createApprovalDecisionEmbed } from '../utils/embeds.js';
 import { permissionStateStore, type PermissionRequest } from '../permissions/state-store.js';
 import { attemptPermissionReissue } from '../permissions/reissue.js';
-import { safeDeferUpdate, safeUpdate, safeEditReply } from './interaction-safety.js';
+import { safeUpdate, safeEditReply } from './interaction-safety.js';
 import { parseButtonId, type ParsedButtonId } from './button-utils.js';
 
 /**

@@ -9,19 +9,15 @@
  */
 
 import {
-    Client,
-    Guild,
-    CategoryChannel,
-    TextChannel,
-    VoiceChannel,
-    ChannelType,
-    PermissionFlagsBits,
-    OverwriteType,
-    EmbedBuilder,
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonStyle,
-    StringSelectMenuBuilder
+  Client,
+  TextChannel,
+  ChannelType,
+  PermissionFlagsBits,
+  OverwriteType,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } from 'discord.js';
 import { storage } from '../storage.js';
 import * as botState from '../state.js';

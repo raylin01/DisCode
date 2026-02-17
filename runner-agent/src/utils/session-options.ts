@@ -24,223 +24,162 @@ export interface NormalizedOptionsResult {
     warnings: string[];
 }
 
+// Validation schema types
+type Validator = (value: any, options: PluginOptions) => { valid: boolean; newValue?: any };
+type FieldConfig = { validator: Validator; errorMsg: string };
+
+function createPositiveNumberValidator(): Validator {
+    return (value) => {
+        const num = coerceNumber(value);
+        return { valid: num !== undefined && num > 0, newValue: num };
+    };
+}
+
+function createStringValidator(): Validator {
+    return (value) => ({ valid: typeof value === 'string' });
+}
+
+function createBooleanValidator(): Validator {
+    return (value) => ({ valid: typeof value === 'boolean' });
+}
+
+function createStringArrayValidator(): Validator {
+    return (value) => {
+        const arr = coerceStringArray(value);
+        return { valid: arr !== undefined, newValue: arr };
+    };
+}
+
+function createSetMemberValidator(allowed: Set<string>): Validator {
+    return (value) => ({ valid: allowed.has(value) });
+}
+
+// Field validation configuration
+const FIELD_CONFIGS: Record<string, FieldConfig> = {
+    thinkingLevel: { validator: createSetMemberValidator(THINKING_LEVELS), errorMsg: 'Invalid thinkingLevel "{value}".' },
+    permissionMode: { validator: createSetMemberValidator(PERMISSION_MODES), errorMsg: 'Invalid permissionMode "{value}".' },
+    maxTurns: { validator: createPositiveNumberValidator(), errorMsg: 'Invalid maxTurns; expected positive number.' },
+    maxBudgetUsd: { validator: createPositiveNumberValidator(), errorMsg: 'Invalid maxBudgetUsd; expected positive number.' },
+    maxThinkingTokens: { validator: createPositiveNumberValidator(), errorMsg: 'Invalid maxThinkingTokens; expected positive number.' },
+    model: { validator: createStringValidator(), errorMsg: 'Invalid model; expected string.' },
+    fallbackModel: { validator: createStringValidator(), errorMsg: 'Invalid fallbackModel; expected string.' },
+    agent: { validator: createStringValidator(), errorMsg: 'Invalid agent; expected string.' },
+    includePartialMessages: { validator: createBooleanValidator(), errorMsg: 'Invalid includePartialMessages; expected boolean.' },
+    permissionPromptTool: { validator: createBooleanValidator(), errorMsg: 'Invalid permissionPromptTool; expected boolean.' },
+    permissionPromptToolName: { validator: createStringValidator(), errorMsg: 'Invalid permissionPromptToolName; expected string.' },
+    allowDangerouslySkipPermissions: { validator: createBooleanValidator(), errorMsg: 'Invalid allowDangerouslySkipPermissions; expected boolean.' },
+    persistSession: { validator: createBooleanValidator(), errorMsg: 'Invalid persistSession; expected boolean.' },
+    resumeSessionId: { validator: createStringValidator(), errorMsg: 'Invalid resumeSessionId; expected string.' },
+    resumeSessionAt: { validator: createStringValidator(), errorMsg: 'Invalid resumeSessionAt; expected string.' },
+    forkSession: { validator: createBooleanValidator(), errorMsg: 'Invalid forkSession; expected boolean.' },
+    betas: { validator: createStringArrayValidator(), errorMsg: 'Invalid betas; expected string array.' },
+    allowedTools: { validator: createStringArrayValidator(), errorMsg: 'Invalid allowedTools; expected string array.' },
+    disallowedTools: { validator: createStringArrayValidator(), errorMsg: 'Invalid disallowedTools; expected string array.' },
+    settingSources: { validator: createStringArrayValidator(), errorMsg: 'Invalid settingSources; expected string array.' },
+    additionalDirectories: { validator: createStringArrayValidator(), errorMsg: 'Invalid additionalDirectories; expected string array.' },
+    executableArgs: { validator: createStringArrayValidator(), errorMsg: 'Invalid executableArgs; expected string array.' },
+    strictMcpConfig: { validator: createBooleanValidator(), errorMsg: 'Invalid strictMcpConfig; expected boolean.' },
+    enableFileCheckpointing: { validator: createBooleanValidator(), errorMsg: 'Invalid enableFileCheckpointing; expected boolean.' },
+    executable: { validator: createStringValidator(), errorMsg: 'Invalid executable; expected string.' },
+    sandbox: { validator: createStringValidator(), errorMsg: 'Invalid sandbox; expected string.' },
+};
+
+// Special validators that need custom logic
+function validateTools(value: any): { valid: boolean; newValue?: any } {
+    if (value === 'default') return { valid: true };
+    if (Array.isArray(value)) {
+        return { valid: true, newValue: value.map((v: any) => String(v)).filter(Boolean) };
+    }
+    return { valid: false };
+}
+
+function validateMcpServers(value: any): { valid: boolean } {
+    return { valid: typeof value === 'object' && value !== null && !Array.isArray(value) };
+}
+
+function validatePlugins(value: any): { valid: boolean } {
+    if (!Array.isArray(value)) return { valid: false };
+    return { valid: value.every(p => p && p.type === 'local' && typeof p.path === 'string') };
+}
+
+function validateJsonSchema(value: any): { valid: boolean } {
+    const t = typeof value;
+    return { valid: t === 'string' || t === 'object' };
+}
+
+function validateExtraArgs(value: any): { valid: boolean } {
+    return { valid: typeof value === 'object' && value !== null && !Array.isArray(value) };
+}
+
 export function normalizeClaudeOptions(input: PluginOptions | undefined): NormalizedOptionsResult {
     const options: PluginOptions = { ...(input || {}) };
     const warnings: string[] = [];
 
-    if (options.thinkingLevel && !THINKING_LEVELS.has(options.thinkingLevel)) {
-        warnings.push(`Invalid thinkingLevel "${options.thinkingLevel}".`);
-        delete options.thinkingLevel;
-    }
+    // Validate standard fields using schema
+    for (const [field, config] of Object.entries(FIELD_CONFIGS)) {
+        if (options[field as keyof PluginOptions] === undefined) continue;
 
-    if (options.permissionMode && !PERMISSION_MODES.has(options.permissionMode)) {
-        warnings.push(`Invalid permissionMode "${options.permissionMode}".`);
-        delete options.permissionMode;
-    }
+        const value = options[field as keyof PluginOptions];
+        const result = config.validator(value, options);
 
-    const maxTurns = coerceNumber(options.maxTurns);
-    if (options.maxTurns !== undefined) {
-        if (!maxTurns || maxTurns <= 0) {
-            warnings.push('Invalid maxTurns; expected positive number.');
-            delete options.maxTurns;
-        } else {
-            options.maxTurns = Math.floor(maxTurns);
+        if (!result.valid) {
+            warnings.push(config.errorMsg.replace('{value}', String(value)));
+            delete options[field as keyof PluginOptions];
+        } else if (result.newValue !== undefined) {
+            (options as any)[field] = result.newValue;
         }
     }
 
-    const maxBudgetUsd = coerceNumber(options.maxBudgetUsd);
-    if (options.maxBudgetUsd !== undefined) {
-        if (!maxBudgetUsd || maxBudgetUsd <= 0) {
-            warnings.push('Invalid maxBudgetUsd; expected positive number.');
-            delete options.maxBudgetUsd;
-        } else {
-            options.maxBudgetUsd = maxBudgetUsd;
-        }
+    // Integer coercion for specific fields
+    if (typeof options.maxTurns === 'number') {
+        options.maxTurns = Math.floor(options.maxTurns);
+    }
+    if (typeof options.maxThinkingTokens === 'number') {
+        options.maxThinkingTokens = Math.floor(options.maxThinkingTokens);
     }
 
-    const maxThinkingTokens = coerceNumber(options.maxThinkingTokens);
-    if (options.maxThinkingTokens !== undefined) {
-        if (!maxThinkingTokens || maxThinkingTokens <= 0) {
-            warnings.push('Invalid maxThinkingTokens; expected positive number.');
-            delete options.maxThinkingTokens;
-        } else {
-            options.maxThinkingTokens = Math.floor(maxThinkingTokens);
-        }
-    }
-
-    if (options.model && typeof options.model !== 'string') {
-        warnings.push('Invalid model; expected string.');
-        delete options.model;
-    }
-
-    if (options.fallbackModel && typeof options.fallbackModel !== 'string') {
-        warnings.push('Invalid fallbackModel; expected string.');
-        delete options.fallbackModel;
-    }
-
+    // Cross-field validation
     if (options.model && options.fallbackModel && options.model === options.fallbackModel) {
         warnings.push('fallbackModel cannot match model.');
         delete options.fallbackModel;
     }
 
-    if (options.agent && typeof options.agent !== 'string') {
-        warnings.push('Invalid agent; expected string.');
-        delete options.agent;
-    }
-
-    if (options.includePartialMessages !== undefined && typeof options.includePartialMessages !== 'boolean') {
-        warnings.push('Invalid includePartialMessages; expected boolean.');
-        delete options.includePartialMessages;
-    }
-
-    if (options.permissionPromptTool !== undefined && typeof options.permissionPromptTool !== 'boolean') {
-        warnings.push('Invalid permissionPromptTool; expected boolean.');
-        delete options.permissionPromptTool;
-    }
-
-    if (options.permissionPromptToolName !== undefined && typeof options.permissionPromptToolName !== 'string') {
-        warnings.push('Invalid permissionPromptToolName; expected string.');
-        delete options.permissionPromptToolName;
-    }
-
-    if (options.allowDangerouslySkipPermissions !== undefined && typeof options.allowDangerouslySkipPermissions !== 'boolean') {
-        warnings.push('Invalid allowDangerouslySkipPermissions; expected boolean.');
-        delete options.allowDangerouslySkipPermissions;
-    }
-
-    if (options.persistSession !== undefined && typeof options.persistSession !== 'boolean') {
-        warnings.push('Invalid persistSession; expected boolean.');
-        delete options.persistSession;
-    }
-
-    if (options.resumeSessionId !== undefined && typeof options.resumeSessionId !== 'string') {
-        warnings.push('Invalid resumeSessionId; expected string.');
-        delete options.resumeSessionId;
-    }
-
-    if (options.resumeSessionAt !== undefined && typeof options.resumeSessionAt !== 'string') {
-        warnings.push('Invalid resumeSessionAt; expected string.');
-        delete options.resumeSessionAt;
-    }
-
-    if (options.forkSession !== undefined && typeof options.forkSession !== 'boolean') {
-        warnings.push('Invalid forkSession; expected boolean.');
-        delete options.forkSession;
-    }
-
-    if (options.betas !== undefined) {
-        const betas = coerceStringArray(options.betas);
-        if (!betas) {
-            warnings.push('Invalid betas; expected string array.');
-            delete options.betas;
-        } else {
-            options.betas = betas;
-        }
-    }
-
-    if (options.allowedTools !== undefined) {
-        const allowed = coerceStringArray(options.allowedTools);
-        if (!allowed) {
-            warnings.push('Invalid allowedTools; expected string array.');
-            delete options.allowedTools;
-        } else {
-            options.allowedTools = allowed;
-        }
-    }
-
-    if (options.disallowedTools !== undefined) {
-        const disallowed = coerceStringArray(options.disallowedTools);
-        if (!disallowed) {
-            warnings.push('Invalid disallowedTools; expected string array.');
-            delete options.disallowedTools;
-        } else {
-            options.disallowedTools = disallowed;
-        }
-    }
-
+    // Special field validations
     if (options.tools !== undefined) {
-        if (options.tools === 'default') {
-            // ok
-        } else if (Array.isArray(options.tools)) {
-            options.tools = options.tools.map(v => String(v)).filter(Boolean);
-        } else {
+        const result = validateTools(options.tools);
+        if (!result.valid) {
             warnings.push('Invalid tools; expected string array or "default".');
             delete options.tools;
+        } else if (result.newValue !== undefined) {
+            options.tools = result.newValue;
         }
     }
 
-    if (options.mcpServers !== undefined && (typeof options.mcpServers !== 'object' || Array.isArray(options.mcpServers))) {
-        warnings.push('Invalid mcpServers; expected object.');
-        delete options.mcpServers;
-    }
-
-    if (options.strictMcpConfig !== undefined && typeof options.strictMcpConfig !== 'boolean') {
-        warnings.push('Invalid strictMcpConfig; expected boolean.');
-        delete options.strictMcpConfig;
-    }
-
-    if (options.settingSources !== undefined) {
-        const sources = coerceStringArray(options.settingSources);
-        if (!sources) {
-            warnings.push('Invalid settingSources; expected string array.');
-            delete options.settingSources;
-        } else {
-            options.settingSources = sources;
-        }
-    }
-
-    if (options.additionalDirectories !== undefined) {
-        const dirs = coerceStringArray(options.additionalDirectories);
-        if (!dirs) {
-            warnings.push('Invalid additionalDirectories; expected string array.');
-            delete options.additionalDirectories;
-        } else {
-            options.additionalDirectories = dirs;
+    if (options.mcpServers !== undefined) {
+        if (!validateMcpServers(options.mcpServers).valid) {
+            warnings.push('Invalid mcpServers; expected object.');
+            delete options.mcpServers;
         }
     }
 
     if (options.plugins !== undefined) {
-        if (!Array.isArray(options.plugins) || options.plugins.some(p => !p || p.type !== 'local' || typeof p.path !== 'string')) {
+        if (!validatePlugins(options.plugins).valid) {
             warnings.push('Invalid plugins; expected array of { type: "local", path: string }.');
             delete options.plugins;
         }
     }
 
     if (options.jsonSchema !== undefined) {
-        const schemaType = typeof options.jsonSchema;
-        if (schemaType !== 'string' && schemaType !== 'object') {
+        if (!validateJsonSchema(options.jsonSchema).valid) {
             warnings.push('Invalid jsonSchema; expected string or object.');
             delete options.jsonSchema;
         }
     }
 
-    if (options.extraArgs !== undefined && (typeof options.extraArgs !== 'object' || Array.isArray(options.extraArgs))) {
-        warnings.push('Invalid extraArgs; expected object.');
-        delete options.extraArgs;
-    }
-
-    if (options.sandbox !== undefined && typeof options.sandbox !== 'string') {
-        warnings.push('Invalid sandbox; expected string.');
-        delete options.sandbox;
-    }
-
-    if (options.enableFileCheckpointing !== undefined && typeof options.enableFileCheckpointing !== 'boolean') {
-        warnings.push('Invalid enableFileCheckpointing; expected boolean.');
-        delete options.enableFileCheckpointing;
-    }
-
-    if (options.executable !== undefined && typeof options.executable !== 'string') {
-        warnings.push('Invalid executable; expected string.');
-        delete options.executable;
-    }
-
-    if (options.executableArgs !== undefined) {
-        const args = coerceStringArray(options.executableArgs);
-        if (!args) {
-            warnings.push('Invalid executableArgs; expected string array.');
-            delete options.executableArgs;
-        } else {
-            options.executableArgs = args;
+    if (options.extraArgs !== undefined) {
+        if (!validateExtraArgs(options.extraArgs).valid) {
+            warnings.push('Invalid extraArgs; expected object.');
+            delete options.extraArgs;
         }
     }
 

@@ -18,9 +18,6 @@ import {
     createErrorEmbed,
 } from '../utils/embeds.js';
 import { buildSessionStartOptions } from '../utils/session-options.js';
-import {
-    getOrCreateRunnerChannel,
-} from '../utils/channels.js';
 import { getCategoryManager } from '../services/category-manager.js';
 import { getSessionSyncService } from '../services/session-sync.js';
 import { clearAttachApprovalFallback } from '../services/synced-session-control.js';

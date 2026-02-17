@@ -9,7 +9,7 @@
  */
 
 import type { CliParser, ParsedApproval, ParsedMetadata } from './index.js';
-import { Suggestion, PermissionScope, ApprovalOption } from '../base.js';
+import { ApprovalOption } from '../base.js';
 
 // ============================================================================
 // Detection Functions
