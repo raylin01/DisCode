@@ -2430,7 +2430,7 @@ async function handlePermissionDecisionAck(data: any): Promise<void> {
 
     if (success) {
         // Update UI to show confirmed success
-        const embed = createConfirmedSuccessEmbed(pending.toolName, pending.userId || 'Unknown', pending.scope);
+        const embed = createConfirmedSuccessEmbed(pending.toolName, pending.username || pending.userId || 'Unknown', pending.scope);
 
         const resultButton = new ButtonBuilder()
             .setCustomId(`result_${requestId}`)

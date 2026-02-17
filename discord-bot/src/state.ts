@@ -109,6 +109,7 @@ export interface PendingPermissionConfirmation {
     requestId: string;
     interaction: any;
     userId: string;
+    username: string;
     toolName: string;
     behavior: 'allow' | 'deny';
     scope?: string;

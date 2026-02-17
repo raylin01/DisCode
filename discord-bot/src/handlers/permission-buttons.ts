@@ -193,6 +193,7 @@ async function handlePermApprove(interaction: any, userId: string, requestId: st
         requestId,
         interaction,
         userId,
+        username: interaction.user.username,
         toolName: request.toolName,
         behavior: 'allow',
         timeout
@@ -292,6 +293,7 @@ async function handlePermAlways(interaction: any, userId: string, requestId: str
         requestId,
         interaction,
         userId,
+        username: interaction.user.username,
         toolName: request.toolName,
         behavior: 'allow',
         scope: uiState.scopeLabel,
@@ -387,6 +389,7 @@ async function handlePermDeny(interaction: any, userId: string, requestId: strin
         requestId,
         interaction,
         userId,
+        username: interaction.user.username,
         toolName: request.toolName,
         behavior: 'deny',
         timeout
