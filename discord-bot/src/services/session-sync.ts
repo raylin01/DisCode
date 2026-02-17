@@ -1,9 +1,16 @@
 /**
  * Session Sync Service
- * 
+ *
  * Syncs CLI sessions (Claude/Codex/Gemini) between local clients and Discord.
  * Delegation to runner agent: The runner agent handles direct file system access and watcher pushes.
  * The bot acts as a client, requesting sync data via WebSocket and receiving pushed events.
+ *
+ * Architecture:
+ * - sync-types.ts: Shared type definitions
+ * - sync-state.ts: State management (runner states, session tracking, deduplication)
+ * - sync-queue.ts: Message queue and batching for thread sends
+ * - message-normalizer.ts: Message transformation from various CLI formats
+ * - session-sync.ts: Main orchestrator (this file) - public API and coordination
  */
 
 import { Client, TextChannel, ThreadChannel, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
@@ -16,56 +23,30 @@ import {
     createToolUseEmbed,
 } from '../utils/embeds.js';
 
-// ============================================================================
-// Types
-// ============================================================================
+// Re-export types from sync-types for backward compatibility
+export type {
+    SyncedCliType,
+    SyncedSession,
+    RunnerSyncState,
+    ProjectSyncState,
+    ProjectSyncStatus,
+    RunnerSyncStatus,
+    NormalizedMessage,
+} from './sync-types.js';
 
-type SyncedCliType = 'claude' | 'codex' | 'gemini';
+import type {
+    SyncedCliType,
+    SyncedSession,
+    RunnerSyncState,
+    ProjectSyncState,
+    ProjectSyncStatus,
+    RunnerSyncStatus,
+} from './sync-types.js';
 
-export interface SyncedSession {
-    sessionId: string;
-    externalSessionId: string;  // Session/thread ID from upstream CLI
-    cliType: SyncedCliType;
-    syncFormatVersion?: number;
-    projectPath: string;
-    threadId?: string;
-    firstPrompt: string;
-    status: 'running' | 'input_needed' | 'idle' | 'error';
-    pendingAction?: {
-        type: 'permission' | 'question';
-        description: string;
-    };
-    lastSyncedAt: Date;
-    messageCount: number;
-}
-
-export interface RunnerSyncState {
-    runnerId: string;
-    projects: Map<string, ProjectSyncState>;  // projectPath -> state
-}
-
-export interface ProjectSyncState {
-    projectPath: string;
-    channelId: string;
-    sessions: Map<string, SyncedSession>;  // `${cliType}:${sessionId}` -> session
-    lastSync: Date;
-}
-
-export interface ProjectSyncStatus {
-    projectPath: string;
-    state: 'idle' | 'syncing' | 'complete' | 'error';
-    lastSyncAt?: Date;
-    lastError?: string;
-    sessionCount?: number;
-}
-
-export interface RunnerSyncStatus {
-    runnerId: string;
-    state: 'idle' | 'syncing' | 'error';
-    lastSyncAt?: Date;
-    lastError?: string;
-    projects: Map<string, ProjectSyncStatus>;
-}
+// Import helper modules
+import { SyncStateManager } from './sync-state.js';
+import { SyncQueueManager } from './sync-queue.js';
+import { MessageNormalizer } from './message-normalizer.js';
 
 // ============================================================================
 // Session Sync Service
@@ -73,16 +54,13 @@ export interface RunnerSyncStatus {
 
 export class SessionSyncService extends EventEmitter {
     private client: Client;
-    private runnerStates = new Map<string, RunnerSyncState>();
-    private ownedSessions = new Set<string>(); // Sessions created/controlled by Discord
-    private runnerSyncStatus = new Map<string, RunnerSyncStatus>();
-    private pendingSyncStatusRequests = new Map<string, { resolve: (status: RunnerSyncStatus | null) => void; timeout: NodeJS.Timeout }>();
-    private pendingProjectSyncRequests = new Map<string, { runnerId: string; attempts: number; timeout: NodeJS.Timeout }>();
-    private pendingSessionSyncRequests = new Map<string, { runnerId: string; projectPath: string; attempts: number; timeout: NodeJS.Timeout }>();
-    private messageDedup = new Map<string, Set<string>>();
-    private readonly maxDedupEntries = 5000;
-    private threadSendQueues = new Map<string, Promise<void>>();
-    private readonly threadSendDelayMs = parseInt(process.env.DISCODE_THREAD_SEND_DELAY_MS || '350');
+
+    // Helper modules
+    private stateManager: SyncStateManager;
+    private queueManager: SyncQueueManager;
+    private messageNormalizer: MessageNormalizer;
+
+    // Configuration
     private readonly maxSyncMessages = parseInt(process.env.DISCODE_SYNC_MAX_MESSAGES || '200');
     private readonly syncRetryDelayMs = parseInt(process.env.DISCODE_SYNC_RETRY_MS || '15000');
     private readonly maxSyncRetries = parseInt(process.env.DISCODE_SYNC_MAX_RETRIES || '2');
@@ -90,24 +68,31 @@ export class SessionSyncService extends EventEmitter {
     constructor(client: Client) {
         super();
         this.client = client;
+
+        // Initialize helper modules
+        this.stateManager = new SyncStateManager({
+            maxDedupEntries: 5000
+        });
+        this.queueManager = new SyncQueueManager({
+            threadSendDelayMs: parseInt(process.env.DISCODE_THREAD_SEND_DELAY_MS || '350')
+        });
+        this.messageNormalizer = new MessageNormalizer();
     }
 
+    // ============================================================================
+    // State Accessors (delegate to state manager)
+    // ============================================================================
+
     private normalizeProjectPath(projectPath: string): string {
-        if (!projectPath || typeof projectPath !== 'string') return projectPath;
-        const trimmed = projectPath.trim();
-        if (!trimmed) return trimmed;
-        const stripped = trimmed.replace(/[\\/]+$/, '');
-        return stripped.length > 0 ? stripped : trimmed;
+        return this.stateManager.normalizeProjectPath(projectPath);
     }
 
     private toSessionKey(sessionId: string, cliType: SyncedCliType = 'claude'): string {
-        return `${cliType}:${sessionId}`;
+        return this.stateManager.toSessionKey(sessionId, cliType);
     }
 
     private resolveSyncedCliType(raw: any): SyncedCliType {
-        if (raw?.cliType === 'codex') return 'codex';
-        if (raw?.cliType === 'gemini') return 'gemini';
-        return 'claude';
+        return this.stateManager.resolveSyncedCliType(raw);
     }
 
     private resolvePersistedSessionRecord(
@@ -115,29 +100,11 @@ export class SessionSyncService extends EventEmitter {
         sessionId: string,
         cliType: SyncedCliType
     ): { key: string; data: { threadId: string; projectPath: string; lastSync?: string; cliType?: 'claude' | 'codex' | 'gemini' } } | null {
-        if (!sessionsRecord) return null;
-        const preferredKey = this.toSessionKey(sessionId, cliType);
-        const preferred = sessionsRecord[preferredKey];
-        if (preferred) return { key: preferredKey, data: preferred };
-
-        // Backward compatibility for pre-cliType persisted keys.
-        const legacy = sessionsRecord[sessionId];
-        if (legacy) return { key: sessionId, data: legacy };
-
-        return null;
+        return this.stateManager.resolvePersistedSessionRecord(sessionsRecord, sessionId, cliType);
     }
 
     private ensureRunnerSyncStatus(runnerId: string): RunnerSyncStatus {
-        const existing = this.runnerSyncStatus.get(runnerId);
-        if (existing) return existing;
-
-        const created: RunnerSyncStatus = {
-            runnerId,
-            state: 'idle',
-            projects: new Map()
-        };
-        this.runnerSyncStatus.set(runnerId, created);
-        return created;
+        return this.stateManager.ensureRunnerSyncStatus(runnerId);
     }
 
     requestSyncStatus(runnerId: string, timeoutMs: number = 5000): Promise<RunnerSyncStatus | null> {
@@ -150,11 +117,11 @@ export class SessionSyncService extends EventEmitter {
 
         return new Promise((resolve) => {
             const timeout = setTimeout(() => {
-                this.pendingSyncStatusRequests.delete(requestId);
+                this.stateManager.deletePendingSyncStatusRequest(requestId);
                 resolve(null);
             }, timeoutMs);
 
-            this.pendingSyncStatusRequests.set(requestId, { resolve, timeout });
+            this.stateManager.setPendingSyncStatusRequest(requestId, { resolve, timeout });
 
             ws.send(JSON.stringify({
                 type: 'sync_status_request',
@@ -180,10 +147,10 @@ export class SessionSyncService extends EventEmitter {
             });
         }
 
-        const pending = this.pendingSyncStatusRequests.get(data.requestId);
+        const pending = this.stateManager.getPendingSyncStatusRequest(data.requestId);
         if (pending) {
             clearTimeout(pending.timeout);
-            this.pendingSyncStatusRequests.delete(data.requestId);
+            this.stateManager.deletePendingSyncStatusRequest(data.requestId);
             pending.resolve(status);
         }
     }
@@ -200,10 +167,10 @@ export class SessionSyncService extends EventEmitter {
         status.lastError = data.error;
         status.lastSyncAt = data.completedAt ? new Date(data.completedAt) : new Date();
         if (data.requestId) {
-            const pending = this.pendingProjectSyncRequests.get(data.requestId);
+            const pending = this.stateManager.getPendingProjectSyncRequest(data.requestId);
             if (pending) {
                 clearTimeout(pending.timeout);
-                this.pendingProjectSyncRequests.delete(data.requestId);
+                this.stateManager.deletePendingProjectSyncRequest(data.requestId);
             }
         }
     }
@@ -223,10 +190,10 @@ export class SessionSyncService extends EventEmitter {
 
         status.projects.set(normalizedProjectPath, projectStatus);
         if (data.requestId) {
-            const pending = this.pendingSessionSyncRequests.get(data.requestId);
+            const pending = this.stateManager.getPendingSessionSyncRequest(data.requestId);
             if (pending) {
                 clearTimeout(pending.timeout);
-                this.pendingSessionSyncRequests.delete(data.requestId);
+                this.stateManager.deletePendingSessionSyncRequest(data.requestId);
             }
         }
     }
@@ -235,17 +202,12 @@ export class SessionSyncService extends EventEmitter {
      * Restore state and initialize syncing for a runner
      */
     async startSyncingRunner(runnerId: string): Promise<void> {
-        if (this.runnerStates.has(runnerId)) {
+        if (this.stateManager.hasRunnerState(runnerId)) {
             console.log(`[SessionSync] Already syncing runner: ${runnerId}`);
             return;
         }
 
-        const state: RunnerSyncState = {
-            runnerId,
-            projects: new Map()
-        };
-
-        this.runnerStates.set(runnerId, state);
+        const state = this.stateManager.createRunnerState(runnerId);
         console.log(`[SessionSync] Started syncing runner: ${runnerId}`);
 
         // Initialize state for known projects from storage
@@ -306,10 +268,10 @@ export class SessionSyncService extends EventEmitter {
 
     private async ensureProjectState(runnerId: string, projectPath: string): Promise<ProjectSyncState | null> {
         const normalizedProjectPath = this.normalizeProjectPath(projectPath);
-        let state = this.runnerStates.get(runnerId);
+        let state = this.stateManager.getRunnerState(runnerId);
         if (!state) {
             await this.startSyncingRunner(runnerId);
-            state = this.runnerStates.get(runnerId);
+            state = this.stateManager.getRunnerState(runnerId);
         }
 
         if (!state) return null;
@@ -344,9 +306,8 @@ export class SessionSyncService extends EventEmitter {
      * Stop syncing for a runner
      */
     stopSyncingRunner(runnerId: string): void {
-        const state = this.runnerStates.get(runnerId);
-        if (state) {
-            this.runnerStates.delete(runnerId);
+        if (this.stateManager.hasRunnerState(runnerId)) {
+            this.stateManager.deleteRunnerState(runnerId);
             console.log(`[SessionSync] Stopped syncing runner: ${runnerId}`);
         }
     }
@@ -368,7 +329,7 @@ export class SessionSyncService extends EventEmitter {
             data: { runnerId, requestId }
         }));
         const timeout = setTimeout(() => this.retrySyncProjects(requestId), this.syncRetryDelayMs);
-        this.pendingProjectSyncRequests.set(requestId, { runnerId, attempts: 1, timeout });
+        this.stateManager.setPendingProjectSyncRequest(requestId, { runnerId, attempts: 1, timeout });
         return requestId;
     }
 
@@ -377,15 +338,12 @@ export class SessionSyncService extends EventEmitter {
      */
     async handleProjectSyncResponse(runnerId: string, projects: { path: string; lastModified: string; sessionCount: number }[]): Promise<void> {
         console.log(`[SessionSync] Received ${projects.length} projects from runner ${runnerId}`);
-        for (const [requestId, pending] of this.pendingProjectSyncRequests.entries()) {
-            if (pending.runnerId === runnerId) {
-                clearTimeout(pending.timeout);
-                this.pendingProjectSyncRequests.delete(requestId);
-            }
+        for (const [requestId, pending] of this.stateManager.findPendingProjectSyncRequestsByRunner(runnerId)) {
+            clearTimeout(pending.timeout);
+            this.stateManager.deletePendingProjectSyncRequest(requestId);
         }
-        
-        const state = this.runnerStates.get(runnerId);
-        if (!state) {
+
+        if (!this.stateManager.hasRunnerState(runnerId)) {
             await this.startSyncingRunner(runnerId);
         }
         for (const project of projects) {
@@ -412,7 +370,7 @@ export class SessionSyncService extends EventEmitter {
             data: { runnerId, projectPath: normalizedProjectPath, requestId }
         }));
         const timeout = setTimeout(() => this.retrySyncSessions(requestId), this.syncRetryDelayMs);
-        this.pendingSessionSyncRequests.set(requestId, { runnerId, projectPath: normalizedProjectPath, attempts: 1, timeout });
+        this.stateManager.setPendingSessionSyncRequest(requestId, { runnerId, projectPath: normalizedProjectPath, attempts: 1, timeout });
         return requestId;
     }
 
@@ -420,20 +378,18 @@ export class SessionSyncService extends EventEmitter {
      * Handle sessions sync response from runner
      */
     async handleSyncSessionsResponse(
-        runnerId: string, 
-        projectPath: string, 
+        runnerId: string,
+        projectPath: string,
         sessions: any[],
         syncFormatVersion?: number
     ): Promise<void> {
         const normalizedProjectPath = this.normalizeProjectPath(projectPath);
         console.log(`[SessionSync] Received ${sessions.length} sessions for ${normalizedProjectPath}`);
-        for (const [requestId, pending] of this.pendingSessionSyncRequests.entries()) {
-            if (pending.runnerId === runnerId && this.normalizeProjectPath(pending.projectPath) === normalizedProjectPath) {
-                clearTimeout(pending.timeout);
-                this.pendingSessionSyncRequests.delete(requestId);
-            }
+        for (const [requestId, pending] of this.stateManager.findPendingSessionSyncRequestsByProject(runnerId, normalizedProjectPath)) {
+            clearTimeout(pending.timeout);
+            this.stateManager.deletePendingSessionSyncRequest(requestId);
         }
-        
+
         const projectState = await this.ensureProjectState(runnerId, normalizedProjectPath);
         if (!projectState) return;
 
@@ -441,10 +397,10 @@ export class SessionSyncService extends EventEmitter {
             const session = sessions[index];
             const cliType = this.resolveSyncedCliType(session);
             const sessionKey = this.toSessionKey(session.sessionId, cliType);
-            if (this.ownedSessions.has(sessionKey)) continue;
+            if (this.stateManager.isSessionOwned(session.sessionId, cliType)) continue;
             const localSession = storage.getSession(session.sessionId);
             if (localSession && localSession.runnerId === runnerId && localSession.status === 'active') {
-                this.markSessionAsOwned(session.sessionId, cliType);
+                this.stateManager.markSessionAsOwned(session.sessionId, cliType);
                 console.log(`[SessionSync] Skipping synced session ${sessionKey}; already active in Discord storage.`);
                 continue;
             }
@@ -475,14 +431,14 @@ export class SessionSyncService extends EventEmitter {
         const normalizedProjectPath = this.normalizeProjectPath(projectPath);
         const cliType = this.resolveSyncedCliType(session);
         const sessionKey = this.toSessionKey(session.sessionId, cliType);
-        const state = this.runnerStates.get(runnerId);
+        const state = this.stateManager.getRunnerState(runnerId);
         if (!state) return;
 
         const projectState = state.projects.get(normalizedProjectPath);
         if (!projectState) return;
 
         const existingSync = projectState.sessions.get(sessionKey);
-        
+
         if (!existingSync) {
             await this.createSessionThread(
                 runnerId,
@@ -507,22 +463,22 @@ export class SessionSyncService extends EventEmitter {
         const sessionKey = this.toSessionKey(session.sessionId, cliType);
 
         // Check lock
-        if (this.sessionCreationLocks.has(sessionKey)) {
+        if (this.stateManager.hasSessionCreationLock(sessionKey)) {
             console.log(`[SessionSync] createSessionThread: waiting for lock on ${sessionKey}`);
-            await this.sessionCreationLocks.get(sessionKey);
-            
+            await this.stateManager.getSessionCreationLock(sessionKey);
+
             // Lock released - check if we need to sync messages
             if (messages && messages.length > 0) {
                  console.log(`[SessionSync] createSessionThread: Lock released. Attempting to sync ${messages.length} messages to existing session.`);
-                 
-                 const state = this.runnerStates.get(runnerId);
+
+                 const state = this.stateManager.getRunnerState(runnerId);
                  const projectState = state?.projects.get(normalizedProjectPath);
                  const existingSync = projectState?.sessions.get(sessionKey);
-                 
+
                  if (existingSync) {
                       const currentCount = existingSync.messageCount || 0;
                       if (messages.length > currentCount) {
-                          const trulyNew = this.filterNewMessages(sessionKey, messages.slice(currentCount));
+                          const trulyNew = this.stateManager.filterNewMessages(sessionKey, messages.slice(currentCount));
                           console.log(`[SessionSync] Handing off ${trulyNew.length} messages to syncNewMessages`);
                           await this.syncNewMessages(runnerId, normalizedProjectPath, { ...session, cliType }, existingSync, trulyNew);
                       }
@@ -534,7 +490,7 @@ export class SessionSyncService extends EventEmitter {
         }
 
         const task = (async () => {
-            const state = this.runnerStates.get(runnerId);
+            const state = this.stateManager.getRunnerState(runnerId);
             if (!state) {
                 console.error(`[SessionSync] No runner state for ${runnerId}`);
                 return;
@@ -552,11 +508,11 @@ export class SessionSyncService extends EventEmitter {
                 if (!channel) throw new Error('Channel is null');
             } catch (error: any) {
                 console.error(`[SessionSync] Error fetching channel ${projectState.channelId}:`, error);
-                
+
                 // Attempt recovery for missing channel
                 if (error.code === 10003 || error.status === 404 || error.message === 'Unknown Channel' || error.message === 'Channel is null') {
                      console.log(`[SessionSync] Channel ${projectState.channelId} missing/invalid. Attempting recreation...`);
-                     
+
                      const cm = getCategoryManager();
                      if (cm) {
                         const newChannelId = await cm.ensureProjectChannel(runnerId, normalizedProjectPath);
@@ -600,9 +556,9 @@ export class SessionSyncService extends EventEmitter {
             }
 
             if (!thread) {
-                const threadName = this.generateThreadName(session.firstPrompt);
+                const threadName = this.stateManager.generateThreadName(session.firstPrompt);
                 let archiveDuration = 1440;
-                
+
                 if (runner?.config?.threadArchiveDays) {
                     const days = runner.config.threadArchiveDays;
                     if (days >= 7) archiveDuration = 10080;
@@ -614,17 +570,17 @@ export class SessionSyncService extends EventEmitter {
                     console.log(`[SessionSync] Creating new thread '${threadName}' in channel ${channel.id}`);
                     thread = await channel.threads.create({
                         name: threadName,
-                        autoArchiveDuration: archiveDuration as any, 
+                        autoArchiveDuration: archiveDuration as any,
                         reason: `${cliType.toUpperCase()} session: ${session.sessionId}`
                     });
                 } catch (e) {
                      console.error('[SessionSync] Failed to create thread:', e);
                      return;
                 }
-                    
+
                 if (thread) {
                     const embed = new EmbedBuilder()
-                        .setTitle('📋 Session Synced from VS Code')
+                        .setTitle('Session Synced from VS Code')
                         .setDescription(`This ${cliType.toUpperCase()} session was synced to Discord.`)
                         .addFields(
                             { name: 'Session ID', value: `\`${session.sessionId.slice(0, 8)}\``, inline: true },
@@ -666,7 +622,7 @@ export class SessionSyncService extends EventEmitter {
 
             if (thread) {
                 if (messages && messages.length > 0) {
-                    const uniqueMessages = this.filterNewMessages(sessionKey, messages);
+                    const uniqueMessages = this.stateManager.filterNewMessages(sessionKey, messages);
                     console.log(`[SessionSync] createSessionThread: Posting ${uniqueMessages.length} initial messages to thread ${thread.id}`);
                     await this.postSessionMessages(runnerId, thread, uniqueMessages, session.syncFormatVersion);
                 } else {
@@ -709,14 +665,14 @@ export class SessionSyncService extends EventEmitter {
             }
         })(); // End task
 
-        this.sessionCreationLocks.set(sessionKey, task);
-        
+        this.stateManager.setSessionCreationLock(sessionKey, task);
+
         try {
             await task;
         } catch (e) {
             console.error(`[SessionSync] Unhandled error in createSessionThread task for ${sessionKey}:`, e);
         } finally {
-            this.sessionCreationLocks.delete(sessionKey);
+            this.stateManager.deleteSessionCreationLock(sessionKey);
         }
     }
 
@@ -730,11 +686,11 @@ export class SessionSyncService extends EventEmitter {
         console.log(`[SessionSync] Session discovered on runner ${runnerId}: ${sessionKey}`);
         const localSession = storage.getSession(session.sessionId);
         if (localSession && localSession.runnerId === runnerId && localSession.status === 'active') {
-            this.markSessionAsOwned(session.sessionId, cliType);
+            this.stateManager.markSessionAsOwned(session.sessionId, cliType);
             console.log(`[SessionSync] Skipping discovered session ${sessionKey}; already active in Discord storage.`);
             return;
         }
-        if (this.ownedSessions.has(sessionKey)) return;
+        if (this.stateManager.isSessionOwned(session.sessionId, cliType)) return;
         await this.ensureProjectState(runnerId, projectPath);
         await this.syncSessionToDiscord(
             runnerId,
@@ -745,8 +701,6 @@ export class SessionSyncService extends EventEmitter {
         this.emit('session_new', { runnerId, entry: session });
     }
 
-    private sessionCreationLocks = new Map<string, Promise<void>>();
-
     /**
      * Handle pushed session update from runner
      */
@@ -755,13 +709,13 @@ export class SessionSyncService extends EventEmitter {
         const sessionKey = this.toSessionKey(data.session.sessionId, cliType);
         const projectPath = this.normalizeProjectPath(data.session.projectPath);
         console.log(`[SessionSync] Handle Session Update: ${sessionKey} | Msgs: ${data.newMessages?.length}`);
-        
-        if (this.ownedSessions.has(sessionKey)) {
+
+        if (this.stateManager.isSessionOwned(sessionKey.split(':')[1] || sessionKey, cliType)) {
             console.log(`[SessionSync] Skipping owned session ${sessionKey}`);
             return;
         }
 
-        const state = this.runnerStates.get(runnerId);
+        const state = this.stateManager.getRunnerState(runnerId);
         if (!state) {
             console.log(`[SessionSync] No runner state for ${runnerId}`);
             return;
@@ -780,20 +734,20 @@ export class SessionSyncService extends EventEmitter {
         }
 
         // Check for creation lock
-        if (this.sessionCreationLocks.has(sessionKey)) {
+        if (this.stateManager.hasSessionCreationLock(sessionKey)) {
             console.log(`[SessionSync] Waiting for creation lock on ${sessionKey}`);
-            await this.sessionCreationLocks.get(sessionKey);
+            await this.stateManager.getSessionCreationLock(sessionKey);
         }
 
         const existingSync = projectState.sessions.get(sessionKey);
         if (existingSync) {
             const allMessages = data.newMessages;
             const currentCount = existingSync.messageCount;
-            
+
             console.log(`[SessionSync] Existing Sync found. Current: ${currentCount}, New Total: ${allMessages.length}`);
 
             if (allMessages.length > currentCount) {
-                const trulyNewMessages = this.filterNewMessages(sessionKey, allMessages.slice(currentCount));
+                const trulyNewMessages = this.stateManager.filterNewMessages(sessionKey, allMessages.slice(currentCount));
                 console.log(`[SessionSync] Syncing ${trulyNewMessages.length} truly new messages`);
                 await this.syncNewMessages(
                     runnerId,
@@ -834,7 +788,7 @@ export class SessionSyncService extends EventEmitter {
 
         try {
             const sessionKey = this.toSessionKey(session.sessionId, existingSync.cliType);
-            const uniqueMessages = this.filterNewMessages(sessionKey, newMessages);
+            const uniqueMessages = this.stateManager.filterNewMessages(sessionKey, newMessages);
             if (uniqueMessages.length === 0) return;
 
             const thread = await this.client.channels.fetch(existingSync.threadId) as ThreadChannel;
@@ -851,7 +805,7 @@ export class SessionSyncService extends EventEmitter {
                     uniqueMessages,
                     session.syncFormatVersion ?? existingSync.syncFormatVersion
                 );
-                
+
                 existingSync.lastSyncedAt = new Date();
                 existingSync.messageCount = session.messageCount;
 
@@ -880,56 +834,17 @@ export class SessionSyncService extends EventEmitter {
         }
     }
 
-    private filterNewMessages(sessionId: string, messages: any[]): any[] {
-        if (!messages || messages.length === 0) return [];
-        const key = sessionId;
-        let set = this.messageDedup.get(key);
-        if (!set) {
-            set = new Set<string>();
-            this.messageDedup.set(key, set);
-        }
-        const result: any[] = [];
-        for (const [index, msg] of messages.entries()) {
-            const id = this.getMessageId(msg, index);
-            if (!id) {
-                result.push(msg);
-                continue;
-            }
-            if (!set.has(id)) {
-                set.add(id);
-                result.push(msg);
-            }
-        }
-        if (set.size > this.maxDedupEntries) {
-            const trimmed = new Set<string>(Array.from(set).slice(-this.maxDedupEntries));
-            this.messageDedup.set(key, trimmed);
-        }
-        return result;
-    }
-
-    private getMessageId(message: any, index: number): string | null {
-        if (!message) return null;
-        return (
-            message.uuid ||
-            message.id ||
-            message.message?.id ||
-            message.tool_use_id ||
-            message.toolUseId ||
-            `${index}:${JSON.stringify(message).slice(0, 120)}`
-        );
-    }
-
     private retrySyncProjects(requestId: string): void {
-        const pending = this.pendingProjectSyncRequests.get(requestId);
+        const pending = this.stateManager.getPendingProjectSyncRequest(requestId);
         if (!pending) return;
         if (pending.attempts >= this.maxSyncRetries) {
-            this.pendingProjectSyncRequests.delete(requestId);
+            this.stateManager.deletePendingProjectSyncRequest(requestId);
             console.warn(`[SessionSync] sync_projects timed out after ${pending.attempts} attempts`);
             return;
         }
         const ws = botState.runnerConnections.get(pending.runnerId);
         if (!ws) {
-            this.pendingProjectSyncRequests.delete(requestId);
+            this.stateManager.deletePendingProjectSyncRequest(requestId);
             return;
         }
         pending.attempts += 1;
@@ -941,16 +856,16 @@ export class SessionSyncService extends EventEmitter {
     }
 
     private retrySyncSessions(requestId: string): void {
-        const pending = this.pendingSessionSyncRequests.get(requestId);
+        const pending = this.stateManager.getPendingSessionSyncRequest(requestId);
         if (!pending) return;
         if (pending.attempts >= this.maxSyncRetries) {
-            this.pendingSessionSyncRequests.delete(requestId);
+            this.stateManager.deletePendingSessionSyncRequest(requestId);
             console.warn(`[SessionSync] sync_sessions timed out after ${pending.attempts} attempts`);
             return;
         }
         const ws = botState.runnerConnections.get(pending.runnerId);
         if (!ws) {
-            this.pendingSessionSyncRequests.delete(requestId);
+            this.stateManager.deletePendingSessionSyncRequest(requestId);
             return;
         }
         pending.attempts += 1;
@@ -959,109 +874,6 @@ export class SessionSyncService extends EventEmitter {
             data: { runnerId: pending.runnerId, projectPath: pending.projectPath, requestId }
         }));
         pending.timeout = setTimeout(() => this.retrySyncSessions(requestId), this.syncRetryDelayMs);
-    }
-
-    private resolveMessageRole(rawMessage: any, messageObject: any, contentSource?: any): 'user' | 'assistant' {
-        const roleCandidates = [
-            rawMessage?.role,
-            rawMessage?.type,
-            messageObject?.role,
-            messageObject?.type,
-            rawMessage?.message?.role,
-            contentSource?.role
-        ];
-
-        for (const candidate of roleCandidates) {
-            if (candidate === 'user') return 'user';
-            if (candidate === 'assistant' || candidate === 'gemini') return 'assistant';
-        }
-
-        return 'assistant';
-    }
-
-    private extractContentFromData(data: any): any | null {
-        if (data == null) return null;
-
-        if (typeof data === 'string') {
-            return data.trim() ? data : null;
-        }
-
-        if (Array.isArray(data)) {
-            return data.length > 0 ? data : null;
-        }
-
-        if (typeof data !== 'object') return null;
-
-        if (typeof data.type === 'string' && data.type.includes('progress')) return null;
-        if (typeof data.status === 'string' && typeof data.toolName === 'string') return null;
-
-        if (typeof data.content === 'string' || Array.isArray(data.content)) {
-            return data.content;
-        }
-
-        if (typeof data.text === 'string') {
-            return [{ type: 'text', text: data.text }];
-        }
-
-        if (Array.isArray(data.blocks)) {
-            return data.blocks;
-        }
-
-        if (typeof data.output === 'string') {
-            return data.output;
-        }
-
-        if (typeof data.message === 'string') {
-            return data.message;
-        }
-
-        return null;
-    }
-
-    private normalizeSyncedMessage(rawMessage: any): { role: 'user' | 'assistant'; content: any } | null {
-        if (!rawMessage) return null;
-
-        const messageObject = rawMessage.message || rawMessage;
-        const rawType = typeof rawMessage.type === 'string' ? rawMessage.type : '';
-        const objectType = typeof messageObject?.type === 'string' ? messageObject.type : '';
-
-        if (
-            rawType === 'queue-operation' ||
-            rawType === 'file-history-snapshot' ||
-            objectType === 'queue-operation' ||
-            objectType === 'file-history-snapshot' ||
-            rawType === 'progress' ||
-            objectType === 'progress' ||
-            rawMessage?.isSnapshotUpdate ||
-            rawMessage?.snapshot
-        ) {
-            return null;
-        }
-
-        let content = messageObject?.content;
-        if (content == null) {
-            content = this.extractContentFromData(rawMessage?.data ?? messageObject?.data);
-        }
-        if (content == null) {
-            content = this.extractContentFromData(rawMessage?.toolUseResult);
-        }
-
-        if (content == null) return null;
-        if (typeof content === 'string' && !content.trim()) return null;
-        if (Array.isArray(content) && content.length === 0) return null;
-
-        return {
-            role: this.resolveMessageRole(rawMessage, messageObject, rawMessage?.data),
-            content
-        };
-    }
-
-    private extractTextFromBlock(block: any): string | null {
-        if (!block) return null;
-        if (typeof block === 'string') return block.trim() ? block : null;
-        if (typeof block.text === 'string') return block.text.trim() ? block.text : null;
-        if (typeof block.content === 'string') return block.content.trim() ? block.content : null;
-        return null;
     }
 
     private buildAttachToApproveComponents(): ActionRowBuilder<ButtonBuilder>[] {
@@ -1076,15 +888,8 @@ export class SessionSyncService extends EventEmitter {
     private async sendAssistantTextEmbeds(thread: ThreadChannel, text: string): Promise<void> {
         const chunks = text.match(/[\s\S]{1,4000}/g) || [text];
         for (const chunk of chunks) {
-            await this.sendThreadMessage(thread, { embeds: [createOutputEmbed('stdout', chunk)] });
+            await this.queueManager.sendThreadMessage(thread, { embeds: [createOutputEmbed('stdout', chunk)] });
         }
-    }
-
-    private toolResultToText(block: any): string {
-        if (typeof block?.content === 'string') return block.content;
-        if (Array.isArray(block?.content)) return block.content.map((entry: any) => entry?.text || JSON.stringify(entry)).join('\n');
-        if (block?.content == null) return '';
-        return JSON.stringify(block.content);
     }
 
     /**
@@ -1101,9 +906,7 @@ export class SessionSyncService extends EventEmitter {
 
         if (!messages || messages.length === 0) return;
 
-        const normalizedMessages = messages
-            .map((msg) => this.normalizeSyncedMessage(msg))
-            .filter((msg): msg is { role: 'user' | 'assistant'; content: any } => msg !== null);
+        const normalizedMessages = this.messageNormalizer.normalizeMessages(messages);
 
         if (normalizedMessages.length === 0) {
             console.log(`[SessionSync] No displayable messages found. raw=${messages.length}`);
@@ -1112,10 +915,9 @@ export class SessionSyncService extends EventEmitter {
 
         let effectiveMessages = normalizedMessages;
         if (this.maxSyncMessages > 0 && normalizedMessages.length > this.maxSyncMessages) {
-            const skipped = normalizedMessages.length - this.maxSyncMessages;
             effectiveMessages = normalizedMessages.slice(-this.maxSyncMessages);
-            await this.sendThreadMessage(thread, {
-                content: `⚠️ Sync truncated: showing last ${this.maxSyncMessages} of ${normalizedMessages.length} displayable messages (raw records: ${messages.length}).`
+            await this.queueManager.sendThreadMessage(thread, {
+                content: `Sync truncated: showing last ${this.maxSyncMessages} of ${normalizedMessages.length} displayable messages (raw records: ${messages.length}).`
             });
         }
 
@@ -1133,7 +935,7 @@ export class SessionSyncService extends EventEmitter {
                     } else {
                         const chunks = content.match(/[\s\S]{1,1900}/g) || [content];
                         for (const chunk of chunks) {
-                            await this.sendThreadMessage(thread, { content: `**${roleLabel}:** ${chunk}` });
+                            await this.queueManager.sendThreadMessage(thread, { content: `**${roleLabel}:** ${chunk}` });
                         }
                     }
                 }
@@ -1150,7 +952,7 @@ export class SessionSyncService extends EventEmitter {
                     } else {
                         const chunks = contentText.match(/[\s\S]{1,1900}/g) || [contentText];
                         for (const chunk of chunks) {
-                            await this.sendThreadMessage(thread, { content: `**${roleLabel}:**\n${chunk}` });
+                            await this.queueManager.sendThreadMessage(thread, { content: `**${roleLabel}:**\n${chunk}` });
                         }
                     }
                 }
@@ -1160,14 +962,14 @@ export class SessionSyncService extends EventEmitter {
             if (Array.isArray(content)) {
                 for (const block of content) {
                     if (block?.type === 'text' || block?.type === 'input_text' || block?.type === 'output_text' || block?.type === 'inputText') {
-                        const text = this.extractTextFromBlock(block);
+                        const text = this.messageNormalizer.extractTextFromBlock(block);
                         if (text) {
                             if (isAssistant) {
                                 await this.sendAssistantTextEmbeds(thread, text);
                             } else {
                                 const chunks = text.match(/[\s\S]{1,1900}/g) || [text];
                                 for (const chunk of chunks) {
-                                    await this.sendThreadMessage(thread, { content: `**${roleLabel}:**\n${chunk}` });
+                                    await this.queueManager.sendThreadMessage(thread, { content: `**${roleLabel}:**\n${chunk}` });
                                 }
                             }
                         }
@@ -1176,7 +978,7 @@ export class SessionSyncService extends EventEmitter {
                          if (block?.thinking?.trim()) {
                             const chunks = block.thinking.match(/[\s\S]{1,4000}/g) || [block.thinking];
                             for (const chunk of chunks) {
-                                await this.sendThreadMessage(thread, { embeds: [createOutputEmbed('thinking', chunk)] });
+                                await this.queueManager.sendThreadMessage(thread, { embeds: [createOutputEmbed('thinking', chunk)] });
                             }
                         }
                     } else if (block?.type === 'plan') {
@@ -1187,15 +989,15 @@ export class SessionSyncService extends EventEmitter {
                         if (contentText) {
                             const parts = contentText.match(/[\s\S]{1,4000}/g) || [contentText];
                             for (const part of parts) {
-                                await this.sendThreadMessage(thread, { embeds: [createOutputEmbed('info', `Plan Update\n\n${part}`)] });
+                                await this.queueManager.sendThreadMessage(thread, { embeds: [createOutputEmbed('info', `Plan Update\n\n${part}`)] });
                             }
                         }
                     } else if (block?.type === 'tool_use' || block?.type === 'toolUse') {
                         const embed = createToolUseEmbed(runner, block.name, block.input);
-                        await this.sendThreadMessage(thread, { embeds: [embed] });
+                        await this.queueManager.sendThreadMessage(thread, { embeds: [embed] });
                     } else if (block?.type === 'tool_result' || block?.type === 'toolResult') {
                         // Keep tool result as embed but ensure it's clean
-                        const resultText = this.toolResultToText(block);
+                        const resultText = this.messageNormalizer.toolResultToText(block);
                         if (!resultText.trim()) continue;
 
                         const parts = resultText.match(/[\s\S]{1,4000}/g) || [resultText];
@@ -1204,7 +1006,7 @@ export class SessionSyncService extends EventEmitter {
                                 block.is_error ? 'error' : 'tool_result',
                                 parts[i] + (i < parts.length - 1 ? '\n...(continued)' : '')
                             );
-                            await this.sendThreadMessage(thread, { embeds: [embed] });
+                            await this.queueManager.sendThreadMessage(thread, { embeds: [embed] });
                         }
                     } else if (block?.type === 'approval_needed') {
                         if (syncFormatVersion !== 2) continue;
@@ -1221,19 +1023,19 @@ export class SessionSyncService extends EventEmitter {
                             embed.addFields({ name: 'Status', value: `\`${block.status}\``, inline: true });
                         }
 
-                        await this.sendThreadMessage(thread, {
+                        await this.queueManager.sendThreadMessage(thread, {
                             embeds: [embed],
                             components: this.buildAttachToApproveComponents()
                         });
                     } else {
-                        const text = this.extractTextFromBlock(block);
+                        const text = this.messageNormalizer.extractTextFromBlock(block);
                         if (!text) continue;
                         if (isAssistant) {
                             await this.sendAssistantTextEmbeds(thread, text);
                         } else {
                             const chunks = text.match(/[\s\S]{1,1900}/g) || [text];
                             for (const chunk of chunks) {
-                                await this.sendThreadMessage(thread, { content: `**${roleLabel}:**\n${chunk}` });
+                                await this.queueManager.sendThreadMessage(thread, { content: `**${roleLabel}:**\n${chunk}` });
                             }
                         }
                     }
@@ -1242,76 +1044,20 @@ export class SessionSyncService extends EventEmitter {
         }
     }
 
-    private async sendThreadMessage(thread: ThreadChannel, payload: any): Promise<void> {
-        await this.enqueueThreadSend(thread.id, async () => {
-            await thread.send(payload);
-            if (this.threadSendDelayMs > 0) {
-                await new Promise(resolve => setTimeout(resolve, this.threadSendDelayMs));
-            }
-        });
-    }
-
-    private enqueueThreadSend(threadId: string, task: () => Promise<void>): Promise<void> {
-        const prev = this.threadSendQueues.get(threadId) || Promise.resolve();
-        const next = prev
-            .then(task)
-            .catch((err) => console.error('[SessionSync] Thread send error:', err))
-            .finally(() => {
-                if (this.threadSendQueues.get(threadId) === next) {
-                    this.threadSendQueues.delete(threadId);
-                }
-            });
-
-        this.threadSendQueues.set(threadId, next);
-        return next;
-    }
-
-    private generateThreadName(prompt: string): string {
-        if (!prompt) return 'New Session';
-        const words = prompt.split(/\s+/).slice(0, 8).join(' ');
-        return words.length <= 50 ? words : words.slice(0, 47) + '...';
-    }
-
     markSessionAsOwned(sessionId: string, cliType: SyncedCliType = 'claude'): void {
-        this.ownedSessions.add(this.toSessionKey(sessionId, cliType));
+        this.stateManager.markSessionAsOwned(sessionId, cliType);
     }
 
     unmarkSessionOwnership(sessionId: string, cliType: SyncedCliType = 'claude'): void {
-        this.ownedSessions.delete(this.toSessionKey(sessionId, cliType));
+        this.stateManager.unmarkSessionOwnership(sessionId, cliType);
     }
 
     getProjectStats(runnerId: string, projectPath: string): ProjectStats {
-        const state = this.runnerStates.get(runnerId);
-        if (!state) return { totalSessions: 0, activeSessions: 0, pendingActions: 0 };
-
-        const projectState = state.projects.get(projectPath);
-        if (!projectState) return { totalSessions: 0, activeSessions: 0, pendingActions: 0 };
-
-        let activeSessions = 0;
-        let pendingActions = 0;
-        for (const session of projectState.sessions.values()) {
-            if (session.status === 'running') activeSessions++;
-            if (session.status === 'input_needed') pendingActions++;
-        }
-
-        return {
-            totalSessions: projectState.sessions.size,
-            activeSessions,
-            pendingActions
-        };
+        return this.stateManager.getProjectStats(runnerId, projectPath);
     }
 
     getSessionByThreadId(threadId: string): { runnerId: string; projectPath: string; session: SyncedSession } | null {
-        for (const [runnerId, state] of this.runnerStates) {
-            for (const [projectPath, projectState] of state.projects) {
-                for (const session of projectState.sessions.values()) {
-                    if (session.threadId === threadId) {
-                        return { runnerId, projectPath, session };
-                    }
-                }
-            }
-        }
-        return null;
+        return this.stateManager.getSessionByThreadId(threadId);
     }
 
     getSessionByExternalSessionId(
@@ -1319,18 +1065,7 @@ export class SessionSyncService extends EventEmitter {
         externalSessionId: string,
         cliType?: SyncedCliType
     ): { runnerId: string; projectPath: string; session: SyncedSession } | null {
-        const runnerState = this.runnerStates.get(runnerId);
-        if (!runnerState) return null;
-
-        for (const [projectPath, projectState] of runnerState.projects) {
-            for (const session of projectState.sessions.values()) {
-                if (session.externalSessionId !== externalSessionId) continue;
-                if (cliType && session.cliType !== cliType) continue;
-                return { runnerId, projectPath, session };
-            }
-        }
-
-        return null;
+        return this.stateManager.getSessionByExternalSessionId(runnerId, externalSessionId, cliType);
     }
 }
 

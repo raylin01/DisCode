@@ -1,6 +1,6 @@
 /**
  * Tmux Plugin for CLI Integration
- * 
+ *
  * Uses tmux to manage persistent CLI sessions.
  * Based on vibecraft's proven approach:
  * - Creates tmux session with Claude running inside
@@ -8,7 +8,7 @@
  * - Polls output via `tmux capture-pane`
  * - Detects permission prompts by parsing screen output
  * - Responds to prompts by sending keystroke numbers
- * 
+ *
  * HYBRID MODE:
  * - Also listens for 'hook_event' from PluginManager
  * - If a hook event is received, it uses that for permission detection (100% accurate)
@@ -18,14 +18,13 @@
 import { execFile, exec } from 'child_process';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
-import { EventEmitter } from 'events';
 import {
-  BasePlugin,
-  PluginSession,
-  SessionConfig,
-  SessionStatus,
-  HookEvent,
-  ApprovalOption
+    BasePlugin,
+    PluginSession,
+    SessionConfig,
+    SessionStatus,
+    HookEvent,
+    ApprovalOption
 } from './base.js';
 import { getPluginManager } from './plugin-manager.js';
 import { getParser, type CliParser } from './parsers/index.js';
@@ -33,6 +32,20 @@ import { SkillManager } from '../utils/skill-manager.js';
 import { getConfig } from '../config.js';
 import { buildClaudeCliArgs } from '../utils/claude-cli-args.js';
 import { resolveClaudeCommand } from '../utils/claude-cli-command.js';
+
+// Import extracted modules
+import { TmuxSession } from './tmux-session.js';
+import {
+    capturePane,
+    detectPermissionPrompt,
+    detectBypassWarning,
+    parseTokensFromOutput,
+    parseActivity,
+    parseMode,
+    detectShellPrompt,
+    getNewContent
+} from './tmux-io.js';
+import { TmuxDiscovery } from './tmux-discovery.js';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -52,457 +65,11 @@ const EXEC_OPTIONS = {
 };
 
 // ============================================================================
-// TmuxSession
-// ============================================================================
-
-class TmuxSession extends EventEmitter implements PluginSession {
-    readonly sessionId: string;
-    readonly config: SessionConfig;
-    readonly createdAt: Date;
-
-
-    status: SessionStatus = 'idle';
-    lastActivity: Date;
-
-    // Readiness tracking
-    isReady: boolean = false;
-    private booting: boolean = true;
-
-    /** Internal tmux session name */
-    readonly tmuxPath: string;
-
-    /** Internal tmux session name */
-    readonly tmuxSession: string;
-    /** Current tool being used */
-    currentTool?: string;
-    /** Pending permission prompt */
-    pendingPermission?: {
-        tool: string;
-        context: string;
-        options: ApprovalOption[];
-        detectedAt: Date;
-    };
-    /** Whether bypass warning has been handled */
-    bypassWarningHandled = false;
-    /** Last captured output for diffing */
-    lastOutput = '';
-    /** Token tracking */
-    lastTokenCount = 0;
-    cumulativeTokens = 0;
-    /** Current mode (bypass, etc.) */
-    currentMode?: string;
-    /** Current activity (Thinking, Working, etc.) */
-    currentActivity?: string;
-
-    /** Last hook event timestamp (to debounce scraping) */
-    lastHookEvent = 0;
-
-    /** Whether this session is owned by us (true) or just watched (false) */
-    readonly isOwned: boolean;
-
-    /** Whether a command is currently running (for watched terminals) */
-    isCommandRunning: boolean = false;
-
-    constructor(config: SessionConfig, tmuxSession: string, tmuxPath: string, isOwned = true) {
-        super();
-        this.sessionId = config.sessionId;
-        this.config = config;
-        this.tmuxSession = tmuxSession;
-        this.tmuxPath = tmuxPath;
-        this.isOwned = isOwned;
-        this.createdAt = new Date();
-        this.lastActivity = new Date();
-
-        // If not owned (watched session), assume ready immediately
-        if (!isOwned) {
-            this.booting = false;
-            this.isReady = true;
-            this.status = 'idle';
-        }
-    }
-
-    async sendMessage(message: string): Promise<void> {
-        console.log(`[TmuxSession] Sending message to ${this.tmuxSession}: ${JSON.stringify(message)}`);
-        await sendToTmuxSafe(this.tmuxSession, message, this.tmuxPath);
-        this.lastActivity = new Date();
-        this.status = 'working';
-    }
-
-    async sendApproval(optionNumber: string, _message?: string, _requestId?: string): Promise<void> {
-        if (!/^\d+$/.test(optionNumber)) {
-            throw new Error(`Invalid approval option: ${optionNumber}`);
-        }
-        // Send number and Enter to ensure it's submitted
-        console.log(`[TmuxSession] Sending approval option ${optionNumber} to ${this.tmuxSession} using ${this.tmuxPath}`);
-        try {
-            // Send number first
-            await execFileAsync(this.tmuxPath, ['send-keys', '-t', this.tmuxSession, optionNumber], EXEC_OPTIONS);
-            // Short delay to ensure it registers? usually not needed but safety
-            // Then send Enter (using C-m is often safer than "Enter" keyword)
-            await execFileAsync(this.tmuxPath, ['send-keys', '-t', this.tmuxSession, 'C-m'], EXEC_OPTIONS);
-            console.log(`[TmuxSession] Approval sent successfully`);
-        } catch (e) {
-            console.error(`[TmuxSession] Failed to send approval:`, e);
-            throw e;
-        }
-        this.pendingPermission = undefined;
-        this.status = 'working';
-        this.lastActivity = new Date();
-    }
-
-    async close(): Promise<void> {
-        try {
-            await execFileAsync(this.tmuxPath, ['kill-session', '-t', this.tmuxSession], EXEC_OPTIONS);
-        } catch (e) {
-            // Session might already be dead
-        }
-        this.status = 'offline';
-        this.removeAllListeners();
-    }
-
-    /**
-     * Interrupt the current CLI execution by sending Ctrl+C
-     */
-    async interrupt(): Promise<void> {
-        console.log(`[TmuxSession] Sending interrupt (Ctrl+C) to ${this.tmuxSession}`);
-        try {
-            // Send Ctrl+C (C-c in tmux notation)
-            await execFileAsync(this.tmuxPath, ['send-keys', '-t', this.tmuxSession, 'C-c'], EXEC_OPTIONS);
-            console.log(`[TmuxSession] Interrupt sent successfully`);
-            this.status = 'idle';
-            this.lastActivity = new Date();
-        } catch (e) {
-            console.error(`[TmuxSession] Failed to send interrupt:`, e);
-            throw e;
-        }
-    }
-
-    // Internal method to mark as ready
-    setReady(): void {
-        if (!this.isReady) {
-            this.isReady = true;
-            this.booting = false;
-            this.emit('ready');
-        }
-    }
-
-    isBooting(): boolean {
-        return this.booting;
-    }
-}
-
-// ============================================================================
 // Helper Functions
 // ============================================================================
 
 function shortId(): string {
     return randomUUID().slice(0, 8);
-}
-
-function validateTmuxSession(name: string): void {
-    if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
-        throw new Error(`Invalid tmux session name: ${name}`);
-    }
-}
-
-/**
- * Safely send text to tmux session
- * Handles special characters and prevents injection
- */
-async function sendToTmuxSafe(tmuxSession: string, text: string, tmuxPath: string): Promise<void> {
-    validateTmuxSession(tmuxSession);
-
-    // Use send-keys with literal flag to prevent interpretation
-    // Split into chunks if very long
-    const MAX_CHUNK = 500;
-
-    for (let i = 0; i < text.length; i += MAX_CHUNK) {
-        const chunk = text.slice(i, i + MAX_CHUNK);
-        await execFileAsync(tmuxPath, ['send-keys', '-t', tmuxSession, '-l', chunk], EXEC_OPTIONS);
-    }
-
-    // Send Enter key
-    await execFileAsync(tmuxPath, ['send-keys', '-t', tmuxSession, 'Enter'], EXEC_OPTIONS);
-}
-
-/**
- * Capture tmux pane output
- */
-async function capturePane(tmuxSession: string, lines = 100, tmuxPath: string): Promise<string> {
-    validateTmuxSession(tmuxSession);
-    const { stdout } = await execFileAsync(
-        tmuxPath,
-        ['capture-pane', '-t', tmuxSession, '-p', '-S', `-${lines}`],
-        { ...EXEC_OPTIONS, maxBuffer: 1024 * 1024 }
-    );
-    return stdout as string;
-}
-
-/**
- * Detect permission prompt in tmux output
- * Based on vibecraft's detection logic
- * Also detects startup prompts like Settings Error that block session
- */
-function detectPermissionPrompt(output: string): { tool: string; context: string; options: ApprovalOption[] } | null {
-    const lines = output.split('\n');
-
-    // Look for various prompt patterns
-    let proceedLineIdx = -1;
-    let promptType: 'permission' | 'settings' | 'selector' = 'permission';
-
-    // Scan last 50 lines
-    for (let i = lines.length - 1; i >= Math.max(0, lines.length - 50); i--) {
-        // Standard permission prompts
-        if (/(Do you want|Would you like) to (proceed|make this edit)/i.test(lines[i])) {
-            proceedLineIdx = i;
-            promptType = 'permission';
-            break;
-        }
-        // Settings Error prompts
-        if (/Settings Error/i.test(lines[i])) {
-            proceedLineIdx = i;
-            promptType = 'settings';
-            break;
-        }
-    }
-
-    // If no explicit prompt found, look for selector pattern (❯ followed by numbered options)
-    if (proceedLineIdx === -1) {
-        for (let i = lines.length - 1; i >= Math.max(0, lines.length - 20); i--) {
-            if (/^\s*❯\s*\d+\./.test(lines[i])) {
-                // Found a selector, look back for context
-                proceedLineIdx = Math.max(0, i - 10);
-                promptType = 'selector';
-                break;
-            }
-        }
-    }
-
-    if (proceedLineIdx === -1) return null;
-
-    // Verify this is a real prompt by checking for footer or selector
-    let hasFooter = false;
-    let hasSelector = false;
-    for (let i = proceedLineIdx + 1; i < Math.min(lines.length, proceedLineIdx + 15); i++) {
-        if (/Esc to cancel|ctrl-g to edit/i.test(lines[i])) {
-            hasFooter = true;
-            break;
-        }
-        if (/^\s*❯/.test(lines[i])) {
-            hasSelector = true;
-        }
-    }
-
-    // For settings/selector prompts, we don't require footer verification
-    if (!hasFooter && !hasSelector && promptType === 'permission') return null;
-
-    // Parse numbered options
-    const options: ApprovalOption[] = [];
-    const searchStart = promptType === 'selector' ? Math.max(0, proceedLineIdx) : proceedLineIdx + 1;
-    for (let i = searchStart; i < Math.min(lines.length, searchStart + 15); i++) {
-        const line = lines[i];
-        if (/Esc to cancel/i.test(line)) break;
-
-        const optionMatch = line.match(/^\s*[❯>]?\s*(\d+)\.\s+(.+)$/);
-        if (optionMatch) {
-            options.push({
-                number: optionMatch[1],
-                label: optionMatch[2].trim()
-            });
-        }
-    }
-
-    // For selector prompts (like Settings Error), we may only have 1 option
-    if (options.length < 1) return null;
-    if (options.length < 2 && promptType === 'permission') return null;
-
-    // Find tool name based on prompt type
-    let tool = 'Unknown';
-
-    if (promptType === 'settings') {
-        tool = 'Settings';
-    } else if (promptType === 'selector') {
-        tool = 'Prompt';
-    } else {
-        // Standard permission prompt - look for tool indicators
-        for (let i = proceedLineIdx; i >= Math.max(0, proceedLineIdx - 20); i--) {
-            // Pattern for tool indicators: ● ◐ · ⏺
-            const toolMatch = lines[i].match(/[●◐·⏺]\s*(\w+)\s*\(/);
-            if (toolMatch) {
-                tool = toolMatch[1];
-                break;
-            }
-            // Pattern for "Edit file .env" style
-            const editMatch = lines[i].match(/^Edit file\s+(.+)$/i);
-            if (editMatch) {
-                tool = 'Edit';
-                break;
-            }
-            const cmdMatch = lines[i].match(/^\s*(Bash|Read|Write|Edit|Update|Grep|Glob|Task|WebFetch|WebSearch)\s+\w+/i);
-            if (cmdMatch) {
-                tool = cmdMatch[1];
-                break;
-            }
-        }
-    }
-
-    // Build context
-    const contextStart = Math.max(0, proceedLineIdx - 10);
-    const contextEnd = Math.min(lines.length, proceedLineIdx + 1 + options.length + 5);
-    const context = lines.slice(contextStart, contextEnd).join('\n').trim();
-
-    return { tool, context, options };
-}
-
-/**
- * Detect bypass permissions warning
- */
-function detectBypassWarning(output: string): boolean {
-    return output.includes('WARNING') && output.includes('Bypass Permissions mode');
-}
-
-/**
- * Clean ANSI codes from output
- */
-function cleanOutput(str: string): string {
-    return str
-        .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
-        .replace(/\x1b\[\?[0-9;]*[a-zA-Z]/g, '')
-        .replace(/[\x00-\x1F]/g, (c) => c === '\n' || c === '\r' ? c : '')
-        .replace(/warn: CPU lacks AVX support.*?\.zip\s*/gs, '')
-        // Remove shell prompts that appear before/after Claude
-        .replace(/^\(base\).*?\$.*$/gm, '') // Conda/bash prompts
-        .replace(/^The default interactive shell is now zsh\.$/gm, '')
-        .replace(/^To update your account to use zsh.*$/gm, '')
-        .replace(/^For more details.*HT\d+\.$/gm, '')
-        // Remove Claude Code UI noise - Aggressive cleanup
-        .replace(/^[─-]{3,}.*?$/gm, '') // Horizontal rules of any length
-        .replace(/^\s*[>❯]\s*$/gm, '') // Empty prompt lines
-        .replace(/.*?\? for shortcuts.*?$/gm, '') // Shortcut tips (match anywhere in line)
-        .replace(/.*?Tip:.*?$/gm, '') // Usage tips (match anywhere in line)
-        .replace(/bypass permissions on \(shift\+tab to cycle\)/gi, '')
-        .replace(/plan mode \(shift\+tab to cycle\)/gi, '')
-        .replace(/Type \/help to see available commands/gi, '')
-        .replace(/Claude Code/gi, '') // Welcome message part
-        .replace(/Welcome to Claude/gi, '') // Welcome message part
-        .replace(/Welcome back!/gi, '') // Welcome back message
-        .replace(/.*\/ide for Visual Studio Code.*/gi, '') // VS Code promotion
-        .replace(/.*\/model to try.*/gi, '') // Model promotion
-        .replace(/.*Tips for getting started.*/gi, '') // Tips header
-        .replace(/.*Run \/init to create a CLAUDE\.md.*/gi, '') // Init tip
-        .replace(/.*Note: You have launched claude in your.*/gi, '') // Launch note
-        .replace(/.*Recent activity.*/gi, '') // Recent activity header
-        .replace(/.*No recent activity.*/gi, '') // No recent activity
-        .replace(/.*API Usage Billing.*/gi, '') // Billing note
-        .replace(/.*Sonnet.*·.*/gi, '') // Model indicator line
-        .replace(/.*Opus.*·.*/gi, '') // Model indicator line
-        // Remove box drawing characters (welcome screen)
-        .replace(/[╭─╮│╯╰▀▄█▌▐▖▗▘▙▚▛▜▝▞▟]/g, '')
-        // Remove logo/art characters
-        .replace(/[▐▛▜▌▝▘]/g, '')
-        .replace(/\*\s*\*\s*\*/g, '') // Stars from logo
-        // Remove startup noise
-        .replace(/ide visual studio code/gi, '')
-        .replace(/starting up/gi, '')
-        .replace(/connected to .*? server/gi, '')
-        // Remove activity status lines (managed via metadata)
-        .replace(/[*✱✻]\s*[A-Za-z]+(?:…|\.\.\.)\s*(?:\(esc to interrupt\))?/gi, '')
-        .replace(/\r\n/g, '\n')
-        .replace(/\n{3,}/g, '\n\n') // Collapse excessive newlines
-        .trim();
-}
-
-/**
- * Parse token count from Claude Code output
- * Patterns: ↓ 879 tokens, ↓ 1,234 tokens, ↓ 12.5k tokens
- */
-function parseTokensFromOutput(output: string): number | null {
-    let maxTokens = 0;
-
-    // Pattern 1: plain numbers (possibly with commas) - ↓ 879 tokens, ↓ 1,234 tokens
-    const plainPattern = /↓\s*([0-9,]+)\s*tokens?/gi;
-    const plainMatches = output.matchAll(plainPattern);
-    for (const match of plainMatches) {
-        const num = parseInt(match[1].replace(/,/g, ''), 10);
-        if (num > maxTokens) maxTokens = num;
-    }
-
-    // Pattern 2: k suffix (thousands) - ↓ 12.5k tokens, ↓ 12k tokens
-    const kPattern = /↓\s*([0-9.]+)k\s*tokens?/gi;
-    const kMatches = output.matchAll(kPattern);
-    for (const match of kMatches) {
-        const num = Math.round(parseFloat(match[1]) * 1000);
-        if (num > maxTokens) maxTokens = num;
-    }
-
-    return maxTokens > 0 ? maxTokens : null;
-}
-
-/**
- * Parse current activity indicator from Claude Code output
- * Claude shows: * Thinking..., * Wrangling..., * Honking..., * Vibing..., etc.
- */
-function parseActivity(output: string): string | null {
-    // Match: * ActivityName... (esc to interrupt)
-    // Or: ✻ ActivityName... (esc to interrupt)
-    // Support both unicode ellipsis (…) and triple dots (...)
-    const activityPattern = /[*✱✻]\s*([A-Za-z]+)(?:…|\.\.\.)\s*(?:\(esc to interrupt\))?/gi;
-    const matches = [...output.matchAll(activityPattern)];
-
-    // Return the last activity found (most recent)
-    if (matches.length > 0) {
-        return matches[matches.length - 1][1];
-    }
-    return null;
-}
-/**
- * Parse current mode from Claude Code output
- * e.g., "⏵⏵ bypass permissions on (shift+tab to cycle)"
- */
-function parseMode(output: string): string | null {
-    // Bypass permissions mode
-    if (output.includes('bypass permissions on')) {
-        return 'bypass';
-    }
-    // Plan mode
-    if (output.includes('plan mode')) {
-        return 'plan';
-    }
-    return null;
-}
-
-/**
- * Detect if output ends with a shell prompt (terminal is idle/not running)
- * Returns true if a shell prompt is detected at the end of the output
- */
-function detectShellPrompt(output: string): boolean {
-    // Get last few non-empty lines
-    const lines = output.split('\n').filter(l => l.trim().length > 0);
-    if (lines.length === 0) return true; // Empty = probably idle
-
-    const lastLine = lines[lines.length - 1].trim();
-
-    // Common shell prompt patterns:
-    // Bash: "user@host:~$ " or "(base) MacBook-Pro-183:~ ray$"
-    // Zsh: "➜ ~" or "❯" or "%"
-    // Generic: ends with $ or # or % or > with optional space
-
-    // Pattern 1: Ends with common prompt characters
-    if (/[$#%>❯➜]\s*$/.test(lastLine)) {
-        return true;
-    }
-
-    // Pattern 2: Bash/conda style prompt (hostname:path user$)
-    if (/^(\([^)]+\)\s+)?\S+:\S*\s+\w+\$$/.test(lastLine)) {
-        return true;
-    }
-
-    // Pattern 3: Just a prompt symbol
-    if (/^[❯➜>%$#]\s*$/.test(lastLine)) {
-        return true;
-    }
-
-    return false;
 }
 
 // ============================================================================
@@ -519,10 +86,8 @@ export class TmuxPlugin extends BasePlugin {
 
     private tmuxPath = 'tmux'; // Default to just 'tmux', will be updated in initialize
 
-    // Polling for new sessions
-    private sessionDiscoveryInterval?: NodeJS.Timeout;
-    private discoveredSessions = new Set<string>();
-
+    // Session discovery
+    private discovery?: TmuxDiscovery;
 
     private skillManager?: SkillManager;
 
@@ -562,8 +127,11 @@ export class TmuxPlugin extends BasePlugin {
             }
         }
 
+        // Initialize discovery helper
+        this.discovery = new TmuxDiscovery(this.tmuxPath, (msg) => this.log(msg));
+
         // Cleanup orphaned sessions from previous runs
-        await this.cleanupOrphanedSessions();
+        await this.discovery.cleanupOrphanedSessions();
 
         // Start polling
         this.startPolling();
@@ -584,45 +152,22 @@ export class TmuxPlugin extends BasePlugin {
         });
     }
 
-    private async cleanupOrphanedSessions(): Promise<void> {
-        this.log('Checking for orphaned discode-* sessions...');
-        try {
-            const sessions = await this.listSessions();
-            let count = 0;
-            for (const session of sessions) {
-                if (session.startsWith('discode-')) {
-                    this.log(`Cleaning up orphaned session: ${session}`);
-                    try {
-                        await execFileAsync(this.tmuxPath, ['kill-session', '-t', session], EXEC_OPTIONS);
-                        count++;
-                    } catch (e) {
-                        // Ignore
-                    }
-                }
-            }
-            if (count > 0) {
-                this.log(`Cleaned up ${count} orphaned sessions.`);
-            } else {
-                this.log('No orphaned sessions found.');
-            }
-        } catch (e) {
-            // Ignore (e.g. no sessions)
-        }
-    }
-
     async shutdown(): Promise<void> {
         if (this.pollInterval) clearInterval(this.pollInterval);
         if (this.healthInterval) clearInterval(this.healthInterval);
-        if (this.sessionDiscoveryInterval) clearInterval(this.sessionDiscoveryInterval);
+        if (this.discovery) this.discovery.stopDiscovery();
         await super.shutdown();
     }
 
     async listSessions(): Promise<string[]> {
+        if (this.discovery) {
+            return this.discovery.listSessions();
+        }
+        // Fallback if discovery not initialized
         try {
             const { stdout } = await execFileAsync(this.tmuxPath, ['list-sessions', '-F', '#{session_name}']);
             return stdout.trim().split('\n').filter(s => s.length > 0);
         } catch (e) {
-            // If no sessions, tmux returns error code 1
             return [];
         }
     }
@@ -631,6 +176,10 @@ export class TmuxPlugin extends BasePlugin {
      * Get the current working directory of a tmux session
      */
     async getSessionCwd(sessionId: string): Promise<string | null> {
+        if (this.discovery) {
+            return this.discovery.getSessionCwd(sessionId);
+        }
+        // Fallback
         try {
             const { stdout } = await execFileAsync(
                 this.tmuxPath,
@@ -701,53 +250,20 @@ export class TmuxPlugin extends BasePlugin {
     }
 
     private startSessionDiscovery(): void {
-        this.sessionDiscoveryInterval = setInterval(async () => {
-            try {
-                const currentSessions = await this.listSessions();
+        if (!this.discovery) return;
 
-                for (const session of currentSessions) {
-                    // Ignore sessions we created/own (starts with discode-)
-                    // Actually, we might want to discover those too if we restarted?
-                    // For now, let's just emit everything we haven't seen yet
-
-                    if (!this.discoveredSessions.has(session)) {
-                        this.discoveredSessions.add(session);
-
-                        // Skip assistant sessions - they are managed separately by AssistantManager
-                        // Note: tmux session name is 'discode-' + first 8 chars of sessionId (which starts with 'assistant-')
-                        // After removing dashes and taking 8 chars, 'assistant-...' becomes 'assistan' (truncated)
-                        if (session.includes('assistan')) {
-                            this.log(`Skipping assistant session: ${session}`);
-                            continue;
-                        }
-
-                        // We want to discover discode- sessions if we restarted !
-                        // Only skip if we are already managing it
-                        if (this.sessions.has(session)) {
-                            continue;
-                        }
-
-                        // Don't emit for our own internal sessions if we just created them
-                        // But wait, the bot needs to know about them? 
-                        // The createSession flow handles owned sessions.
-                        // We only care about EXTERNAL sessions or sessions we don't know about.
-
-                        if (!this.sessions.has(session)) {
-                            // Get the cwd for the discovered session
-                            const cwd = await this.getSessionCwd(session);
-                            this.log(`Discovered new external session: ${session} (cwd: ${cwd || 'unknown'})`);
-                            this.emit('session_discovered', {
-                                sessionId: session,
-                                exists: true,
-                                cwd: cwd
-                            });
-                        }
-                    }
-                }
-            } catch (e) {
-                // Ignore errors (e.g. no sessions)
+        this.discovery.on('session_discovered', (info) => {
+            // Only emit if we're not already managing this session
+            if (!this.sessions.has(info.sessionId)) {
+                this.emit('session_discovered', info);
             }
-        }, 5000); // Check every 5 seconds
+        });
+
+        // Start discovery with skip check for sessions we already manage
+        this.discovery.startDiscovery(5000, (sessionName) => {
+            // Skip sessions we're already managing
+            return this.sessions.has(sessionName);
+        });
     }
 
     /**
@@ -840,7 +356,7 @@ export class TmuxPlugin extends BasePlugin {
             if (this.sessions.size > 0) {
                 // Log only if we have sessions to avoid spamming empty state
                 // actually, log specifically about watched sessions
-                const watched = Array.from(this.sessions.values()).filter(s => !s.isOwned);
+                const watched = Array.from(this.sessions.values()).filter(s => !(s as TmuxSession).isOwned);
                 if (watched.length > 0) {
                     this.log(`[DEBUG] Polling ${this.sessions.size} sessions (${watched.length} watched)...`);
                 }
@@ -850,7 +366,7 @@ export class TmuxPlugin extends BasePlugin {
                 if (session.status !== 'offline') {
                     this.pollSession(session as TmuxSession);
                 } else {
-                    if (!session.isOwned) this.log(`[DEBUG] Watched session ${session.sessionId} is OFFLINE, skipping poll`);
+                    if (!(session as TmuxSession).isOwned) this.log(`[DEBUG] Watched session ${session.sessionId} is OFFLINE, skipping poll`);
                 }
             }
         }, PERMISSION_POLL_INTERVAL);
@@ -942,7 +458,7 @@ export class TmuxPlugin extends BasePlugin {
             } else {
                 // Watched session: detect CLI type from output
                 const isClaudeSession = output.includes('Claude Code') ||
-                    output.includes('⏺') ||
+                    output.includes('\u23FA') ||
                     output.includes('Sonnet') ||
                     output.includes('Opus');
 
@@ -955,7 +471,7 @@ export class TmuxPlugin extends BasePlugin {
 
                 // DEBUG LOGGING
                 if (!session.isOwned) {
-                    const diff = this.getNewContent(session.lastOutput, cleaned, false);
+                    const diff = getNewContent(session.lastOutput, cleaned, false);
                     if (diff) {
                         this.log(`[DEBUG] Watched session ${session.sessionId}: Found new content (${diff.length} chars)`);
                     } else if (cleaned !== session.lastOutput) {
@@ -1046,10 +562,10 @@ export class TmuxPlugin extends BasePlugin {
                 // If we are 'working' and see a prompt at the end, we are now 'idle'
                 else if (session.status === 'working') {
                     // Check for prompt at the end of the cleaned output
-                    // Claude Code prompt usually ends with ">" or "❯"
+                    // Claude Code prompt usually ends with ">" or standard prompt character
                     // We check the last line
                     const lastLine = cleaned.split('\n').pop() || '';
-                    if (/^[>❯]\s*$/.test(lastLine) || cleaned.trim().endsWith('>') || cleaned.trim().endsWith('❯')) {
+                    if (/^[>\u276F]\s*$/.test(lastLine) || cleaned.trim().endsWith('>') || cleaned.trim().endsWith('\u276F')) {
                         this.log(`Prompt detected for ${session.sessionId}, marking as idle`);
                         session.status = 'idle';
                         session.currentTool = undefined;
@@ -1084,7 +600,7 @@ export class TmuxPlugin extends BasePlugin {
                 // Use diff-based approach for all sessions
                 // For CLI-owned sessions, use aggressive diffing
                 const isCliSession = session.isOwned || session.config.cliType === 'claude' || session.config.cliType === 'gemini';
-                const contentToEmit = this.getNewContent(session.lastOutput, cleaned, isCliSession);
+                const contentToEmit = getNewContent(session.lastOutput, cleaned, isCliSession);
 
                 if (contentToEmit) {
                     this.emit('output', {
@@ -1171,70 +687,20 @@ export class TmuxPlugin extends BasePlugin {
         }
     }
 
-    private getNewContent(oldOutput: string, newOutput: string, isClaudeCode: boolean = true): string | null {
-        if (!oldOutput) return newOutput;
-        if (oldOutput === newOutput) return null;
-
-        const oldLines = oldOutput.split('\n');
-        const newLines = newOutput.split('\n');
-
-        // Look for the largest overlap where the SUFFIX of old matching the PREFIX of new
-        // This handles appending, scrolling, etc.
-        const maxPossOverlap = Math.min(oldLines.length, newLines.length);
-        let bestOverlap = 0;
-
-        for (let len = maxPossOverlap; len > 0; len--) {
-            // Check if suffix of old (length len) matches prefix of new (length len)
-            let match = true;
-            for (let i = 0; i < len; i++) {
-                // Determine start indices
-                // Old suffix starts at: oldLines.length - len
-                // New prefix starts at: 0
-                if (oldLines[oldLines.length - len + i] !== newLines[i]) {
-                    match = false;
-                    break;
-                }
-            }
-
-            if (match) {
-                bestOverlap = len;
-                break;
-            }
-        }
-
-        // If no overlap, assume completely new content (clear screen or fast scroll)
-        if (bestOverlap === 0) {
-            return newOutput;
-        }
-
-        const addedLines = newLines.slice(bestOverlap);
-
-        // Filter out empty lines if they are just trailing newlines?
-        // But sometimes empty lines are meaningful.
-        // Let's filter only if the ONLY new content is empty lines (often artifacts of capture)
-        const allEmpty = addedLines.every(l => l.trim().length === 0);
-        if (allEmpty && addedLines.length > 0) {
-            // Check if we really want to emit these.
-            // If it's just one empty line, maybe not?
-            // User wants streaming, so maybe yes.
-            // But usually we trim() before emitting in the caller... wait.
-            // The caller does: if (contentToEmit) { emit... }
-            // Let's return joined.
-        }
-
-        if (addedLines.length === 0) return null;
-
-        // Strip shell prompts for non-Claude/generic sessions only if specifically requested?
-        // The user complained about missing output. The previous logic was too aggressive.
-        // Let's keep ALL added lines. This is the safest way to ensure "streaming".
-
-        return addedLines.join('\n');
-    }
-
     private async checkHealth(): Promise<void> {
         try {
-            const { stdout } = await execAsync('tmux list-sessions -F "#{session_name}"', { timeout: 10000, maxBuffer: 1024 * 1024 });
-            const activeSessions = new Set(stdout.trim().split('\n'));
+            const activeSessions = this.discovery
+                ? await this.discovery.getActiveSessions()
+                : new Set<string>();
+
+            // If no discovery, try directly
+            if (activeSessions.size === 0 && !this.discovery) {
+                const { stdout } = await execAsync('tmux list-sessions -F "#{session_name}"', {
+                    timeout: 10000,
+                    maxBuffer: 1024 * 1024
+                });
+                stdout.trim().split('\n').forEach(s => activeSessions.add(s));
+            }
 
             for (const session of this.sessions.values()) {
                 const tmuxSession = (session as TmuxSession).tmuxSession;

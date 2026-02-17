@@ -15,6 +15,7 @@ import {
     SessionStatus,
     PluginType
 } from './base.js';
+import { OutputThrottler, PendingApprovalTracker } from './sdk-base.js';
 import { shouldAutoApproveInSafeMode, getDangerousReason } from '../permissions/safe-tools.js';
 import { getConfig } from '../config.js';
 
@@ -36,6 +37,19 @@ import {
 // Claude SDK Session
 // ============================================================================
 
+// Extended approval entry for Claude-specific fields
+interface ClaudePendingApproval {
+    requestId: string;
+    sdkRequestId: string;
+    toolName: string;
+    input: Record<string, any>;
+    toolUseId: string;
+    suggestions?: Suggestion[];
+    blockedPath?: string;
+    decisionReason?: string;
+    createdAt: number;
+}
+
 class ClaudeSDKSession extends EventEmitter implements PluginSession {
     readonly sessionId: string;
     readonly config: SessionConfig;
@@ -45,20 +59,9 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     // Status tracking conforming to SessionStatus interface
     status: SessionStatus = 'idle';
     lastActivity: Date;
-    
+
     // The underlying Claude Client
     private client: ClaudeClient;
-
-    // Buffer for batching output
-    private textBuffer = '';
-    private flushTimer: NodeJS.Timeout | null = null;
-    private readonly BATCH_INTERVAL_MS = 100;
-
-    // Throttle for accumulated output (to avoid Discord rate limits)
-    private pendingStdoutContent = '';
-    private pendingThinkingContent = '';
-    private outputThrottleTimer: NodeJS.Timeout | null = null;
-    private readonly OUTPUT_THROTTLE_MS = 500;  // Update Discord at most every 500ms
 
     // Track current state
     private currentActivity: string | null = null;
@@ -66,6 +69,8 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     private currentOutputType: 'stdout' | 'thinking' = 'stdout';
     private lastAssistantOutput = '';
 
+    // Use OutputThrottler from sdk-base
+    private readonly outputThrottler: OutputThrottler;
 
     // Plan Mode State
     private currentPlanPath: string | null = null;
@@ -86,17 +91,8 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     // Auto-approve safe mode flag
     private autoApproveSafe: boolean = false;
 
-    // Permission request tracking
-    private pendingPermissions = new Map<string, {
-        requestId: string;
-        sdkRequestId: string;
-        toolName: string;
-        input: Record<string, any>;
-        toolUseId: string;
-        suggestions?: Suggestion[];
-        blockedPath?: string;
-        decisionReason?: string;
-    }>();
+    // Use PendingApprovalTracker from sdk-base
+    private readonly pendingPermissions = new PendingApprovalTracker<ClaudePendingApproval>();
 
     private deferredApproval: {
         optionNumber: string;
@@ -185,8 +181,22 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             }
         });
 
+        // Initialize output throttler from sdk-base
+        this.outputThrottler = new OutputThrottler(
+            (output) => this.emitOutput(output),
+            500
+        );
+
         // Set up Event Listeners
         this.setupEventListeners();
+    }
+
+    private emitOutput(output: { content: string; isComplete: boolean; outputType: 'stdout' | 'thinking' }): void {
+        this.plugin.emit('output', {
+            sessionId: this.sessionId,
+            ...output,
+            timestamp: new Date()
+        });
     }
 
     private setupEventListeners() {
@@ -220,35 +230,33 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         this.client.on('text_accumulated', (accumulatedText) => {
             if (this.currentOutputType !== 'stdout') {
                 // Flush any pending thinking content before switching
-                this.flushThrottledOutput();
+                this.outputThrottler.flush(false);
                 this.currentOutputType = 'stdout';
             }
             // Store latest accumulated content and schedule throttled emit
             this.lastAssistantOutput = accumulatedText;
-            this.pendingStdoutContent = accumulatedText;
-            this.scheduleThrottledOutput();
+            this.outputThrottler.addStdout(accumulatedText);
         });
 
         // Thinking Streaming (accumulated mode with throttling)
         this.client.on('thinking_accumulated', (accumulatedThinking) => {
             if (this.currentOutputType !== 'thinking') {
                 // Flush any pending stdout content before switching
-                this.flushThrottledOutput();
+                this.outputThrottler.flush(false);
                 this.currentOutputType = 'thinking';
                 this.status = 'working';
                 this.setActivity('Thinking');
             }
             this.currentThinking = accumulatedThinking;
             // Store latest accumulated content and schedule throttled emit
-            this.pendingThinkingContent = accumulatedThinking;
-            this.scheduleThrottledOutput();
+            this.outputThrottler.addThinking(accumulatedThinking);
         });
 
         // Full Messages (Assistant)
         this.client.on('message', (message: AssistantMessage) => {
             // Flush any pending throttled content with isComplete: true
             // This ensures Discord clears its streaming state and prevents duplicate messages
-            this.flushThrottledOutput(true);
+            this.outputThrottler.flush(true);
 
             // Clear the output buffers to prevent reuse
             this.lastAssistantOutput = '';
@@ -259,7 +267,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
             // Handle Todos
             const legacyTodos = message.todos || [];
-            
+
             // Check for tool use todos (TodoWrite)
             const toolTodos: any[] = [];
             message.message.content.forEach(block => {
@@ -350,8 +358,8 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
                 this.status = 'waiting';
                 const approvalId = `${this.sessionId}-${Date.now()}-${randomUUID().slice(0, 8)}`;
-                
-                this.pendingPermissions.set(approvalId, {
+
+                this.pendingPermissions.add(approvalId, {
                     requestId: approvalId,
                     sdkRequestId: req.request_id,
                     toolName: request.tool_name || 'unknown',
@@ -359,7 +367,8 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                     toolUseId: request.tool_use_id || '',
                     suggestions: request.permission_suggestions || [],
                     blockedPath: request.blocked_path,
-                    decisionReason: request.decision_reason
+                    decisionReason: request.decision_reason,
+                    createdAt: Date.now()
                 });
 
                 console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] pendingPermissions add: approvalId=${approvalId} sdkRequestId=${req.request_id} toolUseId=${request.tool_use_id || 'none'}`);
@@ -415,8 +424,9 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
         this.client.on('control_cancel_request', (req) => {
             // Clear pending permissions matching this SDK request ID
-            for (const [approvalId, pending] of this.pendingPermissions.entries()) {
-                if (pending.sdkRequestId === req.request_id) {
+            for (const approvalId of this.pendingPermissions.keys()) {
+                const pending = this.pendingPermissions.get(approvalId);
+                if (pending && pending.sdkRequestId === req.request_id) {
                     this.pendingPermissions.delete(approvalId);
                     this.plugin.emit('approval_canceled', {
                         sessionId: this.sessionId,
@@ -442,7 +452,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                 fatal: false
             });
         });
-        
+
         this.client.on('exit', (code) => {
             this.status = 'offline';
         });
@@ -465,7 +475,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         this.client.on('tool_result', (result: ToolResultEvent) => {
             // Check for EnterPlanMode to capture plan path
             const toolName = this.activeToolExecutions.get(result.toolUseId);
-            
+
             if (toolName === 'EnterPlanMode' && !result.isError) {
                 // Look for "A plan file was designated: <path>"
                 const match = result.content.match(/A plan file was designated: (.*)$/m);
@@ -474,7 +484,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                     console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Captured plan path: ${this.currentPlanPath}`);
                 }
             }
-            
+
             // Cleanup
             this.activeToolExecutions.delete(result.toolUseId);
 
@@ -570,10 +580,10 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
         await this.client.sendMessageWithContent(content);
     }
-    
+
     async sendApproval(optionNumber: string, message?: string, requestId?: string): Promise<void> {
-        console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] sendApproval called: option=${optionNumber}, requestId=${requestId || 'none'}, pendingCount=${this.pendingPermissions.size}, pendingKeys=[${Array.from(this.pendingPermissions.keys()).join(', ')}]`);
-        
+        console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] sendApproval called: option=${optionNumber}, requestId=${requestId || 'none'}, pendingCount=${this.pendingPermissions.size()}, pendingKeys=[${Array.from(this.pendingPermissions.keys()).join(', ')}]`);
+
         if (this.pendingQuestion) {
             console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] AskUserQuestion approval: option=${optionNumber}, message=${message || 'none'}`);
             await this.handleAskUserQuestionResponse(optionNumber, message, requestId);
@@ -583,7 +593,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         // Find the pending permission (simplified logic: take the first one)
         // In reality we should map optionNumber to the specific request if possible
         // or store the mapping.
-        if (this.pendingPermissions.size === 0) {
+        if (this.pendingPermissions.size() === 0) {
             this.deferredApproval = {
                 optionNumber,
                 message,
@@ -592,14 +602,14 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Deferred approval: option=${optionNumber}, message=${message || 'none'}, requestId=${requestId || 'none'}`);
             return;
         }
-        
+
         const approvalId = requestId && this.pendingPermissions.has(requestId)
             ? requestId
-            : Array.from(this.pendingPermissions.keys())[0];
-        const perm = this.pendingPermissions.get(approvalId);
+            : this.pendingPermissions.firstKey();
+        const perm = this.pendingPermissions.get(approvalId!);
         if (!perm) return;
 
-        console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] sendApproval mapping: approvalId=${approvalId} sdkRequestId=${perm.sdkRequestId} toolUseId=${perm.toolUseId || 'none'} pendingCount=${this.pendingPermissions.size}`);
+        console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] sendApproval mapping: approvalId=${approvalId} sdkRequestId=${perm.sdkRequestId} toolUseId=${perm.toolUseId || 'none'} pendingCount=${this.pendingPermissions.size()}`);
 
         const isAllow = optionNumber === '1' || optionNumber.toLowerCase() === 'yes';
         const isAlways = optionNumber === '3' || optionNumber.toLowerCase() === 'always';
@@ -626,16 +636,16 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         if (responseData.behavior === 'deny' && !responseData.message) {
             responseData.message = 'The user does not want to proceed with this tool use.';
         }
-        
+
         console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Sending control_response: requestId=${perm.sdkRequestId} behavior=${responseData.behavior} scope=${responseData.scope || 'none'} toolUseId=${perm.toolUseId || 'none'}`);
         await this.client.sendControlResponse(perm.sdkRequestId, responseData);
-        this.pendingPermissions.delete(approvalId);
+        this.pendingPermissions.delete(approvalId!);
         this.status = 'working';
     }
 
     private async handleExitPlanModeRequest(req: ControlRequestMessage): Promise<void> {
         let planContent = '';
-        
+
         // Try to read the plan file
         if (this.currentPlanPath && existsSync(this.currentPlanPath)) {
             try {
@@ -650,10 +660,10 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             return;
         }
         const approvalId = `${this.sessionId}-${Date.now()}-${randomUUID().slice(0, 8)}`;
-        
+
         // Register pending permission with special handling for ExitPlanMode
         // We re-use 'AskUserQuestion' style mechanism but map it back to a tool permission
-        this.pendingPermissions.set(approvalId, {
+        this.pendingPermissions.add(approvalId, {
             requestId: approvalId,
             sdkRequestId: req.request_id,
             toolName: 'ExitPlanMode',
@@ -661,19 +671,20 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             toolUseId: request.tool_use_id || '',
             suggestions: [],
             blockedPath: undefined,
-            decisionReason: undefined
+            decisionReason: undefined,
+            createdAt: Date.now()
         });
 
         // If we have plan content, present it for review
         if (planContent) {
             console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Intercepted ExitPlanMode, requesting review of plan (${planContent.length} chars)`);
-            
+
             this.plugin.emit('approval', {
                 sessionId: this.sessionId,
                 requestId: approvalId,
                 tool: 'ExitPlanMode',
                 context: planContent, // Pass full plan content as context
-                toolInput: { 
+                toolInput: {
                     question: 'Please review the proposed plan before proceeding.',
                     planPath: this.currentPlanPath
                 },
@@ -941,71 +952,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     get isReady(): boolean {
         return this.status === 'idle';
     }
-    
-    // Helper to buffer output
-    private scheduleBatchFlush(outputType: 'stdout' | 'thinking' = 'stdout'): void {
-        if (this.flushTimer) return;
-        this.flushTimer = setTimeout(() => {
-            this.flushTextBuffer(false, outputType);
-            this.flushTimer = null;
-        }, this.BATCH_INTERVAL_MS);
-    }
 
-    private flushTextBuffer(isComplete: boolean = false, outputType: 'stdout' | 'thinking' = 'stdout'): void {
-        if (!this.textBuffer) return;
-
-        this.plugin.emit('output', {
-            sessionId: this.sessionId,
-            content: this.textBuffer,
-            isComplete,
-            outputType, 
-            timestamp: new Date()
-        });
-
-        this.textBuffer = '';
-    }
-    
-    // Throttle output to Discord to avoid rate limits
-    private scheduleThrottledOutput(): void {
-        if (this.outputThrottleTimer) return;  // Already scheduled
-        
-        this.outputThrottleTimer = setTimeout(() => {
-            this.flushThrottledOutput();
-            this.outputThrottleTimer = null;
-        }, this.OUTPUT_THROTTLE_MS);
-    }
-
-    private flushThrottledOutput(isComplete: boolean = false): void {
-        if (this.outputThrottleTimer) {
-            clearTimeout(this.outputThrottleTimer);
-            this.outputThrottleTimer = null;
-        }
-
-        // Emit stdout if we have pending content
-        if (this.pendingStdoutContent) {
-            this.plugin.emit('output', {
-                sessionId: this.sessionId,
-                content: this.pendingStdoutContent,
-                isComplete,
-                outputType: 'stdout',
-                timestamp: new Date()
-            });
-            this.pendingStdoutContent = '';
-        }
-
-        // Emit thinking if we have pending content
-        if (this.pendingThinkingContent) {
-            this.plugin.emit('output', {
-                sessionId: this.sessionId,
-                content: this.pendingThinkingContent,
-                isComplete,
-                outputType: 'thinking',
-                timestamp: new Date()
-            });
-            this.pendingThinkingContent = '';
-        }
-    }
-    
     private setActivity(activity: string | null): void {
         if (this.currentActivity !== activity) {
              this.currentActivity = activity;

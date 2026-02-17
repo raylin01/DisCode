@@ -4,14 +4,16 @@
  * Uses the standalone codex-client library to manage the Codex CLI app-server.
  */
 
-import { EventEmitter } from 'events';
-import { randomUUID } from 'crypto';
 import {
   BasePlugin,
   PluginSession,
   SessionConfig,
   SessionStatus
 } from './base.js';
+import {
+  BaseSDKSession,
+  MessageQueue
+} from './sdk-base.js';
 import { isBashCommandSafe, getDangerousReason } from '../permissions/safe-tools.js';
 import { getConfig } from '../config.js';
 import {
@@ -37,39 +39,28 @@ import {
   ModelListResponse
 } from '@raylin01/codex-client';
 
-class CodexSDKSession extends EventEmitter implements PluginSession {
-  readonly sessionId: string;
-  readonly config: SessionConfig;
-  readonly createdAt: Date;
-  readonly isOwned = true;
+// Codex-specific approval entry
+interface CodexApprovalEntry {
+  approvalId: string;
+  requestId: string | number;
+  toolName: string;
+  input: Record<string, any>;
+  createdAt: number;
+  kind: 'command' | 'file';
+  proposedAmendment?: string[] | null;
+}
 
-  status: SessionStatus = 'idle';
-  lastActivity: Date;
-  isReady = false;
-
+class CodexSDKSession extends BaseSDKSession {
   private threadId: string | null = null;
   private activeTurnId: string | null = null;
-  private pendingQueue: Array<{ message: string; resolve: () => void; reject: (err: Error) => void }> = [];
-  private sending = false;
+  private messageQueue: MessageQueue;
+  private codexPlugin: CodexSDKPlugin;
 
-  private outputBuffer = '';
   private currentOutput = '';
-  private outputTimer: NodeJS.Timeout | null = null;
-  private readonly OUTPUT_THROTTLE_MS = 500;
   private completedOutputEmitted = false;
-
-  private thinkingBuffer = '';
   private currentThinking = '';
 
-  private pendingApprovals = new Map<string, {
-    approvalId: string;
-    requestId: string | number;
-    kind: 'command' | 'file';
-    proposedAmendment?: string[] | null;
-  }>();
-
-  // Auto-approve safe mode flag
-  private autoApproveSafe: boolean = false;
+  private pendingApprovals = new Map<string, CodexApprovalEntry>();
 
   private static readonly DEFAULT_DENY_MESSAGE = 'The user does not want to proceed with this tool use.';
 
@@ -81,16 +72,10 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
     currentApprovalId?: string;
   } | null = null;
 
-  constructor(config: SessionConfig, private plugin: CodexSDKPlugin) {
-    super();
-    this.sessionId = config.sessionId || randomUUID();
-    this.config = config;
-    this.createdAt = new Date();
-    this.lastActivity = new Date();
-
-    // Store autoApproveSafe flag for use in approval handling
-    const options = config.options || {};
-    this.autoApproveSafe = options.autoApproveSafe ?? false;
+  constructor(config: SessionConfig, plugin: CodexSDKPlugin) {
+    super(config, plugin);
+    this.codexPlugin = plugin;
+    this.messageQueue = new MessageQueue((message) => this.doSendMessage(message));
   }
 
   async initializeThread(): Promise<void> {
@@ -117,12 +102,12 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
     let response: { thread: { id: string }; model: string; approvalPolicy: AskForApproval };
     if (options.resumeSessionId) {
       if (options.forkSession) {
-        response = await this.plugin.client.forkThread({
+        response = await this.codexPlugin.client.forkThread({
           threadId: options.resumeSessionId,
           ...baseParams
         });
       } else {
-        response = await this.plugin.client.resumeThread({
+        response = await this.codexPlugin.client.resumeThread({
           threadId: options.resumeSessionId,
           ...baseParams
         });
@@ -133,85 +118,61 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
         ephemeral: !persistSession,
         experimentalRawEvents: false
       };
-      response = await this.plugin.client.startThread(threadParams);
+      response = await this.codexPlugin.client.startThread(threadParams);
     }
     this.threadId = response.thread.id;
     this.isReady = true;
     this.emit('ready');
 
-    this.plugin.registerThread(this.threadId, this);
+    this.codexPlugin.registerThread(this.threadId, this);
 
     // Emit CLI session ID for persistence (enables resume after restart)
-    this.plugin.emit('cli_session_id', {
+    this.codexPlugin.emit('cli_session_id', {
       sessionId: this.sessionId,
       cliSessionId: this.threadId
     });
 
-    this.plugin.emit('metadata', {
-      sessionId: this.sessionId,
+    this.emitMetadata({
       model: response.model,
-      permissionMode: approvalPolicy ?? undefined,
-      timestamp: new Date()
+      permissionMode: approvalPolicy ?? undefined
     });
+  }
+
+  async start(): Promise<void> {
+    await this.initializeThread();
   }
 
   async sendMessage(message: string): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      this.pendingQueue.push({ message, resolve, reject });
-      this.drainQueue().catch(reject);
-    });
+    return this.messageQueue.enqueue(message);
   }
 
-  private async drainQueue(): Promise<void> {
-    if (this.sending || !this.isReady) return;
-    if (this.activeTurnId) return;
-    const next = this.pendingQueue.shift();
-    if (!next) return;
-
-    this.sending = true;
-    try {
-      if (!this.threadId) {
-        throw new Error('Codex thread not initialized');
-      }
-
-      this.currentOutput = '';
-      this.currentThinking = '';
-      this.completedOutputEmitted = false;
-
-      const options = this.config.options || {};
-      const turnParams: TurnStartParams = {
-        threadId: this.threadId,
-        input: [{ type: 'text', text: next.message, text_elements: [] }],
-        cwd: null,
-        approvalPolicy: (options.approvalPolicy as AskForApproval | undefined) ?? null,
-        sandboxPolicy: this.toSandboxPolicy(options.sandboxPolicy ?? options.sandbox ?? null),
-        model: (options.model as string | undefined) ?? null,
-        effort: (options.reasoningEffort as any) ?? null,
-        summary: (options.reasoningSummary as any) ?? null,
-        personality: options.personality ?? null,
-        outputSchema: options.outputSchema ?? options.jsonSchema ?? null,
-        collaborationMode: options.collaborationMode ?? null
-      };
-
-      const response = await this.plugin.client.startTurn(turnParams);
-      this.activeTurnId = response.turn.id;
-      this.status = 'working';
-      this.plugin.emit('status', {
-        sessionId: this.sessionId,
-        status: this.status
-      });
-      next.resolve();
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      this.plugin.emit('error', {
-        sessionId: this.sessionId,
-        error: error.message,
-        fatal: false
-      });
-      next.reject(error);
-    } finally {
-      this.sending = false;
+  private async doSendMessage(message: string): Promise<void> {
+    if (!this.threadId) {
+      throw new Error('Codex thread not initialized');
     }
+
+    this.currentOutput = '';
+    this.currentThinking = '';
+    this.completedOutputEmitted = false;
+
+    const options = this.config.options || {};
+    const turnParams: TurnStartParams = {
+      threadId: this.threadId,
+      input: [{ type: 'text', text: message, text_elements: [] }],
+      cwd: null,
+      approvalPolicy: (options.approvalPolicy as AskForApproval | undefined) ?? null,
+      sandboxPolicy: this.toSandboxPolicy(options.sandboxPolicy ?? options.sandbox ?? null),
+      model: (options.model as string | undefined) ?? null,
+      effort: (options.reasoningEffort as any) ?? null,
+      summary: (options.reasoningSummary as any) ?? null,
+      personality: options.personality ?? null,
+      outputSchema: options.outputSchema ?? options.jsonSchema ?? null,
+      collaborationMode: options.collaborationMode ?? null
+    };
+
+    const response = await this.codexPlugin.client.startTurn(turnParams);
+    this.activeTurnId = response.turn.id;
+    this.emitStatus('working');
   }
 
   private toSandboxPolicy(value: unknown): SandboxPolicy | null {
@@ -246,7 +207,7 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
 
     const approvalId = requestId && this.pendingApprovals.has(requestId)
       ? requestId
-      : Array.from(this.pendingApprovals.keys())[0];
+      : this.pendingApprovals.keys().next().value;
 
     if (!approvalId) return;
 
@@ -257,16 +218,16 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
       const response: CommandExecutionRequestApprovalResponse = {
         decision: this.mapCommandDecision(optionNumber, pending.proposedAmendment || null)
       };
-      this.plugin.client.sendResponse(pending.requestId, response);
+      this.codexPlugin.client.sendResponse(pending.requestId, response);
     } else {
       const response: FileChangeRequestApprovalResponse = {
         decision: this.mapFileDecision(optionNumber)
       };
-      this.plugin.client.sendResponse(pending.requestId, response);
+      this.codexPlugin.client.sendResponse(pending.requestId, response);
     }
 
     this.pendingApprovals.delete(approvalId);
-    this.status = 'working';
+    this.emitStatus('working');
   }
 
   async sendPermissionDecision(requestId: string, decision: {
@@ -288,18 +249,32 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
     );
   }
 
+  async interrupt(): Promise<void> {
+    if (this.threadId && this.activeTurnId) {
+      try {
+        await this.codexPlugin.client.interruptTurn({ threadId: this.threadId, turnId: this.activeTurnId });
+      } catch {
+        // ignore
+      }
+    }
+    this.outputThrottler.flush(true);
+    this.emitStatus('idle');
+  }
+
   async close(): Promise<void> {
     if (this.threadId && this.activeTurnId) {
       try {
-        await this.plugin.client.interruptTurn({ threadId: this.threadId, turnId: this.activeTurnId });
+        await this.codexPlugin.client.interruptTurn({ threadId: this.threadId, turnId: this.activeTurnId });
       } catch {
         // ignore
       }
     }
     if (this.threadId) {
-      this.plugin.unregisterThread(this.threadId);
+      this.codexPlugin.unregisterThread(this.threadId);
     }
+    this.messageQueue.clear();
     this.status = 'offline';
+    this.isReady = false;
   }
 
   private mapCommandDecision(optionNumber: string, amendment: string[] | null) {
@@ -391,15 +366,12 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
         }
         break;
       case 'turn/started':
-        this.status = 'working';
-        this.plugin.emit('status', { sessionId: this.sessionId, status: this.status });
+        this.emitStatus('working');
         break;
       case 'turn/completed':
         this.activeTurnId = null;
-        this.status = 'idle';
-        this.plugin.emit('status', { sessionId: this.sessionId, status: this.status });
         this.flushOutput('stdout', true);
-        this.drainQueue().catch(() => null);
+        this.emitStatus('idle');
         break;
       default:
         break;
@@ -425,7 +397,7 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
         this.handleToolCall(request.id, params as DynamicToolCallParams);
         break;
       default:
-        this.plugin.client.sendError(request.id, { message: `Unsupported request: ${request.method}` });
+        this.codexPlugin.client.sendError(request.id, { message: `Unsupported request: ${request.method}` });
     }
   }
 
@@ -437,7 +409,7 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
         const response: CommandExecutionRequestApprovalResponse = {
           decision: 'accept'
         };
-        this.plugin.client.sendResponse(requestId, response);
+        this.codexPlugin.client.sendResponse(requestId, response);
         return;
       } else {
         const reason = getDangerousReason(params.command);
@@ -445,20 +417,22 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
       }
     }
 
-    const approvalId = `${this.sessionId}-${Date.now()}-${randomUUID().slice(0, 8)}`;
+    const approvalId = `${this.sessionId}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
     this.pendingApprovals.set(approvalId, {
       approvalId,
       requestId,
+      toolName: 'CommandExecution',
+      input: { command: params.command, cwd: params.cwd },
+      createdAt: Date.now(),
       kind: 'command',
       proposedAmendment: params.proposedExecpolicyAmendment ?? null
     });
 
     const context = params.command ? `${params.command}${params.cwd ? `\nCWD: ${params.cwd}` : ''}` : params.reason ?? 'Command approval requested';
 
-    this.status = 'waiting';
-    this.plugin.emit('status', { sessionId: this.sessionId, status: this.status });
+    this.emitStatus('waiting');
 
-    this.plugin.emit('approval', {
+    this.codexPlugin.emit('approval', {
       sessionId: this.sessionId,
       requestId: approvalId,
       tool: 'CommandExecution',
@@ -488,19 +462,21 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
       console.log(`[CodexSDK ${this.sessionId.slice(0, 8)}] File change requires approval in autoSafe mode: ${params.reason}`);
     }
 
-    const approvalId = `${this.sessionId}-${Date.now()}-${randomUUID().slice(0, 8)}`;
+    const approvalId = `${this.sessionId}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
     this.pendingApprovals.set(approvalId, {
       approvalId,
       requestId,
+      toolName: 'FileChange',
+      input: { reason: params.reason, grantRoot: params.grantRoot },
+      createdAt: Date.now(),
       kind: 'file'
     });
 
     const context = params.reason ?? 'File change approval requested';
 
-    this.status = 'waiting';
-    this.plugin.emit('status', { sessionId: this.sessionId, status: this.status });
+    this.emitStatus('waiting');
 
-    this.plugin.emit('approval', {
+    this.codexPlugin.emit('approval', {
       sessionId: this.sessionId,
       requestId: approvalId,
       tool: 'FileChange',
@@ -538,14 +514,14 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
     const { questions, index } = this.pendingQuestion;
     if (index >= questions.length) {
       const response: ToolRequestUserInputResponse = { answers: this.pendingQuestion.answers };
-      this.plugin.client.sendResponse(this.pendingQuestion.requestId, response);
+      this.codexPlugin.client.sendResponse(this.pendingQuestion.requestId, response);
       this.pendingQuestion = null;
       return;
     }
 
     const question = questions[index];
     const options = question.options?.map(opt => opt.label) || [];
-    const approvalId = `${this.sessionId}-${Date.now()}-${randomUUID().slice(0, 8)}`;
+    const approvalId = `${this.sessionId}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
     this.pendingQuestion.currentApprovalId = approvalId;
 
     let context = question.header ? `**${question.header}**\n\n${question.question}` : question.question;
@@ -554,7 +530,7 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
       context += `\n\n${optionLines}`;
     }
 
-    this.plugin.emit('approval', {
+    this.codexPlugin.emit('approval', {
       sessionId: this.sessionId,
       requestId: approvalId,
       tool: 'AskUserQuestion',
@@ -599,45 +575,31 @@ class CodexSDKSession extends EventEmitter implements PluginSession {
       contentItems: [{ type: 'inputText', text: `Tool ${params.tool} is not supported.` }],
       success: false
     };
-    this.plugin.client.sendResponse(requestId, response);
+    this.codexPlugin.client.sendResponse(requestId, response);
   }
 
   private appendOutput(content: string, outputType: 'stdout' | 'tool_result'): void {
-    this.outputBuffer += content;
     this.currentOutput += content;
     this.completedOutputEmitted = false;
-    if (!this.outputTimer) {
-      this.outputTimer = setTimeout(() => {
-        this.outputBuffer = '';
-        this.flushOutput(outputType, false);
-        this.outputTimer = null;
-      }, this.OUTPUT_THROTTLE_MS);
-    }
+    this.outputThrottler.addStdout(content);
   }
 
   private appendThinking(content: string): void {
-    this.thinkingBuffer += content;
     this.currentThinking += content;
-    if (!this.outputTimer) {
-      this.outputTimer = setTimeout(() => {
-        this.thinkingBuffer = '';
-        this.flushOutput('thinking', false);
-        this.outputTimer = null;
-      }, this.OUTPUT_THROTTLE_MS);
-    }
+    this.outputThrottler.addThinking(content);
   }
 
   private flushOutput(outputType: 'stdout' | 'thinking' | 'tool_result', isComplete: boolean): void {
     const payload = outputType === 'thinking' ? this.currentThinking : this.currentOutput;
     if (!payload.trim() && !isComplete) return;
     if (outputType === 'stdout' && isComplete && this.completedOutputEmitted) return;
-    this.plugin.emit('output', {
-      sessionId: this.sessionId,
+
+    this.emitOutput({
       content: payload,
       isComplete,
-      outputType,
-      timestamp: new Date()
+      outputType
     });
+
     if (outputType === 'stdout' && isComplete) {
       this.completedOutputEmitted = true;
     }
@@ -746,7 +708,7 @@ export class CodexSDKPlugin extends BasePlugin {
 
     const session = new CodexSDKSession(config, this);
     this.sessions.set(session.sessionId, session);
-    await session.initializeThread();
+    await session.start();
     return session;
   }
 

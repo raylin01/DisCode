@@ -1,41 +1,50 @@
 
 import { EventEmitter } from 'events';
-import path from 'path';
-import { 
-    SessionWatcher, 
-    SessionEntry, 
-    listProjectsAsync, 
-    listSessions, 
-    getSessionDetailsAsync
-} from '@raylin01/claude-client/sessions';
-import { CodexClient, Thread } from '@raylin01/codex-client';
 import {
-    listGeminiSessions as listGeminiProjectSessions,
-    resolveGeminiSession
-} from '@raylin01/gemini-client/sessions';
+    SessionWatcher,
+    SessionEntry,
+    listProjectsAsync,
+    listSessions
+} from '@raylin01/claude-client/sessions';
 import { WebSocketManager } from '../websocket.js';
-import { 
-    SyncedContentBlock,
+import {
     SyncedSessionMessage,
-    SyncProjectsResponseMessage, 
+    SyncProjectsResponseMessage,
     SyncProjectsProgressMessage,
     SyncProjectsCompleteMessage,
-    SyncSessionsResponseMessage, 
+    SyncSessionsResponseMessage,
     SyncSessionsCompleteMessage,
-    SyncSessionDiscoveredMessage, 
-    SyncSessionUpdatedMessage 
+    SyncSessionDiscoveredMessage,
+    SyncSessionUpdatedMessage
 } from '../../../shared/types.js';
+import {
+    normalizeProjectPath,
+    toSyncSessionKey,
+    type CliType
+} from './sync-utils.js';
+import {
+    readClaudeSessionMessages
+} from './claude-sync.js';
+import {
+    CodexSyncClient,
+    normalizeThreadRecord
+} from './codex-sync.js';
+import {
+    listGeminiSessionsForProject,
+    listGeminiProjects,
+    readGeminiSessionMessages
+} from './gemini-sync.js';
 
 /**
  * Runner-side Sync Service
- * 
+ *
  * Watches local files and pushes updates to Discord bot.
  */
 export class RunnerSyncService extends EventEmitter {
     private watcher: SessionWatcher;
     private wsManager: WebSocketManager;
     private codexPath: string | null;
-    private codexClient: CodexClient | null = null;
+    private codexClient: CodexSyncClient;
     private ownedSessions = new Set<string>(); // Sessions created/controlled by Discord
     private syncProjectsTask: Promise<void> | null = null;
     private syncSessionsTasks = new Map<string, Promise<void>>();
@@ -66,969 +75,20 @@ export class RunnerSyncService extends EventEmitter {
         this.wsManager = wsManager;
         this.watcher = new SessionWatcher();
         this.codexPath = options?.codexPath || null;
+        this.codexClient = new CodexSyncClient(this.codexPath);
 
         // Listen for watcher events
         this.watcher.on('session_new', (entry: SessionEntry) => {
-            if (this.ownedSessions.has(entry.sessionId) || this.ownedSessions.has(this.toSyncSessionKey(entry.sessionId, 'claude'))) return;
+            if (this.ownedSessions.has(entry.sessionId) || this.ownedSessions.has(toSyncSessionKey(entry.sessionId, 'claude'))) return;
             void this.pushSessionDiscovered(entry);
         });
 
         this.watcher.on('session_updated', (entry: SessionEntry) => {
-            if (this.ownedSessions.has(entry.sessionId) || this.ownedSessions.has(this.toSyncSessionKey(entry.sessionId, 'claude'))) return;
+            if (this.ownedSessions.has(entry.sessionId) || this.ownedSessions.has(toSyncSessionKey(entry.sessionId, 'claude'))) return;
             void this.pushSessionUpdated(entry);
         });
 
         this.startCodexPolling();
-    }
-
-    private normalizeProjectPath(projectPath: string): string {
-        if (!projectPath || typeof projectPath !== 'string') return projectPath;
-        return path.resolve(projectPath);
-    }
-
-    private toSyncSessionKey(sessionId: string, cliType: 'claude' | 'codex' | 'gemini' = 'claude'): string {
-        return `${cliType}:${sessionId}`;
-    }
-
-    private normalizeThreadRecord(thread: Thread): {
-        sessionId: string;
-        projectPath: string;
-        firstPrompt: string;
-        created: string;
-        messageCount: number;
-        gitBranch?: string;
-        messages: any[];
-        cliType: 'codex';
-    } | null {
-        const cwd = thread.cwd || (typeof thread.path === 'string' ? thread.path : null);
-        if (!cwd) return null;
-
-        const createdAt = typeof thread.createdAt === 'number'
-            ? new Date(thread.createdAt * 1000)
-            : new Date();
-
-        return {
-            sessionId: thread.id,
-            projectPath: this.normalizeProjectPath(cwd),
-            firstPrompt: thread.preview || 'Codex thread',
-            created: createdAt.toISOString(),
-            messageCount: 0,
-            gitBranch: typeof thread.gitInfo?.branch === 'string' ? thread.gitInfo.branch : undefined,
-            messages: [],
-            cliType: 'codex'
-        };
-    }
-
-    private async ensureCodexClient(): Promise<CodexClient | null> {
-        if (!this.codexPath) return null;
-        if (this.codexClient) return this.codexClient;
-
-        this.codexClient = new CodexClient({ codexPath: this.codexPath });
-        try {
-            await this.codexClient.start();
-            return this.codexClient;
-        } catch (error) {
-            console.error('[SyncService] Failed to initialize Codex client for sync:', error);
-            this.codexClient = null;
-            return null;
-        }
-    }
-
-    private async listCodexThreads(): Promise<Thread[]> {
-        const client = await this.ensureCodexClient();
-        if (!client) return [];
-
-        const threads: Thread[] = [];
-        let cursor: string | null = null;
-
-        try {
-            do {
-                const response = await client.listThreads({
-                    cursor,
-                    limit: 200,
-                    sortKey: 'updated_at',
-                    archived: false
-                });
-                if (Array.isArray(response.data)) {
-                    threads.push(...response.data);
-                }
-                cursor = response.nextCursor || null;
-            } while (cursor);
-        } catch (error) {
-            console.error('[SyncService] Failed listing Codex threads:', error);
-            return [];
-        }
-
-        return threads;
-    }
-
-    private async listCodexProjects(): Promise<Map<string, number>> {
-        const projects = new Map<string, number>();
-        const threads = await this.listCodexThreads();
-        for (const thread of threads) {
-            const normalized = this.normalizeThreadRecord(thread);
-            if (!normalized) continue;
-            const key = normalized.projectPath;
-            projects.set(key, (projects.get(key) || 0) + 1);
-        }
-        return projects;
-    }
-
-    private async listCodexSessions(projectPath: string): Promise<any[]> {
-        const normalizedPath = this.normalizeProjectPath(projectPath);
-        const sessions: any[] = [];
-        const threads = await this.listCodexThreads();
-        for (const thread of threads) {
-            const record = this.normalizeThreadRecord(thread);
-            if (!record) continue;
-            if (record.projectPath !== normalizedPath) continue;
-            sessions.push(record);
-        }
-        return sessions;
-    }
-
-    private async listGeminiSessionsForProject(projectPath: string): Promise<any[]> {
-        const normalizedPath = this.normalizeProjectPath(projectPath);
-        try {
-            const sessions = await listGeminiProjectSessions({
-                projectRoot: normalizedPath
-            });
-
-            return sessions.map((session) => ({
-                sessionId: session.id,
-                projectPath: normalizedPath,
-                cliType: 'gemini' as const,
-                firstPrompt: session.displayName || session.firstUserMessage || 'Gemini session',
-                created: this.toIsoTimestamp(session.startTime),
-                messageCount: typeof session.messageCount === 'number' ? session.messageCount : 0,
-                messages: []
-            }));
-        } catch (error) {
-            console.warn(`[SyncService] Gemini sessions unavailable for ${normalizedPath}:`, error);
-            return [];
-        }
-    }
-
-    private async listGeminiProjects(projectPaths: Iterable<string>): Promise<Map<string, number>> {
-        const projects = new Map<string, number>();
-
-        for (const rawPath of projectPaths) {
-            const normalizedPath = this.normalizeProjectPath(rawPath);
-            const sessions = await this.listGeminiSessionsForProject(normalizedPath);
-            if (sessions.length > 0) {
-                projects.set(normalizedPath, sessions.length);
-            }
-        }
-
-        return projects;
-    }
-
-    private toIsoTimestamp(value: unknown): string {
-        if (typeof value === 'string') {
-            const parsed = Date.parse(value);
-            return Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date().toISOString();
-        }
-        if (typeof value === 'number') {
-            const ms = value > 1_000_000_000_000 ? value : value * 1000;
-            return new Date(ms).toISOString();
-        }
-        return new Date().toISOString();
-    }
-
-    private safeJson(value: unknown, maxChars = 1500): string {
-        try {
-            const raw = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
-            return raw.length > maxChars ? `${raw.slice(0, maxChars)}…` : raw;
-        } catch {
-            return String(value);
-        }
-    }
-
-    private collectTextFromUserInputs(content: any[]): string[] {
-        const texts: string[] = [];
-        for (const entry of content) {
-            if (!entry || typeof entry !== 'object') continue;
-            if (entry.type === 'text' && typeof entry.text === 'string' && entry.text.trim()) {
-                texts.push(entry.text.trim());
-            } else if (typeof (entry as any).text === 'string' && (entry as any).text.trim()) {
-                texts.push((entry as any).text.trim());
-            }
-        }
-        return texts;
-    }
-
-    private extractClaudeTextBlock(block: any): string | null {
-        if (!block) return null;
-        if (typeof block?.text === 'string' && block.text.trim()) return block.text.trim();
-        if (typeof block?.content === 'string' && block.content.trim()) return block.content.trim();
-        return null;
-    }
-
-    private formatClaudeTodos(todos: any[]): string | null {
-        if (!Array.isArray(todos) || todos.length === 0) return null;
-
-        const lines = todos.slice(0, 20).map((todo: any) => {
-            const status = typeof todo?.status === 'string' ? todo.status : 'pending';
-            const content = typeof todo?.content === 'string'
-                ? todo.content
-                : (typeof todo?.title === 'string' ? todo.title : 'Untitled');
-            return `- [${status}] ${content}`;
-        });
-
-        if (todos.length > 20) {
-            lines.push(`- ...and ${todos.length - 20} more`);
-        }
-
-        return lines.join('\n').trim() || null;
-    }
-
-    private extractClaudeStructuredMessages(rawMessages: any[]): SyncedSessionMessage[] {
-        const messages: SyncedSessionMessage[] = [];
-        const resolvedToolUseIds = new Set<string>();
-        const pendingToolUses = new Map<string, {
-            turnId: string;
-            itemId: string;
-            createdAt: string;
-            toolName?: string;
-            input?: unknown;
-            messageIndex: number;
-        }>();
-
-        for (const raw of rawMessages) {
-            const content = Array.isArray(raw?.message?.content) ? raw.message.content : [];
-            for (const block of content) {
-                if (block?.type === 'tool_result' && typeof block?.tool_use_id === 'string' && block.tool_use_id.trim()) {
-                    resolvedToolUseIds.add(block.tool_use_id);
-                }
-            }
-        }
-
-        rawMessages.forEach((raw, index) => {
-            const rawType = typeof raw?.type === 'string' ? raw.type : '';
-            if (
-                rawType === 'queue-operation' ||
-                rawType === 'file-history-snapshot' ||
-                raw?.isSnapshotUpdate ||
-                raw?.snapshot
-            ) {
-                return;
-            }
-
-            const role: 'user' | 'assistant' = raw?.message?.role === 'user' || rawType === 'user' ? 'user' : 'assistant';
-            const createdAt = this.toIsoTimestamp(raw?.timestamp ?? Date.now());
-            const turnId = `claude-${raw?.sessionId || 'session'}`;
-            const itemId = typeof raw?.uuid === 'string' && raw.uuid.trim() ? raw.uuid : `line-${index}`;
-            const blocks: SyncedContentBlock[] = [];
-
-            if (rawType === 'summary' && typeof raw?.summary === 'string' && raw.summary.trim()) {
-                blocks.push({ type: 'text', text: raw.summary.trim() });
-            }
-
-            const content = Array.isArray(raw?.message?.content) ? raw.message.content : [];
-            for (const block of content) {
-                const blockType = typeof block?.type === 'string' ? block.type : 'unknown';
-                if (blockType === 'text' || blockType === 'input_text' || blockType === 'output_text' || blockType === 'inputText') {
-                    const text = this.extractClaudeTextBlock(block);
-                    if (text) blocks.push({ type: 'text', text });
-                    continue;
-                }
-
-                if (blockType === 'thinking' && typeof block?.thinking === 'string' && block.thinking.trim()) {
-                    blocks.push({ type: 'thinking', thinking: block.thinking.trim() });
-                    continue;
-                }
-
-                if (blockType === 'tool_use') {
-                    const toolUseId = typeof block?.id === 'string' && block.id.trim() ? block.id : undefined;
-                    const toolName = typeof block?.name === 'string' && block.name.trim() ? block.name : 'ToolUse';
-                    blocks.push({
-                        type: 'tool_use',
-                        name: toolName,
-                        input: block?.input,
-                        toolUseId
-                    });
-                    if (toolUseId && !resolvedToolUseIds.has(toolUseId)) {
-                        pendingToolUses.set(toolUseId, {
-                            turnId,
-                            itemId,
-                            createdAt,
-                            toolName,
-                            input: block?.input,
-                            messageIndex: index
-                        });
-                    }
-                    continue;
-                }
-
-                if (blockType === 'tool_result') {
-                    const toolUseId = typeof block?.tool_use_id === 'string' && block.tool_use_id.trim()
-                        ? block.tool_use_id
-                        : undefined;
-                    blocks.push({
-                        type: 'tool_result',
-                        content: block?.content,
-                        is_error: Boolean(block?.is_error),
-                        tool_use_id: toolUseId
-                    });
-                    if (toolUseId) resolvedToolUseIds.add(toolUseId);
-                    continue;
-                }
-
-                const fallback = this.safeJson(block, 900);
-                if (fallback.trim()) {
-                    blocks.push({
-                        type: 'text',
-                        text: `[${blockType}] ${fallback}`
-                    });
-                }
-            }
-
-            const todosText = this.formatClaudeTodos(raw?.todos);
-            if (todosText) {
-                blocks.push({
-                    type: 'plan',
-                    text: 'Todo List',
-                    explanation: todosText
-                });
-            }
-
-            if (blocks.length === 0 && raw?.toolUseResult != null) {
-                const toolResultText = typeof raw.toolUseResult === 'string'
-                    ? raw.toolUseResult
-                    : this.safeJson(raw.toolUseResult, 1200);
-                if (toolResultText.trim()) {
-                    blocks.push({
-                        type: 'tool_result',
-                        content: toolResultText,
-                        is_error: toolResultText.toLowerCase().includes('error')
-                    });
-                }
-            }
-
-            blocks.forEach((block, blockIndex) => {
-                messages.push(this.buildStructuredMessage(
-                    role,
-                    createdAt,
-                    turnId,
-                    itemId,
-                    blockIndex,
-                    block
-                ));
-            });
-        });
-
-        const nearTailIndex = Math.max(0, rawMessages.length - 3);
-        for (const [toolUseId, pending] of pendingToolUses) {
-            if (resolvedToolUseIds.has(toolUseId)) continue;
-            if (pending.messageIndex < nearTailIndex) continue;
-
-            messages.push(this.buildStructuredMessage(
-                'assistant',
-                pending.createdAt,
-                pending.turnId,
-                `${pending.itemId}-approval`,
-                0,
-                {
-                    type: 'approval_needed',
-                    title: 'Tool approval may be required',
-                    description: 'Attach this synced session to approve tool requests from Discord.',
-                    toolName: pending.toolName,
-                    status: 'pending',
-                    requiresAttach: true,
-                    payload: {
-                        toolUseId,
-                        input: pending.input
-                    }
-                }
-            ));
-        }
-
-        return messages;
-    }
-
-    private commandResultText(item: any): string {
-        const lines: string[] = [];
-        if (typeof item?.status === 'string') lines.push(`Status: ${item.status}`);
-        if (typeof item?.exitCode === 'number') lines.push(`Exit code: ${item.exitCode}`);
-        if (typeof item?.durationMs === 'number') lines.push(`Duration: ${item.durationMs} ms`);
-        if (typeof item?.processId === 'string' && item.processId.trim()) lines.push(`Process: ${item.processId}`);
-        if (typeof item?.aggregatedOutput === 'string' && item.aggregatedOutput.trim()) {
-            lines.push('');
-            lines.push(item.aggregatedOutput.trim());
-        }
-        return lines.join('\n').trim() || 'No command output available.';
-    }
-
-    private fileChangeResultText(item: any): string {
-        const lines: string[] = [];
-        const changes = Array.isArray(item?.changes) ? item.changes : [];
-        if (typeof item?.status === 'string') lines.push(`Status: ${item.status}`);
-        lines.push(`Files changed: ${changes.length}`);
-        if (changes.length > 0) {
-            const preview = changes.slice(0, 20).map((change: any) => {
-                const changePath = change?.path || change?.filePath || change?.file || change?.name || 'unknown';
-                const kind = change?.kind || change?.changeType || 'updated';
-                return `- ${kind}: ${changePath}`;
-            });
-            lines.push(...preview);
-            if (changes.length > 20) lines.push(`- …and ${changes.length - 20} more`);
-        }
-        return lines.join('\n').trim();
-    }
-
-    private mcpResultText(item: any): string {
-        const lines: string[] = [];
-        if (typeof item?.status === 'string') lines.push(`Status: ${item.status}`);
-        if (typeof item?.durationMs === 'number') lines.push(`Duration: ${item.durationMs} ms`);
-        if (item?.error) {
-            lines.push('');
-            lines.push(`Error: ${this.safeJson(item.error, 800)}`);
-        } else if (item?.result != null) {
-            lines.push('');
-            lines.push(this.safeJson(item.result, 1200));
-        }
-        return lines.join('\n').trim() || 'No MCP result available.';
-    }
-
-    private extractGeminiTextSnippets(value: unknown, depth = 0): string[] {
-        if (depth > 6 || value == null) return [];
-
-        if (typeof value === 'string') {
-            const trimmed = value.trim();
-            return trimmed ? [trimmed] : [];
-        }
-
-        if (Array.isArray(value)) {
-            return value.flatMap((entry) => this.extractGeminiTextSnippets(entry, depth + 1));
-        }
-
-        if (typeof value !== 'object') return [];
-
-        const obj = value as Record<string, unknown>;
-        const snippets: string[] = [];
-
-        snippets.push(...this.extractGeminiTextSnippets(obj.text, depth + 1));
-        snippets.push(...this.extractGeminiTextSnippets(obj.content, depth + 1));
-        snippets.push(...this.extractGeminiTextSnippets(obj.description, depth + 1));
-        snippets.push(...this.extractGeminiTextSnippets(obj.output, depth + 1));
-        snippets.push(...this.extractGeminiTextSnippets(obj.message, depth + 1));
-
-        if (typeof obj.functionResponse === 'object' && obj.functionResponse) {
-            const fnResp = obj.functionResponse as Record<string, unknown>;
-            snippets.push(...this.extractGeminiTextSnippets(fnResp.response, depth + 1));
-            snippets.push(...this.extractGeminiTextSnippets(fnResp.output, depth + 1));
-        }
-
-        snippets.push(...this.extractGeminiTextSnippets(obj.response, depth + 1));
-
-        return snippets;
-    }
-
-    private extractGeminiToolResultText(value: unknown): string | null {
-        const snippets = this.extractGeminiTextSnippets(value)
-            .map((snippet) => snippet.trim())
-            .filter((snippet) => snippet.length > 0);
-
-        if (snippets.length > 0) {
-            const unique = Array.from(new Set(snippets));
-            return unique.join('\n').trim();
-        }
-
-        if (value == null) return null;
-        const fallback = this.safeJson(value, 1200).trim();
-        if (!fallback || fallback === '{}' || fallback === '[]') return null;
-        return fallback;
-    }
-
-    private extractGeminiStructuredMessages(rawMessages: any[], sessionIdHint?: string): SyncedSessionMessage[] {
-        const messages: SyncedSessionMessage[] = [];
-        const turnId = `gemini-${sessionIdHint || 'session'}`;
-
-        rawMessages.forEach((raw, index) => {
-            const type = typeof raw?.type === 'string' ? raw.type : '';
-            const role: 'user' | 'assistant' = type === 'user' ? 'user' : 'assistant';
-            const createdAt = this.toIsoTimestamp(raw?.timestamp ?? raw?.createdAt ?? Date.now());
-            const itemId = typeof raw?.id === 'string' && raw.id.trim() ? raw.id : `msg-${index}`;
-            const blocks: SyncedContentBlock[] = [];
-
-            const textSnippets = this.extractGeminiTextSnippets(raw?.content);
-            for (const text of textSnippets) {
-                blocks.push({ type: 'text', text });
-            }
-
-            const thoughts = Array.isArray(raw?.thoughts) ? raw.thoughts : [];
-            for (const thought of thoughts) {
-                const subject = typeof thought?.subject === 'string' ? thought.subject.trim() : '';
-                const description = typeof thought?.description === 'string' ? thought.description.trim() : '';
-                const lines = [subject, description].filter((line) => line.length > 0);
-                if (lines.length > 0) {
-                    blocks.push({ type: 'thinking', thinking: lines.join('\n') });
-                }
-            }
-
-            const toolCalls = Array.isArray(raw?.toolCalls) ? raw.toolCalls : [];
-            for (let toolIndex = 0; toolIndex < toolCalls.length; toolIndex += 1) {
-                const toolCall = toolCalls[toolIndex];
-                const toolName = typeof toolCall?.name === 'string' && toolCall.name.trim()
-                    ? toolCall.name
-                    : (typeof toolCall?.tool === 'string' && toolCall.tool.trim() ? toolCall.tool : 'ToolCall');
-                const toolUseId = typeof toolCall?.id === 'string' && toolCall.id.trim()
-                    ? toolCall.id
-                    : `${itemId}:tool-${toolIndex}`;
-                const status = typeof toolCall?.status === 'string' ? toolCall.status : undefined;
-                const statusLower = status?.toLowerCase() || '';
-                const isPending = statusLower.includes('pending')
-                    || statusLower.includes('in_progress')
-                    || statusLower.includes('inprogress')
-                    || statusLower.includes('running');
-                const needsApproval = statusLower.includes('approval') || statusLower.includes('confirm');
-                const hasError = statusLower.includes('error') || statusLower.includes('fail');
-                const input = toolCall?.args ?? toolCall?.arguments ?? toolCall?.input;
-
-                blocks.push({
-                    type: 'tool_use',
-                    name: toolName,
-                    input,
-                    toolUseId
-                });
-
-                const errorResult = toolCall?.error ?? toolCall?.result?.error;
-                const resultText = this.extractGeminiToolResultText(
-                    errorResult ?? toolCall?.result ?? toolCall?.output ?? toolCall?.response
-                );
-
-                if (resultText) {
-                    blocks.push({
-                        type: 'tool_result',
-                        tool_use_id: toolUseId,
-                        is_error: hasError || Boolean(errorResult),
-                        content: resultText
-                    });
-                } else if (status && !isPending) {
-                    blocks.push({
-                        type: 'tool_result',
-                        tool_use_id: toolUseId,
-                        is_error: hasError,
-                        content: `Status: ${status}`
-                    });
-                }
-
-                if (isPending || needsApproval) {
-                    blocks.push({
-                        type: 'approval_needed',
-                        title: 'Tool approval may be required',
-                        description: 'Attach this synced session to approve tool requests from Discord.',
-                        toolName,
-                        status,
-                        requiresAttach: true,
-                        payload: {
-                            toolUseId,
-                            input
-                        }
-                    });
-                }
-            }
-
-            if (blocks.length === 0) {
-                const fallback = this.safeJson(raw, 900).trim();
-                if (fallback) {
-                    blocks.push({ type: 'text', text: `[${type || 'message'}] ${fallback}` });
-                }
-            }
-
-            blocks.forEach((block, blockIndex) => {
-                messages.push(this.buildStructuredMessage(
-                    role,
-                    createdAt,
-                    turnId,
-                    itemId,
-                    blockIndex,
-                    block
-                ));
-            });
-        });
-
-        return messages;
-    }
-
-    private buildStructuredMessage(
-        role: 'user' | 'assistant',
-        createdAt: string,
-        turnId: string,
-        itemId: string,
-        blockIndex: number,
-        block: SyncedContentBlock
-    ): SyncedSessionMessage {
-        return {
-            id: `${turnId}:${itemId}:${blockIndex}`,
-            role,
-            createdAt,
-            turnId,
-            itemId,
-            content: [block]
-        };
-    }
-
-    private extractCodexStructuredMessages(thread: Thread): SyncedSessionMessage[] {
-        const messages: SyncedSessionMessage[] = [];
-        const turns = Array.isArray(thread.turns) ? thread.turns : [];
-
-        turns.forEach((turn: any, turnIndex: number) => {
-            const turnId = typeof turn?.id === 'string' ? turn.id : `turn-${turnIndex}`;
-            const turnCreatedAt = this.toIsoTimestamp(turn?.createdAt ?? thread.updatedAt ?? Date.now());
-
-            const turnInput = Array.isArray(turn?.input) ? turn.input : [];
-            turnInput.forEach((entry: any, index: number) => {
-                const text = typeof entry?.text === 'string' ? entry.text.trim() : '';
-                if (!text) return;
-                messages.push(this.buildStructuredMessage(
-                    'user',
-                    turnCreatedAt,
-                    turnId,
-                    `input-${index}`,
-                    0,
-                    { type: 'text', text }
-                ));
-            });
-
-            const items = Array.isArray(turn?.items) ? turn.items : [];
-            items.forEach((wrappedItem: any, itemIndex: number) => {
-                const item = wrappedItem?.item || wrappedItem;
-                const itemType = typeof item?.type === 'string' ? item.type : 'unknown';
-                const itemId = typeof item?.id === 'string' ? item.id : `item-${itemIndex}`;
-                const createdAt = this.toIsoTimestamp(item?.createdAt ?? turnCreatedAt);
-
-                const blocks: SyncedContentBlock[] = [];
-                let role: 'user' | 'assistant' = 'assistant';
-
-                switch (itemType) {
-                    case 'userMessage': {
-                        role = 'user';
-                        const content = Array.isArray(item?.content) ? item.content : [];
-                        const texts = this.collectTextFromUserInputs(content);
-                        for (const text of texts) blocks.push({ type: 'text', text });
-                        break;
-                    }
-                    case 'agentMessage': {
-                        role = 'assistant';
-                        if (typeof item?.text === 'string' && item.text.trim()) {
-                            blocks.push({ type: 'text', text: item.text.trim() });
-                        }
-                        break;
-                    }
-                    case 'reasoning': {
-                        role = 'assistant';
-                        const summary = Array.isArray(item?.summary) ? item.summary.filter((x: any) => typeof x === 'string') : [];
-                        const content = Array.isArray(item?.content) ? item.content.filter((x: any) => typeof x === 'string') : [];
-                        const thinkingText = [...summary, ...content].join('\n').trim();
-                        if (thinkingText) blocks.push({ type: 'thinking', thinking: thinkingText });
-                        break;
-                    }
-                    case 'plan': {
-                        role = 'assistant';
-                        if (typeof item?.text === 'string' && item.text.trim()) {
-                            blocks.push({ type: 'plan', text: item.text.trim() });
-                        }
-                        break;
-                    }
-                    case 'commandExecution': {
-                        role = 'assistant';
-                        blocks.push({
-                            type: 'tool_use',
-                            name: 'CommandExecution',
-                            toolUseId: itemId,
-                            input: {
-                                command: item?.command,
-                                cwd: item?.cwd,
-                                commandActions: item?.commandActions
-                            }
-                        });
-                        blocks.push({
-                            type: 'tool_result',
-                            tool_use_id: itemId,
-                            is_error: item?.status === 'failed' || item?.status === 'declined',
-                            content: this.commandResultText(item)
-                        });
-                        if (item?.status === 'inProgress') {
-                            blocks.push({
-                                type: 'approval_needed',
-                                title: 'Command approval may be required',
-                                description: 'Attach this synced session to approve command execution from Discord.',
-                                toolName: 'CommandExecution',
-                                status: item?.status,
-                                requiresAttach: true,
-                                payload: {
-                                    command: item?.command,
-                                    cwd: item?.cwd
-                                }
-                            });
-                        }
-                        break;
-                    }
-                    case 'fileChange': {
-                        role = 'assistant';
-                        blocks.push({
-                            type: 'tool_use',
-                            name: 'FileChange',
-                            toolUseId: itemId,
-                            input: {
-                                changes: item?.changes,
-                                status: item?.status
-                            }
-                        });
-                        blocks.push({
-                            type: 'tool_result',
-                            tool_use_id: itemId,
-                            is_error: item?.status === 'failed' || item?.status === 'declined',
-                            content: this.fileChangeResultText(item)
-                        });
-                        if (item?.status === 'inProgress') {
-                            blocks.push({
-                                type: 'approval_needed',
-                                title: 'File change approval may be required',
-                                description: 'Attach this synced session to approve file changes from Discord.',
-                                toolName: 'FileChange',
-                                status: item?.status,
-                                requiresAttach: true,
-                                payload: {
-                                    status: item?.status,
-                                    changes: item?.changes
-                                }
-                            });
-                        }
-                        break;
-                    }
-                    case 'mcpToolCall': {
-                        role = 'assistant';
-                        blocks.push({
-                            type: 'tool_use',
-                            name: `MCP ${item?.server || 'server'}/${item?.tool || 'tool'}`,
-                            toolUseId: itemId,
-                            input: item?.arguments
-                        });
-                        blocks.push({
-                            type: 'tool_result',
-                            tool_use_id: itemId,
-                            is_error: item?.status === 'failed',
-                            content: this.mcpResultText(item)
-                        });
-                        break;
-                    }
-                    case 'webSearch': {
-                        role = 'assistant';
-                        const query = typeof item?.query === 'string' ? item.query : 'unknown query';
-                        blocks.push({ type: 'text', text: `Web search: ${query}` });
-                        break;
-                    }
-                    case 'imageView': {
-                        role = 'assistant';
-                        const imagePath = typeof item?.path === 'string' ? item.path : 'unknown path';
-                        blocks.push({ type: 'text', text: `Viewed image: ${imagePath}` });
-                        break;
-                    }
-                    case 'contextCompaction': {
-                        role = 'assistant';
-                        blocks.push({ type: 'text', text: 'Context was compacted for this thread.' });
-                        break;
-                    }
-                    default: {
-                        const summary = this.safeJson(item, 900);
-                        if (summary.trim()) {
-                            blocks.push({
-                                type: 'text',
-                                text: `[${itemType}] ${summary}`
-                            });
-                        }
-                        break;
-                    }
-                }
-
-                blocks.forEach((block, blockIndex) => {
-                    messages.push(this.buildStructuredMessage(
-                        role,
-                        createdAt,
-                        turnId,
-                        itemId,
-                        blockIndex,
-                        block
-                    ));
-                });
-            });
-        });
-
-        return messages;
-    }
-
-    // Legacy text-only extraction for fallback compatibility.
-    private extractLegacyTextSnippets(value: any): string[] {
-        if (value == null) return [];
-
-        if (typeof value === 'string') {
-            const trimmed = value.trim();
-            return trimmed ? [trimmed] : [];
-        }
-
-        if (Array.isArray(value)) {
-            return value.flatMap((entry) => this.extractLegacyTextSnippets(entry));
-        }
-
-        if (typeof value !== 'object') return [];
-
-        const snippets: string[] = [];
-        if (typeof value.text === 'string') snippets.push(...this.extractLegacyTextSnippets(value.text));
-        if (typeof value.delta === 'string') snippets.push(...this.extractLegacyTextSnippets(value.delta));
-        if (typeof value.content === 'string' || Array.isArray(value.content)) snippets.push(...this.extractLegacyTextSnippets(value.content));
-        if (Array.isArray(value.contentItems)) snippets.push(...this.extractLegacyTextSnippets(value.contentItems));
-        if (Array.isArray(value.input)) snippets.push(...this.extractLegacyTextSnippets(value.input));
-        if (typeof value.message === 'string') snippets.push(...this.extractLegacyTextSnippets(value.message));
-
-        return snippets;
-    }
-
-    private inferLegacyCodexRole(payload: any, fallback: 'assistant' | 'user' = 'assistant'): 'assistant' | 'user' {
-        if (payload?.role === 'user') return 'user';
-        if (payload?.role === 'assistant') return 'assistant';
-
-        const type = typeof payload?.type === 'string' ? payload.type.toLowerCase() : '';
-        if (type.includes('user') || type.startsWith('input')) return 'user';
-        if (type.includes('agent') || type.includes('assistant') || type.includes('output')) return 'assistant';
-
-        return fallback;
-    }
-
-    private extractLegacyCodexMessages(thread: Thread): any[] {
-        const messages: any[] = [];
-        const turns = Array.isArray(thread.turns) ? thread.turns : [];
-
-        for (const turn of turns) {
-            const seenTurnMessages = new Set<string>();
-
-            const turnInput = Array.isArray((turn as any).input) ? (turn as any).input : [];
-            for (const input of turnInput) {
-                const snippets = this.extractLegacyTextSnippets(input);
-                for (const text of snippets) {
-                    const dedupKey = `user:${text}`;
-                    if (seenTurnMessages.has(dedupKey)) continue;
-                    seenTurnMessages.add(dedupKey);
-                    messages.push({
-                        type: 'message',
-                        role: 'user',
-                        content: [{ type: 'text', text }],
-                        created_at: Date.now()
-                    });
-                }
-            }
-
-            const items = Array.isArray((turn as any).items) ? (turn as any).items : [];
-            for (const item of items) {
-                const payload = (item as any).item || item;
-                const snippets = this.extractLegacyTextSnippets(payload);
-                if (snippets.length === 0) continue;
-
-                const role = this.inferLegacyCodexRole(payload);
-                for (const text of snippets) {
-                    const dedupKey = `${role}:${text}`;
-                    if (seenTurnMessages.has(dedupKey)) continue;
-                    seenTurnMessages.add(dedupKey);
-
-                    messages.push({
-                        type: 'message',
-                        role,
-                        content: [{ type: 'text', text }],
-                        created_at: Date.now()
-                    });
-                }
-            }
-        }
-
-        return messages;
-    }
-
-    private async readClaudeSessionMessages(sessionId: string, projectPath: string): Promise<{ messages: any[]; messageCount: number }> {
-        try {
-            const details = await getSessionDetailsAsync(sessionId, projectPath);
-            if (!details) return { messages: [], messageCount: 0 };
-
-            const rawMessages = Array.isArray(details.messages) ? details.messages : [];
-            if (rawMessages.length === 0) {
-                return { messages: [], messageCount: details.messageCount || 0 };
-            }
-
-            try {
-                const structuredMessages = this.extractClaudeStructuredMessages(rawMessages);
-                if (structuredMessages.length > 0) {
-                    return {
-                        messages: structuredMessages,
-                        messageCount: details.messageCount || structuredMessages.length
-                    };
-                }
-            } catch (error) {
-                console.error(`[SyncService] Structured Claude extraction failed for ${sessionId}:`, error);
-            }
-
-            return {
-                messages: rawMessages,
-                messageCount: details.messageCount || rawMessages.length
-            };
-        } catch (error) {
-            console.error(`[SyncService] Error reading Claude session ${sessionId}:`, error);
-            return { messages: [], messageCount: 0 };
-        }
-    }
-
-    private async readGeminiSessionMessages(sessionId: string, projectPath: string): Promise<{ messages: any[]; messageCount: number }> {
-        try {
-            const resolved = await resolveGeminiSession(sessionId, {
-                projectRoot: this.normalizeProjectPath(projectPath)
-            });
-            const rawMessages = Array.isArray(resolved.record?.messages) ? resolved.record.messages : [];
-            if (rawMessages.length === 0) {
-                return { messages: [], messageCount: 0 };
-            }
-
-            try {
-                const structuredMessages = this.extractGeminiStructuredMessages(rawMessages, resolved.record.sessionId);
-                if (structuredMessages.length > 0) {
-                    return {
-                        messages: structuredMessages,
-                        messageCount: structuredMessages.length
-                    };
-                }
-            } catch (error) {
-                console.error(`[SyncService] Structured Gemini extraction failed for ${sessionId}:`, error);
-            }
-
-            return {
-                messages: rawMessages,
-                messageCount: rawMessages.length
-            };
-        } catch (error) {
-            console.error(`[SyncService] Error reading Gemini session ${sessionId}:`, error);
-            return { messages: [], messageCount: 0 };
-        }
-    }
-
-    private async readCodexThreadMessages(sessionId: string): Promise<{ messages: any[]; messageCount: number }> {
-        const client = await this.ensureCodexClient();
-        if (!client) return { messages: [], messageCount: 0 };
-
-        try {
-            const result = await client.readThread({ threadId: sessionId, includeTurns: true });
-            const messages = this.extractCodexStructuredMessages(result.thread);
-            const messageCount = messages.length || (Array.isArray(result.thread.turns) ? result.thread.turns.length : 0);
-            return { messages, messageCount };
-        } catch (error) {
-            console.error(`[SyncService] Error reading Codex thread ${sessionId}:`, error);
-            try {
-                const fallback = await client.readThread({ threadId: sessionId, includeTurns: true });
-                const legacyMessages = this.extractLegacyCodexMessages(fallback.thread);
-                const fallbackCount = legacyMessages.length || (Array.isArray(fallback.thread.turns) ? fallback.thread.turns.length : 0);
-                return { messages: legacyMessages, messageCount: fallbackCount };
-            } catch (legacyError) {
-                console.error(`[SyncService] Legacy fallback failed for Codex thread ${sessionId}:`, legacyError);
-                return { messages: [], messageCount: 0 };
-            }
-        }
     }
 
     private startCodexPolling(): void {
@@ -1049,7 +109,7 @@ export class RunnerSyncService extends EventEmitter {
         this.codexPollInFlight = true;
 
         try {
-            const threads = await this.listCodexThreads();
+            const threads = await this.codexClient.listThreads();
             const currentIds = new Set<string>();
 
             if (!this.codexPollInitialized) {
@@ -1064,11 +124,11 @@ export class RunnerSyncService extends EventEmitter {
             }
 
             for (const thread of threads) {
-                const record = this.normalizeThreadRecord(thread);
+                const record = normalizeThreadRecord(thread);
                 if (!record) continue;
 
                 currentIds.add(record.sessionId);
-                const sessionKey = this.toSyncSessionKey(record.sessionId, 'codex');
+                const sessionKey = toSyncSessionKey(record.sessionId, 'codex');
                 if (this.ownedSessions.has(sessionKey) || this.ownedSessions.has(record.sessionId)) {
                     continue;
                 }
@@ -1081,7 +141,7 @@ export class RunnerSyncService extends EventEmitter {
                 if (previousUpdatedAt == null) {
                     this.codexThreadUpdatedAt.set(record.sessionId, updatedAt);
 
-                    const { messages, messageCount } = await this.readCodexThreadMessages(record.sessionId);
+                    const { messages, messageCount } = await this.codexClient.readThreadMessages(record.sessionId);
                     const discovered: SyncSessionDiscoveredMessage = {
                         type: 'sync_session_discovered',
                         data: {
@@ -1106,7 +166,7 @@ export class RunnerSyncService extends EventEmitter {
                 if (updatedAt <= previousUpdatedAt) continue;
                 this.codexThreadUpdatedAt.set(record.sessionId, updatedAt);
 
-                const { messages, messageCount } = await this.readCodexThreadMessages(record.sessionId);
+                const { messages, messageCount } = await this.codexClient.readThreadMessages(record.sessionId);
                 const updated: SyncSessionUpdatedMessage = {
                     type: 'sync_session_updated',
                     data: {
@@ -1149,8 +209,8 @@ export class RunnerSyncService extends EventEmitter {
     /**
      * Mark a session as owned (don't push sync updates)
      */
-    markAsOwned(sessionId: string, cliType: 'claude' | 'codex' | 'gemini' = 'claude'): void {
-        this.ownedSessions.add(this.toSyncSessionKey(sessionId, cliType));
+    markAsOwned(sessionId: string, cliType: CliType = 'claude'): void {
+        this.ownedSessions.add(toSyncSessionKey(sessionId, cliType));
         if (cliType === 'claude') {
             this.watcher.markAsOwned(sessionId);
         }
@@ -1237,11 +297,11 @@ export class RunnerSyncService extends EventEmitter {
         sessionId: string,
         projectPath: string,
         requestId?: string,
-        cliType: 'claude' | 'codex' | 'gemini' = 'claude'
+        cliType: CliType = 'claude'
     ): Promise<void> {
         try {
             if (cliType === 'codex') {
-                const { messages, messageCount } = await this.readCodexThreadMessages(sessionId);
+                const { messages, messageCount } = await this.codexClient.readThreadMessages(sessionId);
 
                 const codexMessage: SyncSessionUpdatedMessage = {
                     type: 'sync_session_updated',
@@ -1250,7 +310,7 @@ export class RunnerSyncService extends EventEmitter {
                         syncFormatVersion: 2,
                         session: {
                             sessionId,
-                            projectPath: this.normalizeProjectPath(projectPath),
+                            projectPath: normalizeProjectPath(projectPath),
                             cliType: 'codex',
                             messageCount
                         },
@@ -1262,7 +322,7 @@ export class RunnerSyncService extends EventEmitter {
             }
 
             if (cliType === 'gemini') {
-                const snapshot = await this.readGeminiSessionMessages(sessionId, projectPath);
+                const snapshot = await readGeminiSessionMessages(sessionId, projectPath);
                 const geminiMessage: SyncSessionUpdatedMessage = {
                     type: 'sync_session_updated',
                     data: {
@@ -1270,7 +330,7 @@ export class RunnerSyncService extends EventEmitter {
                         syncFormatVersion: 2,
                         session: {
                             sessionId,
-                            projectPath: this.normalizeProjectPath(projectPath),
+                            projectPath: normalizeProjectPath(projectPath),
                             cliType: 'gemini',
                             messageCount: snapshot.messageCount || 0
                         },
@@ -1281,7 +341,7 @@ export class RunnerSyncService extends EventEmitter {
                 return;
             }
 
-            const snapshot = await this.readClaudeSessionMessages(sessionId, projectPath);
+            const snapshot = await readClaudeSessionMessages(sessionId, projectPath);
             const message: SyncSessionUpdatedMessage = {
                 type: 'sync_session_updated',
                 data: {
@@ -1289,7 +349,7 @@ export class RunnerSyncService extends EventEmitter {
                     syncFormatVersion: 2,
                     session: {
                         sessionId,
-                        projectPath: this.normalizeProjectPath(projectPath),
+                        projectPath: normalizeProjectPath(projectPath),
                         cliType: 'claude',
                         messageCount: snapshot.messageCount || 0
                     },
@@ -1321,7 +381,7 @@ export class RunnerSyncService extends EventEmitter {
 
         try {
             const claudeProjects = await listProjectsAsync();
-            const codexProjects = await this.listCodexProjects();
+            const codexProjects = await this.codexClient.listProjects();
             const knownProjectPaths = new Set<string>();
             const mergedProjects = new Map<string, { path: string; lastModified: Date; sessionCount: number }>();
 
@@ -1330,7 +390,7 @@ export class RunnerSyncService extends EventEmitter {
             }
 
             for (const project of claudeProjects) {
-                const normalizedPath = this.normalizeProjectPath(project.path);
+                const normalizedPath = normalizeProjectPath(project.path);
                 knownProjectPaths.add(normalizedPath);
                 mergedProjects.set(normalizedPath, {
                     path: normalizedPath,
@@ -1353,7 +413,7 @@ export class RunnerSyncService extends EventEmitter {
                 });
             }
 
-            const geminiProjects = await this.listGeminiProjects(knownProjectPaths);
+            const geminiProjects = await listGeminiProjects(knownProjectPaths);
             for (const [projectPath, sessionCount] of geminiProjects.entries()) {
                 const existing = mergedProjects.get(projectPath);
                 if (existing) {
@@ -1433,7 +493,7 @@ export class RunnerSyncService extends EventEmitter {
 
     private async runSyncSessions(projectPath: string, requestId?: string): Promise<void> {
         const startedAt = new Date();
-        const normalizedProjectPath = this.normalizeProjectPath(projectPath);
+        const normalizedProjectPath = normalizeProjectPath(projectPath);
 
         const projectStatus = this.syncStatus.projects.get(normalizedProjectPath) || {
             projectPath: normalizedProjectPath,
@@ -1451,15 +511,14 @@ export class RunnerSyncService extends EventEmitter {
                 console.warn(`[SyncService] Claude sessions unavailable for ${normalizedProjectPath}:`, error);
             }
 
-            const codexSessions = await this.listCodexSessions(normalizedProjectPath);
-            const geminiSessions = await this.listGeminiSessionsForProject(normalizedProjectPath);
+            const codexSessions = await this.codexClient.listSessions(normalizedProjectPath);
+            const geminiSessions = await listGeminiSessionsForProject(normalizedProjectPath);
             const sessions = [...claudeSessions, ...codexSessions, ...geminiSessions];
             console.log(`[SyncService] Found ${sessions.length} sessions for ${normalizedProjectPath}`);
-            const codexClient = codexSessions.length > 0 ? await this.ensureCodexClient() : null;
 
             const mappedSessions = [] as any[];
             for (const session of sessions) {
-                const cliType: 'claude' | 'codex' | 'gemini' = session.cliType === 'codex'
+                const cliType: CliType = session.cliType === 'codex'
                     ? 'codex'
                     : session.cliType === 'gemini'
                     ? 'gemini'
@@ -1469,15 +528,15 @@ export class RunnerSyncService extends EventEmitter {
                     let codexMessageCount = typeof session.messageCount === 'number' ? session.messageCount : 0;
 
                     // thread/list does not reliably include turns; hydrate with thread/read for initial sync.
-                    if (codexMessages.length === 0 && codexClient) {
-                        const snapshot = await this.readCodexThreadMessages(session.sessionId);
+                    if (codexMessages.length === 0) {
+                        const snapshot = await this.codexClient.readThreadMessages(session.sessionId);
                         codexMessages = snapshot.messages;
                         codexMessageCount = snapshot.messageCount;
                     }
 
                     mappedSessions.push({
                         sessionId: session.sessionId,
-                        projectPath: this.normalizeProjectPath(session.projectPath),
+                        projectPath: normalizeProjectPath(session.projectPath),
                         cliType,
                         firstPrompt: session.firstPrompt,
                         created: session.created,
@@ -1490,14 +549,14 @@ export class RunnerSyncService extends EventEmitter {
                     let geminiMessageCount = typeof session.messageCount === 'number' ? session.messageCount : 0;
 
                     if (geminiMessages.length === 0) {
-                        const snapshot = await this.readGeminiSessionMessages(session.sessionId, session.projectPath);
+                        const snapshot = await readGeminiSessionMessages(session.sessionId, session.projectPath);
                         geminiMessages = snapshot.messages;
                         geminiMessageCount = snapshot.messageCount;
                     }
 
                     mappedSessions.push({
                         sessionId: session.sessionId,
-                        projectPath: this.normalizeProjectPath(session.projectPath),
+                        projectPath: normalizeProjectPath(session.projectPath),
                         cliType,
                         firstPrompt: session.firstPrompt,
                         created: session.created,
@@ -1506,10 +565,10 @@ export class RunnerSyncService extends EventEmitter {
                         messages: geminiMessages
                     });
                 } else {
-                    const claudeSnapshot = await this.readClaudeSessionMessages(session.sessionId, session.projectPath);
+                    const claudeSnapshot = await readClaudeSessionMessages(session.sessionId, session.projectPath);
                     mappedSessions.push({
                         sessionId: session.sessionId,
-                        projectPath: this.normalizeProjectPath(session.projectPath),
+                        projectPath: normalizeProjectPath(session.projectPath),
                         cliType,
                         firstPrompt: session.firstPrompt,
                         created: session.created,
@@ -1642,7 +701,7 @@ export class RunnerSyncService extends EventEmitter {
      * Push new session discovery to Bot
      */
     private async pushSessionDiscovered(entry: SessionEntry): Promise<void> {
-        const snapshot = await this.readClaudeSessionMessages(entry.sessionId, entry.projectPath);
+        const snapshot = await readClaudeSessionMessages(entry.sessionId, entry.projectPath);
         console.log(`[SyncService] Pushing session discovery: ${entry.sessionId} | Messages in file: ${snapshot.messages.length}`);
         const message: SyncSessionDiscoveredMessage = {
             type: 'sync_session_discovered',
@@ -1651,7 +710,7 @@ export class RunnerSyncService extends EventEmitter {
                 syncFormatVersion: 2,
                 session: {
                     sessionId: entry.sessionId,
-                    projectPath: this.normalizeProjectPath(entry.projectPath),
+                    projectPath: normalizeProjectPath(entry.projectPath),
                     cliType: 'claude',
                     firstPrompt: entry.firstPrompt,
                     created: entry.created,
@@ -1668,7 +727,7 @@ export class RunnerSyncService extends EventEmitter {
      * Push session update (new messages) to Bot
      */
     private async pushSessionUpdated(entry: SessionEntry): Promise<void> {
-        const snapshot = await this.readClaudeSessionMessages(entry.sessionId, entry.projectPath);
+        const snapshot = await readClaudeSessionMessages(entry.sessionId, entry.projectPath);
 
         const message: SyncSessionUpdatedMessage = {
             type: 'sync_session_updated',
@@ -1677,7 +736,7 @@ export class RunnerSyncService extends EventEmitter {
                 syncFormatVersion: 2,
                 session: {
                     sessionId: entry.sessionId,
-                    projectPath: this.normalizeProjectPath(entry.projectPath),
+                    projectPath: normalizeProjectPath(entry.projectPath),
                     cliType: 'claude',
                     messageCount: snapshot.messageCount || entry.messageCount
                 },
@@ -1697,12 +756,9 @@ export class RunnerSyncService extends EventEmitter {
             clearInterval(this.codexPollTimer);
             this.codexPollTimer = null;
         }
-        if (this.codexClient) {
-            void this.codexClient.shutdown().catch((error) => {
-                console.error('[SyncService] Error shutting down Codex sync client:', error);
-            });
-            this.codexClient = null;
-        }
+        void this.codexClient.shutdown().catch((error) => {
+            console.error('[SyncService] Error shutting down Codex sync client:', error);
+        });
     }
 }
 

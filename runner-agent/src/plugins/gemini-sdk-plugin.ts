@@ -5,16 +5,17 @@
  * Supports persistent session start/resume/continue with stream-json events.
  */
 
-import { EventEmitter } from 'events';
-import { randomUUID } from 'crypto';
 import {
   BasePlugin,
   PluginSession,
   SessionConfig,
-  SessionStatus,
   PluginType,
   PluginOptions
 } from './base.js';
+import {
+  BaseSDKSession,
+  MessageQueue
+} from './sdk-base.js';
 import { getConfig } from '../config.js';
 import {
   GeminiClient,
@@ -24,41 +25,26 @@ import {
   type ToolResultEvent
 } from '@raylin01/gemini-client';
 
-class GeminiSDKSession extends EventEmitter implements PluginSession {
-  readonly sessionId: string;
-  readonly config: SessionConfig;
-  readonly createdAt: Date;
-  readonly isOwned = true;
-
-  status: SessionStatus = 'idle';
-  lastActivity: Date;
-  isReady = false;
-
+class GeminiSDKSession extends BaseSDKSession {
   private client: GeminiClient;
-  private pendingQueue: Array<{ message: string; resolve: () => void; reject: (error: Error) => void }> = [];
-  private sending = false;
+  private messageQueue: MessageQueue;
   private closed = false;
 
   private modelOverride: string | undefined;
   private permissionModeOverride: 'default' | 'acceptEdits' | undefined;
 
-  private currentOutput = '';
-  private outputTimer: NodeJS.Timeout | null = null;
-  private readonly OUTPUT_THROTTLE_MS = 500;
+  // Diagnostics kept separate as per requirements
   private currentDiagnostics = '';
   private diagnosticsOutputType: 'info' | 'stderr' = 'info';
   private diagnosticsTimer: NodeJS.Timeout | null = null;
+  private readonly OUTPUT_THROTTLE_MS = 500;
 
   private currentRunStartedAt = 0;
   private currentRunToolCalls = 0;
   private currentResultEmitted = false;
 
-  constructor(config: SessionConfig, private plugin: GeminiSDKPlugin) {
-    super();
-    this.sessionId = config.sessionId || randomUUID();
-    this.config = config;
-    this.createdAt = new Date();
-    this.lastActivity = new Date();
+  constructor(config: SessionConfig, plugin: GeminiSDKPlugin) {
+    super(config, plugin);
 
     const options = config.options || {};
     this.modelOverride = typeof options.model === 'string' ? options.model : undefined;
@@ -83,6 +69,9 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
       this.client.setSessionId(options.resumeSessionId);
     }
 
+    // Initialize message queue with sender
+    this.messageQueue = new MessageQueue((message) => this.processMessage(message));
+
     this.setupClientListeners();
   }
 
@@ -90,17 +79,11 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
     await this.client.start();
     this.isReady = true;
     this.emit('ready');
-    this.plugin.emit('status', {
-      sessionId: this.sessionId,
-      status: 'idle'
-    });
+    this.emitStatus('idle');
   }
 
   async sendMessage(message: string): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      this.pendingQueue.push({ message, resolve, reject });
-      this.drainQueue().catch(reject);
-    });
+    return this.messageQueue.enqueue(message);
   }
 
   async sendApproval(_optionNumber: string, _message?: string, _requestId?: string): Promise<void> {
@@ -110,40 +93,24 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
 
   async setPermissionMode(mode: 'default' | 'acceptEdits'): Promise<void> {
     this.permissionModeOverride = mode;
-    this.plugin.emit('metadata', {
-      sessionId: this.sessionId,
-      permissionMode: mode,
-      timestamp: new Date()
-    });
+    this.emitMetadata({ permissionMode: mode });
   }
 
   async setModel(model: string): Promise<void> {
     this.modelOverride = model;
-    this.plugin.emit('metadata', {
-      sessionId: this.sessionId,
-      model,
-      timestamp: new Date()
-    });
+    this.emitMetadata({ model });
   }
 
   async interrupt(): Promise<void> {
     await this.client.interrupt();
-    this.flushOutput(true);
+    this.outputThrottler.flush(true);
     this.flushDiagnostics(true);
-    this.status = 'idle';
-    this.plugin.emit('status', {
-      sessionId: this.sessionId,
-      status: this.status
-    });
+    this.emitStatus('idle');
   }
 
   async close(): Promise<void> {
     this.closed = true;
-    this.pendingQueue = [];
-    if (this.outputTimer) {
-      clearTimeout(this.outputTimer);
-      this.outputTimer = null;
-    }
+    this.messageQueue.clear();
     if (this.diagnosticsTimer) {
       clearTimeout(this.diagnosticsTimer);
       this.diagnosticsTimer = null;
@@ -161,31 +128,27 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
         cliSessionId: geminiSessionId
       });
 
-      this.plugin.emit('metadata', {
-        sessionId: this.sessionId,
+      this.emitMetadata({
         model: this.modelOverride,
         permissionMode: this.permissionModeOverride,
-        mode: `session:${geminiSessionId}`,
-        timestamp: new Date()
+        mode: `session:${geminiSessionId}`
       });
     });
 
     this.client.on('message_delta', (delta) => {
-      if (!this.sending) return;
+      if (!this.messageQueue.isActive()) return;
       if (!delta) return;
-      this.currentOutput += delta;
-      this.scheduleOutputFlush();
+      this.outputThrottler.addStdout(delta);
     });
 
     this.client.on('stdout', (line) => {
-      if (!this.sending) return;
+      if (!this.messageQueue.isActive()) return;
       if (!line) return;
-      this.currentOutput += this.currentOutput ? `\n${line}` : line;
-      this.scheduleOutputFlush();
+      this.outputThrottler.addStdout(`\n${line}`);
     });
 
     this.client.on('tool_use', (event: ToolUseEvent) => {
-      if (!this.sending) return;
+      if (!this.messageQueue.isActive()) return;
       this.currentRunToolCalls += 1;
 
       this.plugin.emit('tool_execution', {
@@ -196,8 +159,7 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
         timestamp: new Date(event.timestamp || Date.now())
       });
 
-      this.plugin.emit('output', {
-        sessionId: this.sessionId,
+      this.emitOutput({
         content: `${event.tool_name}: ${JSON.stringify(event.parameters || {})}`,
         isComplete: false,
         outputType: 'tool_use',
@@ -206,13 +168,12 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
             name: event.tool_name,
             input: event.parameters || {}
           }
-        },
-        timestamp: new Date(event.timestamp || Date.now())
+        }
       });
     });
 
     this.client.on('tool_result', (event: ToolResultEvent) => {
-      if (!this.sending) return;
+      if (!this.messageQueue.isActive()) return;
       const content = event.output || event.error?.message || '';
 
       this.plugin.emit('tool_result', {
@@ -224,38 +185,28 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
       });
 
       if (content) {
-        this.plugin.emit('output', {
-          sessionId: this.sessionId,
+        this.emitOutput({
           content,
           isComplete: false,
-          outputType: 'tool_result',
-          timestamp: new Date(event.timestamp || Date.now())
+          outputType: 'tool_result'
         });
       }
     });
 
     this.client.on('result', (event) => {
-      if (!this.sending) return;
+      if (!this.messageQueue.isActive()) return;
       if (event.stats) {
-        this.plugin.emit('metadata', {
-          sessionId: this.sessionId,
-          tokens: event.stats.total_tokens,
-          timestamp: new Date(event.timestamp || Date.now())
-        });
+        this.emitMetadata({ tokens: event.stats.total_tokens });
       }
     });
 
     this.client.on('error_event', (event) => {
-      if (!this.sending) return;
-      this.plugin.emit('error', {
-        sessionId: this.sessionId,
-        error: event.message,
-        fatal: false
-      });
+      if (!this.messageQueue.isActive()) return;
+      this.emitError(event.message, false);
     });
 
     this.client.on('stderr', (line) => {
-      if (!this.sending) return;
+      if (!this.messageQueue.isActive()) return;
       if (!line || this.shouldIgnoreStderrLine(line)) return;
 
       const outputType = this.classifyStderrLine(line);
@@ -270,64 +221,38 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
     });
   }
 
-  private async drainQueue(): Promise<void> {
-    if (this.sending || this.closed) return;
-    const next = this.pendingQueue.shift();
-    if (!next) return;
-
-    this.sending = true;
+  private async processMessage(message: string): Promise<void> {
     this.lastActivity = new Date();
-    this.status = 'working';
-    this.currentOutput = '';
     this.currentDiagnostics = '';
     this.diagnosticsOutputType = 'info';
     this.currentRunToolCalls = 0;
     this.currentResultEmitted = false;
     this.currentRunStartedAt = Date.now();
 
-    this.plugin.emit('status', {
-      sessionId: this.sessionId,
-      status: this.status
-    });
+    this.emitStatus('working');
 
     try {
-      const result = await this.runMessage(next.message);
-      if (!this.currentOutput && result.assistantResponse) {
-        this.currentOutput = result.assistantResponse;
+      const result = await this.runMessage(message);
+
+      // If no output was emitted but we have an assistant response, emit it
+      if (result.assistantResponse) {
+        this.outputThrottler.addStdout(result.assistantResponse);
       }
-      this.flushOutput(true);
+
+      this.outputThrottler.flush(true);
       this.flushDiagnostics(true);
       this.emitRunResult(result);
-
-      this.status = 'idle';
-      this.plugin.emit('status', {
-        sessionId: this.sessionId,
-        status: this.status
-      });
-
-      next.resolve();
+      this.emitStatus('idle');
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
-      this.flushOutput(true);
+      this.outputThrottler.flush(true);
       this.flushDiagnostics(true);
-
-      this.status = 'idle';
-      this.plugin.emit('status', {
-        sessionId: this.sessionId,
-        status: this.status
-      });
-      this.plugin.emit('error', {
-        sessionId: this.sessionId,
-        error: error.message,
-        fatal: false
-      });
-
-      next.reject(error);
+      this.emitStatus('idle');
+      this.emitError(error.message, false);
+      throw error;
     } finally {
-      this.sending = false;
-      if (!this.closed) {
-        this.drainQueue().catch(() => null);
-      }
+      // After result (success or error), session is ready for new messages
+      this.emit('ready');
     }
   }
 
@@ -445,36 +370,6 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
     return args;
   }
 
-  private scheduleOutputFlush(): void {
-    if (this.outputTimer) return;
-    this.outputTimer = setTimeout(() => {
-      this.outputTimer = null;
-      this.flushOutput(false);
-    }, this.OUTPUT_THROTTLE_MS);
-  }
-
-  private flushOutput(isComplete: boolean): void {
-    if (this.outputTimer && isComplete) {
-      clearTimeout(this.outputTimer);
-      this.outputTimer = null;
-    }
-
-    if (!this.currentOutput.trim()) return;
-
-    this.plugin.emit('output', {
-      sessionId: this.sessionId,
-      content: this.currentOutput,
-      isComplete,
-      outputType: 'stdout',
-      timestamp: new Date()
-    });
-
-    // Clear output after final flush to prevent resend
-    if (isComplete) {
-      this.currentOutput = '';
-    }
-  }
-
   private scheduleDiagnosticsFlush(): void {
     if (this.diagnosticsTimer) return;
     this.diagnosticsTimer = setTimeout(() => {
@@ -491,12 +386,10 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
 
     if (!this.currentDiagnostics.trim()) return;
 
-    this.plugin.emit('output', {
-      sessionId: this.sessionId,
+    this.emitOutput({
       content: this.currentDiagnostics,
       isComplete,
-      outputType: this.diagnosticsOutputType,
-      timestamp: new Date()
+      outputType: this.diagnosticsOutputType
     });
 
     // Clear diagnostics after final flush to prevent resend
@@ -543,10 +436,6 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
       error: result.error?.message,
       timestamp: new Date()
     });
-
-    // After result (success or error), session is ready for new messages
-    this.status = 'idle';
-    this.emit('ready');
   }
 }
 

@@ -1,6 +1,6 @@
 /**
  * Category Manager
- * 
+ *
  * Manages Discord categories and channels for runners and projects.
  * Each runner gets a category with:
  * - Stats voice channels (locked)
@@ -9,95 +9,38 @@
  */
 
 import {
-  Client,
-  TextChannel,
-  ChannelType,
-  PermissionFlagsBits,
-  OverwriteType,
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle
+    Client,
+    TextChannel,
+    ChannelType
 } from 'discord.js';
 import { storage } from '../storage.js';
 import * as botState from '../state.js';
 import { permissionStateStore } from '../permissions/state-store.js';
+import {
+    applyPermissionsToChannel,
+    RunnerPermissionInfo
+} from './permission-setup.js';
+import {
+    createRunnerCategoryStructure,
+    createProjectChannel as createProjectChannelInternal,
+    updateStatsChannels,
+    postRunnerDashboard as postRunnerDashboardInternal,
+    postProjectDashboard as postProjectDashboardInternal,
+    RunnerCategory,
+    ProjectChannel,
+    ProjectStats
+} from './channel-factory.js';
 
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface RunnerCategory {
-    runnerId: string;
-    guildId: string;
-    categoryId: string;
-    controlChannelId: string;
-    statsChannelIds: {
-        sessions?: string;  // "📊 3 active"
-        pending?: string;   // "⚠️ 5 pending"
-        memory?: string;    // "💾 128MB"
-    };
-    projects: Map<string, ProjectChannel>;  // projectPath -> channel info
-}
-
-export interface ProjectChannel {
-    channelId: string;
-    projectPath: string;
-    dashboardMessageId?: string;  // Latest dashboard message
-    lastSync?: Date;
-}
-
-export interface ProjectStats {
-    totalSessions: number;
-    activeSessions: number;
-    pendingActions: number;
-    lastActivity?: Date;
-}
+// Re-export types for backward compatibility
+export type { RunnerCategory, ProjectChannel, ProjectStats } from './channel-factory.js';
 
 // ============================================================================
 // Category Manager
 // ============================================================================
 
-/**
- * Build permission overwrites for a runner's channels
- * - Denies ViewChannel to @everyone
- * - Allows full access to owner and authorized users
- */
-function buildChannelPermissionOverwrites(
-    runner: { ownerId: string; authorizedUsers: string[] },
-    everyoneRoleId: string
-): Array<{ id: string; deny?: string[]; allow?: string[] }> {
-    const overwrites: Array<{ id: string; deny?: string[]; allow?: string[] }> = [
-        {
-            id: everyoneRoleId,
-            deny: ['ViewChannel', 'ReadMessageHistory', 'SendMessages']
-        }
-    ];
-
-    // Add owner permissions
-    if (runner.ownerId) {
-        overwrites.push({
-            id: runner.ownerId,
-            allow: ['ViewChannel', 'ReadMessageHistory', 'SendMessages', 'CreatePublicThreads', 'CreatePrivateThreads', 'ManageThreads', 'SendMessagesInThreads']
-        });
-    }
-
-    // Add authorized users (excluding owner)
-    for (const userId of runner.authorizedUsers) {
-        if (userId && userId !== runner.ownerId) {
-            overwrites.push({
-                id: userId,
-                allow: ['ViewChannel', 'ReadMessageHistory', 'SendMessages', 'CreatePublicThreads', 'CreatePrivateThreads', 'SendMessagesInThreads']
-            });
-        }
-    }
-
-    return overwrites;
-}
-
 export class CategoryManager {
     private client: Client;
-    private categories = new Map<string, RunnerCategory>();  // runnerId -> category
+    private categories = new Map<string, RunnerCategory>();
     private lastPublishedRunnerStats = new Map<string, { activeSessions: number; pendingActions: number; memoryMb?: number }>();
 
     constructor(client: Client) {
@@ -168,6 +111,18 @@ export class CategoryManager {
     }
 
     /**
+     * Get runner permission info from storage
+     */
+    private getRunnerPermissionInfo(runnerId: string): RunnerPermissionInfo | null {
+        const runner = storage.getRunner(runnerId);
+        if (!runner) return null;
+        return {
+            ownerId: runner.ownerId,
+            authorizedUsers: runner.authorizedUsers
+        };
+    }
+
+    /**
      * Create category structure for a new runner
      */
     async createRunnerCategory(
@@ -178,98 +133,56 @@ export class CategoryManager {
         // Check if we already have it in storage but not in memory
         const runner = storage.getRunner(runnerId);
         if (runner?.discordState?.categoryId) {
-             const existingCategory = await this.client.channels.fetch(runner.discordState.categoryId).catch(() => null);
-             if (existingCategory) {
-                 // It exists, so we should have loaded it on init.
-             // If not, load it now.
+            const existingCategory = await this.client.channels.fetch(runner.discordState.categoryId).catch(() => null);
+            if (existingCategory) {
+                // It exists, so we should have loaded it on init.
+                // If not, load it now.
 
-             // Restore projects from storage
-             const projectsMap = new Map<string, ProjectChannel>();
-             if (runner.discordState.projects) {
-                 Object.entries(runner.discordState.projects).forEach(([path, data]) => {
-                     projectsMap.set(path, {
-                         channelId: data.channelId,
-                         projectPath: path,
-                         dashboardMessageId: data.dashboardMessageId,
-                         lastSync: data.lastSync ? new Date(data.lastSync) : undefined
-                     });
-                 });
-             }
+                // Restore projects from storage
+                const projectsMap = new Map<string, ProjectChannel>();
+                if (runner.discordState.projects) {
+                    Object.entries(runner.discordState.projects).forEach(([path, data]) => {
+                        projectsMap.set(path, {
+                            channelId: data.channelId,
+                            projectPath: path,
+                            dashboardMessageId: data.dashboardMessageId,
+                            lastSync: data.lastSync ? new Date(data.lastSync) : undefined
+                        });
+                    });
+                }
 
-             const restoredCategory: RunnerCategory = {
-                runnerId,
-                guildId,
-                categoryId: runner.discordState.categoryId,
-                controlChannelId: runner.discordState.controlChannelId || '',
-                statsChannelIds: runner.discordState.statsChannelIds || {},
-                projects: projectsMap
-             };
-             this.categories.set(runnerId, restoredCategory);
-             await this.ensureControlChannelLocked(restoredCategory);
-             // Ensure permissions are up to date on restore
-             await this.syncCategoryPermissions(runnerId);
-             return restoredCategory;
-             }
+                const restoredCategory: RunnerCategory = {
+                    runnerId,
+                    guildId,
+                    categoryId: runner.discordState.categoryId,
+                    controlChannelId: runner.discordState.controlChannelId || '',
+                    statsChannelIds: runner.discordState.statsChannelIds || {},
+                    projects: projectsMap
+                };
+                this.categories.set(runnerId, restoredCategory);
+                await this.ensureControlChannelLocked(restoredCategory);
+                // Ensure permissions are up to date on restore
+                await this.syncCategoryPermissions(runnerId);
+                return restoredCategory;
+            }
         }
 
-        const guild = await this.client.guilds.fetch(guildId);
-
-        // Build permission overwrites - deny everyone, allow owner + authorized users
-        const permissionOverwrites = buildChannelPermissionOverwrites(
-            runner || { ownerId: '', authorizedUsers: [] },
-            guild.roles.everyone.id
+        const permissionInfo = this.getRunnerPermissionInfo(runnerId);
+        const result = await createRunnerCategoryStructure(
+            this.client,
+            guildId,
+            runnerId,
+            runnerName,
+            permissionInfo
         );
 
-        console.log(`[CategoryManager] Creating category for ${runnerName} with ${permissionOverwrites.length} permission overwrites`);
+        if (!result) {
+            throw new Error(`Failed to create category structure for runner ${runnerName}`);
+        }
 
-        // Create the main category with restricted permissions
-        const category = await guild.channels.create({
-            name: `🖥️ ${runnerName}`,
-            type: ChannelType.GuildCategory,
-            permissionOverwrites: permissionOverwrites as any
-        });
-
-        // Create stats channels with same permissions (inherits from category, but explicit for safety)
-        const sessionsChannel = await guild.channels.create({
-            name: '📊-0-active',
-            type: ChannelType.GuildText,
-            parent: category.id,
-            position: 0,
-            permissionOverwrites: permissionOverwrites as any
-        });
-
-        const pendingChannel = await guild.channels.create({
-            name: '⚠️-0-pending',
-            type: ChannelType.GuildText,
-            parent: category.id,
-            position: 1,
-            permissionOverwrites: permissionOverwrites as any
-        });
-
-        // Create runner control channel with same permissions
-        const controlChannel = await guild.channels.create({
-            name: 'runner-control',
-            type: ChannelType.GuildText,
-            parent: category.id,
-            topic: `Control channel for ${runnerName}. Use /sync-projects to discover projects.`,
-            permissionOverwrites: permissionOverwrites as any
-        });
-
-        const runnerCategory: RunnerCategory = {
-            runnerId,
-            guildId,
-            categoryId: category.id,
-            controlChannelId: controlChannel.id,
-            statsChannelIds: {
-                sessions: sessionsChannel.id,
-                pending: pendingChannel.id
-            },
-            projects: new Map()
-        };
-
+        const { category: runnerCategory } = result;
         this.categories.set(runnerId, runnerCategory);
-        
-        // Persist to storage
+
         // Persist to storage - safe merge
         const runnerInfo = storage.getRunner(runnerId);
         const existingState = runnerInfo?.discordState || {};
@@ -277,19 +190,16 @@ export class CategoryManager {
         storage.updateRunner(runnerId, {
             discordState: {
                 ...existingState,
-                categoryId: category.id,
-                controlChannelId: controlChannel.id,
-                statsChannelIds: {
-                    sessions: sessionsChannel.id,
-                    pending: pendingChannel.id
-                }
+                categoryId: runnerCategory.categoryId,
+                controlChannelId: runnerCategory.controlChannelId,
+                statsChannelIds: runnerCategory.statsChannelIds
             },
-            privateChannelId: controlChannel.id // Backward compatibility
+            privateChannelId: runnerCategory.controlChannelId // Backward compatibility
         });
-        
+
         // Post initial dashboard in control channel
         await this.postRunnerDashboard(runnerCategory);
-        
+
         return runnerCategory;
     }
 
@@ -312,59 +222,28 @@ export class CategoryManager {
         }
 
         const guild = await this.client.guilds.fetch(runnerCategory.guildId);
-        const runner = storage.getRunner(runnerId);
+        const permissionInfo = this.getRunnerPermissionInfo(runnerId);
 
-        // Build permission overwrites - deny everyone, allow owner + authorized users
-        const permissionOverwrites = buildChannelPermissionOverwrites(
-            runner || { ownerId: '', authorizedUsers: [] },
-            guild.roles.everyone.id
+        const projectChannel = await createProjectChannelInternal(
+            this.client,
+            guild,
+            runnerCategory,
+            projectPath,
+            permissionInfo
         );
 
-        // Extract folder name from path
-        const folderName = projectPath.split('/').pop() || 'unknown';
-
-        const channel = await guild.channels.create({
-            name: `project-${folderName.toLowerCase()}`,
-            type: ChannelType.GuildText,
-            parent: runnerCategory.categoryId,
-            topic: `Project: ${projectPath}`,
-            permissionOverwrites: permissionOverwrites as any
-        });
-
-        const projectChannel: ProjectChannel = {
-            channelId: channel.id,
-            projectPath,
-            lastSync: new Date()
-        };
+        if (!projectChannel) {
+            return null;
+        }
 
         runnerCategory.projects.set(projectPath, projectChannel);
-        
-        // Persist to storage
-        // Convert Map to Record for storage
-        const projectsRecord: Record<string, { channelId: string; lastSync?: string; dashboardMessageId?: string }> = {};
-        runnerCategory.projects.forEach((val, key) => {
-            projectsRecord[key] = {
-                channelId: val.channelId,
-                lastSync: val.lastSync?.toISOString(),
-                dashboardMessageId: val.dashboardMessageId
-            };
-        });
-        
-        const runnerInfo = storage.getRunner(runnerId);
-        const existingState = runnerInfo?.discordState || {};
 
-        storage.updateRunner(runnerId, {
-            discordState: {
-                ...existingState,
-                categoryId: runnerCategory.categoryId,
-                controlChannelId: runnerCategory.controlChannelId,
-                statsChannelIds: runnerCategory.statsChannelIds,
-                projects: projectsRecord
-            }
-        });
+        // Persist to storage
+        this.persistProjects(runnerCategory);
 
         // Post project dashboard
-        const dashboardMessageId = await this.postProjectDashboard(channel, runnerId, projectPath, {
+        const channel = await this.client.channels.fetch(projectChannel.channelId) as TextChannel;
+        const dashboardMessageId = await postProjectDashboardInternal(channel, runnerId, projectPath, {
             totalSessions: 0,
             activeSessions: 0,
             pendingActions: 0
@@ -374,7 +253,7 @@ export class CategoryManager {
             runnerCategory.projects.set(projectPath, projectChannel);
             this.persistProjects(runnerCategory);
         }
-        
+
         return projectChannel;
     }
 
@@ -399,107 +278,6 @@ export class CategoryManager {
     }
 
     /**
-     * Check if a channel already has the correct permissions
-     * Returns true if permissions are already correct (no migration needed)
-     */
-    private channelHasCorrectPermissions(
-        channel: any,
-        runner: { ownerId: string; authorizedUsers: string[] },
-        everyoneRoleId: string
-    ): boolean {
-        if (!channel || !channel.permissionOverwrites) return false;
-
-        const cache = channel.permissionOverwrites.cache;
-
-        // Check @everyone is denied ViewChannel
-        const everyoneOverwrite = cache.get(everyoneRoleId);
-        if (!everyoneOverwrite || !everyoneOverwrite.deny.has('ViewChannel')) {
-            return false;
-        }
-
-        // Check owner has ViewChannel
-        if (runner.ownerId) {
-            const ownerOverwrite = cache.get(runner.ownerId);
-            if (!ownerOverwrite || !ownerOverwrite.allow.has('ViewChannel')) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * Apply permission overwrites to a channel using create() for each user/role
-     * Only modifies if permissions are not already correct
-     */
-    private async applyPermissionsToChannel(
-        channel: any,
-        runner: { ownerId: string; authorizedUsers: string[] },
-        guild: any,
-        channelName: string,
-        forceUpdate: boolean = false
-    ): Promise<void> {
-        if (!channel) {
-            console.log(`[CategoryManager] Channel ${channelName} not found, skipping`);
-            return;
-        }
-
-        const everyoneRoleId = guild.roles.everyone.id;
-
-        // Check if already correct (skip unless forced)
-        if (!forceUpdate && this.channelHasCorrectPermissions(channel, runner, everyoneRoleId)) {
-            console.log(`[CategoryManager] ✓ ${channelName} already has correct permissions, skipping`);
-            return;
-        }
-
-        try {
-            // Clear existing overwrites first
-            const existingIds = [...channel.permissionOverwrites.cache.keys()];
-            for (const id of existingIds) {
-                await channel.permissionOverwrites.delete(id).catch(() => {});
-            }
-
-            // Create overwrite for @everyone (deny all)
-            await channel.permissionOverwrites.create(everyoneRoleId, {
-                ViewChannel: false,
-                ReadMessageHistory: false,
-                SendMessages: false
-            }, { type: OverwriteType.Role });
-
-            // Create overwrite for owner (allow all)
-            if (runner.ownerId) {
-                await channel.permissionOverwrites.create(runner.ownerId, {
-                    ViewChannel: true,
-                    ReadMessageHistory: true,
-                    SendMessages: true,
-                    CreatePublicThreads: true,
-                    CreatePrivateThreads: true,
-                    ManageThreads: true,
-                    SendMessagesInThreads: true
-                }, { type: OverwriteType.Member });
-            }
-
-            // Create overwrites for authorized users
-            for (const userId of runner.authorizedUsers) {
-                if (userId && userId !== runner.ownerId) {
-                    await channel.permissionOverwrites.create(userId, {
-                        ViewChannel: true,
-                        ReadMessageHistory: true,
-                        SendMessages: true,
-                        CreatePublicThreads: true,
-                        CreatePrivateThreads: true,
-                        SendMessagesInThreads: true
-                    }, { type: OverwriteType.Member });
-                }
-            }
-
-            console.log(`[CategoryManager] ✓ Migrated permissions for ${channelName}`);
-        } catch (error) {
-            console.error(`[CategoryManager] ✗ Error applying permissions to ${channelName}:`, error);
-        }
-    }
-
-    /**
      * Sync permissions on all channels for a runner
      * @param runnerId The runner ID
      * @param forceUpdate If true, always update even if permissions look correct (use when sharing/unsharing)
@@ -512,6 +290,11 @@ export class CategoryManager {
             return;
         }
 
+        const permissionInfo: RunnerPermissionInfo = {
+            ownerId: runner.ownerId,
+            authorizedUsers: runner.authorizedUsers
+        };
+
         try {
             const guild = await this.client.guilds.fetch(runnerCategory.guildId);
 
@@ -519,25 +302,25 @@ export class CategoryManager {
 
             // Update category itself
             const category = await this.client.channels.fetch(runnerCategory.categoryId);
-            await this.applyPermissionsToChannel(category, runner, guild, `category for ${runner.name}`, forceUpdate);
+            await applyPermissionsToChannel(category, permissionInfo, guild, `category for ${runner.name}`, forceUpdate);
 
             // Update stats channels
             for (const [key, channelId] of Object.entries(runnerCategory.statsChannelIds)) {
                 if (!channelId) continue;
                 const channel = await this.client.channels.fetch(channelId);
-                await this.applyPermissionsToChannel(channel, runner, guild, `stats channel (${key})`, forceUpdate);
+                await applyPermissionsToChannel(channel, permissionInfo, guild, `stats channel (${key})`, forceUpdate);
             }
 
             // Update control channel
             if (runnerCategory.controlChannelId) {
                 const controlChannel = await this.client.channels.fetch(runnerCategory.controlChannelId);
-                await this.applyPermissionsToChannel(controlChannel, runner, guild, 'control channel', forceUpdate);
+                await applyPermissionsToChannel(controlChannel, permissionInfo, guild, 'control channel', forceUpdate);
             }
 
             // Update all project channels
             for (const project of runnerCategory.projects.values()) {
                 const channel = await this.client.channels.fetch(project.channelId);
-                await this.applyPermissionsToChannel(channel, runner, guild, `project ${project.projectPath}`, forceUpdate);
+                await applyPermissionsToChannel(channel, permissionInfo, guild, `project ${project.projectPath}`, forceUpdate);
             }
 
             console.log(`[CategoryManager] Synced permissions for runner ${runner.name} (${runner.authorizedUsers.length} authorized users)`);
@@ -718,45 +501,9 @@ export class CategoryManager {
 
             const runner = storage.getRunner(runnerCategory.runnerId);
             const status = runnerInfo?.status || runner?.status || 'offline';
-            const statusEmoji = status === 'online' ? '🟢' : '⚫';
+            const runnerName = runner?.name || 'Runner';
 
-            // Build projects summary
-            let projectsSummary = '';
-            for (const [path, project] of runnerCategory.projects) {
-                const folderName = path.split('/').pop() || path;
-                projectsSummary += `📂 ${folderName}\n`;
-            }
-            
-            if (!projectsSummary) {
-                projectsSummary = '_No projects registered. Use /sync-projects to discover._';
-            }
-
-            const embed = new EmbedBuilder()
-                .setTitle(`🖥️ ${runner?.name || 'Runner'}`)
-                .setDescription(`${statusEmoji} **${status.toUpperCase()}**`)
-                .addFields(
-                    { name: 'Projects', value: projectsSummary, inline: false }
-                )
-                .setColor(status === 'online' ? 0x00FF00 : 0x808080)
-                .setTimestamp();
-
-            const row = new ActionRowBuilder<ButtonBuilder>()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`runner_config:${runnerCategory.runnerId}`)
-                        .setLabel('⚙️ Config')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`sync_projects:${runnerCategory.runnerId}`)
-                        .setLabel('🔄 Sync Projects')
-                        .setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder()
-                        .setCustomId(`runner_stats:${runnerCategory.runnerId}`)
-                        .setLabel('📊 Stats')
-                        .setStyle(ButtonStyle.Secondary)
-                );
-
-            await channel.send({ embeds: [embed], components: [row] });
+            await postRunnerDashboardInternal(channel, runnerCategory, runnerName, status);
         } catch (error) {
             console.error('[CategoryManager] Error posting runner dashboard:', error);
         }
@@ -771,65 +518,7 @@ export class CategoryManager {
         projectPath: string,
         stats: ProjectStats
     ): Promise<string | null> {
-        try {
-            const folderName = projectPath.split('/').pop() || projectPath;
-            
-            // Status indicators
-            let statusLine = '';
-            if (stats.pendingActions > 0) {
-                statusLine += `🟠 ${stats.pendingActions} pending │ `;
-            }
-            if (stats.activeSessions > 0) {
-                statusLine += `🟢 ${stats.activeSessions} running`;
-            } else {
-                statusLine += '⚫ Idle';
-            }
-
-            const embed = new EmbedBuilder()
-                .setTitle(`📂 ${folderName}`)
-                .setDescription(`\`${projectPath}\`\n${statusLine}`)
-                .setColor(stats.pendingActions > 0 ? 0xFFA500 : (stats.activeSessions > 0 ? 0x00FF00 : 0x808080))
-                .setTimestamp();
-
-            // Add action required section if any
-            if (stats.pendingActions > 0) {
-                embed.addFields({
-                    name: '⚠️ ACTION REQUIRED',
-                    value: '_Sessions needing input will appear here_',
-                    inline: false
-                });
-            }
-
-            // Add recent sessions section
-            embed.addFields({
-                name: '📋 Recent Sessions',
-                value: '_No sessions yet_',
-                inline: false
-            });
-
-            const row = new ActionRowBuilder<ButtonBuilder>()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`list_sessions:${runnerId}:${encodeURIComponent(projectPath)}`)
-                        .setLabel('📋 All Sessions')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`new_session:${runnerId}:${encodeURIComponent(projectPath)}`)
-                        .setLabel('➕ New Session')
-                        .setStyle(ButtonStyle.Success),
-                    new ButtonBuilder()
-                        .setCustomId(`sync_sessions:${runnerId}:${encodeURIComponent(projectPath)}`)
-                        .setLabel('🔄 Sync')
-                        .setStyle(ButtonStyle.Secondary)
-                );
-
-            const message = await channel.send({ embeds: [embed], components: [row] });
-
-            return message.id;
-        } catch (error) {
-            console.error('[CategoryManager] Error posting project dashboard:', error);
-            return null;
-        }
+        return postProjectDashboardInternal(channel, runnerId, projectPath, stats);
     }
 
     /**
@@ -857,7 +546,7 @@ export class CategoryManager {
         if (!targetChannel) return null;
 
         // Post new dashboard
-        const newMessageId = await this.postProjectDashboard(targetChannel, runnerId, projectPath, stats);
+        const newMessageId = await postProjectDashboardInternal(targetChannel, runnerId, projectPath, stats);
         if (!newMessageId) return null;
 
         // Delete previous dashboard (if any)
@@ -890,118 +579,19 @@ export class CategoryManager {
 
         try {
             const guild = await this.client.guilds.fetch(runnerCategory.guildId);
+            const updatedIds = await updateStatsChannels(
+                this.client,
+                guild,
+                runnerCategory,
+                activeSessions,
+                pendingActions,
+                memoryMb
+            );
 
-            // --- Sessions Channel ---
-            if (runnerCategory.statsChannelIds.sessions) {
-                let sessionsChannel = await this.client.channels.fetch(
-                    runnerCategory.statsChannelIds.sessions
-                ).catch(() => null);
-
-                // Migration: If channel is not Text (e.g. it is Voice), delete it
-                if (sessionsChannel && sessionsChannel.type !== ChannelType.GuildText) {
-                    try {
-                        await sessionsChannel.delete();
-                        sessionsChannel = null;
-                        console.log('[CategoryManager] Deleted old Voice stats channel to migrate to Text');
-                    } catch (e) {
-                         console.error('[CategoryManager] Failed to delete old stats channel', e);
-                    }
-                }
-
-                const name = `📊-${activeSessions}-active`;
-
-                if (!sessionsChannel) {
-                    // Create new
-                    sessionsChannel = await guild.channels.create({
-                        name,
-                        type: ChannelType.GuildText,
-                        parent: runnerCategory.categoryId,
-                        position: 0,
-                        permissionOverwrites: [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.SendMessages] }]
-                    });
-
-                    // Update ID
-                    runnerCategory.statsChannelIds.sessions = sessionsChannel.id;
-                    this.persistStatsChannelIds(runnerId, runnerCategory.statsChannelIds);
-                } else {
-                    // Update existing
-                    if (sessionsChannel.name !== name) await sessionsChannel.setName(name);
-                    if (sessionsChannel.position !== 0) await sessionsChannel.setPosition(0);
-                }
-            }
-
-            // --- Pending Channel ---
-            if (runnerCategory.statsChannelIds.pending) {
-                let pendingChannel = await this.client.channels.fetch(
-                    runnerCategory.statsChannelIds.pending
-                ).catch(() => null);
-
-                // Migration
-                if (pendingChannel && pendingChannel.type !== ChannelType.GuildText) {
-                    try {
-                        await pendingChannel.delete();
-                        pendingChannel = null;
-                    } catch (e) { /* ignore */ }
-                }
-
-                const name = `⚠️-${pendingActions}-pending`;
-
-                if (!pendingChannel) {
-                     // Create new
-                    pendingChannel = await guild.channels.create({
-                        name,
-                        type: ChannelType.GuildText,
-                        parent: runnerCategory.categoryId,
-                        position: 1,
-                        permissionOverwrites: [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.SendMessages] }]
-                    });
-
-                    // Update ID
-                    runnerCategory.statsChannelIds.pending = pendingChannel.id;
-                    this.persistStatsChannelIds(runnerId, runnerCategory.statsChannelIds);
-                } else {
-                     if (pendingChannel.name !== name) await pendingChannel.setName(name);
-                     if (pendingChannel.position !== 1) await pendingChannel.setPosition(1);
-                }
-            }
-
-            // --- Memory Channel ---
-            if (memoryMb !== undefined) {
-                let memoryChannel = runnerCategory.statsChannelIds.memory
-                    ? await this.client.channels.fetch(runnerCategory.statsChannelIds.memory).catch(() => null)
-                    : null;
-
-                // Migration: If channel is not Text, delete it
-                if (memoryChannel && memoryChannel.type !== ChannelType.GuildText) {
-                    try {
-                        await memoryChannel.delete();
-                        memoryChannel = null;
-                    } catch (e) { /* ignore */ }
-                }
-
-                // Format memory nicely
-                const memoryDisplay = memoryMb >= 1024
-                    ? `${(memoryMb / 1024).toFixed(1)}GB`
-                    : `${memoryMb}MB`;
-                const name = `💾-${memoryDisplay}`;
-
-                if (!memoryChannel) {
-                    // Create new
-                    memoryChannel = await guild.channels.create({
-                        name,
-                        type: ChannelType.GuildText,
-                        parent: runnerCategory.categoryId,
-                        position: 2,
-                        permissionOverwrites: [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.SendMessages] }]
-                    });
-
-                    // Update ID
-                    runnerCategory.statsChannelIds.memory = memoryChannel.id;
-                    this.persistStatsChannelIds(runnerId, runnerCategory.statsChannelIds);
-                } else {
-                    if (memoryChannel.name !== name) await memoryChannel.setName(name);
-                    if (memoryChannel.position !== 2) await memoryChannel.setPosition(2);
-                }
+            // Check if any IDs changed and persist
+            if (JSON.stringify(updatedIds) !== JSON.stringify(runnerCategory.statsChannelIds)) {
+                runnerCategory.statsChannelIds = updatedIds;
+                this.persistStatsChannelIds(runnerId, updatedIds);
             }
         } catch (error) {
             console.error('[CategoryManager] Error updating stats channels:', error);
@@ -1011,7 +601,7 @@ export class CategoryManager {
     private persistStatsChannelIds(runnerId: string, statsChannelIds: { sessions?: string; pending?: string; memory?: string }) {
         const runner = storage.getRunner(runnerId);
         if (runner) {
-             storage.updateRunner(runnerId, {
+            storage.updateRunner(runnerId, {
                 discordState: {
                     ...(runner.discordState || {}),
                     statsChannelIds
@@ -1097,7 +687,7 @@ export class CategoryManager {
 
         try {
             const guild = await this.client.guilds.fetch(runnerCategory.guildId);
-            
+
             // Delete all project channels
             for (const [_, project] of runnerCategory.projects) {
                 const channel = await this.client.channels.fetch(project.channelId).catch(() => null);
@@ -1122,7 +712,7 @@ export class CategoryManager {
 
             this.categories.delete(runnerId);
             this.lastPublishedRunnerStats.delete(runnerId);
-            
+
             // Clear from storage
             storage.updateRunner(runnerId, {
                 discordState: undefined
