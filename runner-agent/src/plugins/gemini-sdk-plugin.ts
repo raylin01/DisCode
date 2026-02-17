@@ -138,13 +138,15 @@ class GeminiSDKSession extends BaseSDKSession {
     this.client.on('message_delta', (delta) => {
       if (!this.messageQueue.isActive()) return;
       if (!delta) return;
+      // message_delta sends accumulated content, so use addStdout (replaces)
       this.outputThrottler.addStdout(delta);
     });
 
     this.client.on('stdout', (line) => {
       if (!this.messageQueue.isActive()) return;
       if (!line) return;
-      this.outputThrottler.addStdout(`\n${line}`);
+      // stdout sends individual lines, so use appendStdout
+      this.outputThrottler.appendStdout(`\n${line}`);
     });
 
     this.client.on('tool_use', (event: ToolUseEvent) => {

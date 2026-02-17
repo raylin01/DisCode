@@ -24,6 +24,10 @@ export class OutputThrottler {
     private timer: NodeJS.Timeout | null = null;
     private readonly throttleMs: number;
 
+    // Track last emitted content to detect what's new
+    private lastEmittedStdout = '';
+    private lastEmittedThinking = '';
+
     constructor(
         private readonly emit: (event: { content: string; isComplete: boolean; outputType: 'stdout' | 'thinking' }) => void,
         throttleMs: number = 500
@@ -31,13 +35,29 @@ export class OutputThrottler {
         this.throttleMs = throttleMs;
     }
 
+    /**
+     * Add stdout content for streaming.
+     * Accepts accumulated content from the source and tracks what's new.
+     */
     addStdout(content: string): void {
-        this.pendingStdout += content;
+        this.pendingStdout = content;
         this.schedule();
     }
 
+    /**
+     * Add thinking content for streaming.
+     * Accepts accumulated content from the source and tracks what's new.
+     */
     addThinking(content: string): void {
-        this.pendingThinking += content;
+        this.pendingThinking = content;
+        this.schedule();
+    }
+
+    /**
+     * Append stdout content (for line-by-line sources like stdout events).
+     */
+    appendStdout(content: string): void {
+        this.pendingStdout += content;
         this.schedule();
     }
 
@@ -47,22 +67,32 @@ export class OutputThrottler {
             this.timer = null;
         }
 
-        if (this.pendingStdout) {
+        // Emit stdout if there's new content
+        if (this.pendingStdout && this.pendingStdout !== this.lastEmittedStdout) {
             this.emit({
                 content: this.pendingStdout,
                 isComplete,
                 outputType: 'stdout'
             });
-            this.pendingStdout = '';
+            this.lastEmittedStdout = this.pendingStdout;
         }
 
-        if (this.pendingThinking) {
+        // Emit thinking if there's new content
+        if (this.pendingThinking && this.pendingThinking !== this.lastEmittedThinking) {
             this.emit({
                 content: this.pendingThinking,
                 isComplete,
                 outputType: 'thinking'
             });
+            this.lastEmittedThinking = this.pendingThinking;
+        }
+
+        // Clear on final flush
+        if (isComplete) {
+            this.pendingStdout = '';
             this.pendingThinking = '';
+            this.lastEmittedStdout = '';
+            this.lastEmittedThinking = '';
         }
     }
 

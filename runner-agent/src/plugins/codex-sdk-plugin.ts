@@ -581,12 +581,14 @@ class CodexSDKSession extends BaseSDKSession {
   private appendOutput(content: string, outputType: 'stdout' | 'tool_result'): void {
     this.currentOutput += content;
     this.completedOutputEmitted = false;
-    this.outputThrottler.addStdout(content);
+    // Pass accumulated content to throttler
+    this.outputThrottler.addStdout(this.currentOutput);
   }
 
   private appendThinking(content: string): void {
     this.currentThinking += content;
-    this.outputThrottler.addThinking(content);
+    // Pass accumulated thinking to throttler
+    this.outputThrottler.addThinking(this.currentThinking);
   }
 
   private flushOutput(outputType: 'stdout' | 'thinking' | 'tool_result', isComplete: boolean): void {
