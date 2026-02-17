@@ -543,6 +543,10 @@ class GeminiSDKSession extends EventEmitter implements PluginSession {
       error: result.error?.message,
       timestamp: new Date()
     });
+
+    // After result (success or error), session is ready for new messages
+    this.status = 'idle';
+    this.emit('ready');
   }
 }
 

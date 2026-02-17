@@ -115,9 +115,11 @@ export async function handleUserMessage(
 
     const sendMessage = async () => {
         try {
+            console.log(`[UserMessage] Sending to CLI: ${data.content.slice(0, 50)}...`);
             await session!.sendMessage(data.content);
+            console.log(`[UserMessage] Message sent successfully to session ${data.sessionId}`);
         } catch (error) {
-            console.error(`Error sending message to CLI:`, error);
+            console.error(`[UserMessage] Error sending message to CLI:`, error);
             wsManager.send({
                 type: 'output',
                 data: {
@@ -131,11 +133,33 @@ export async function handleUserMessage(
         }
     };
 
+    console.log(`[UserMessage] Session ${data.sessionId} isReady=${session.isReady}, status=${session.status || 'unknown'}`);
+
     if (session.isReady) {
         await sendMessage();
     } else {
-        session.once('ready', async () => {
-            await sendMessage();
+        console.log(`[UserMessage] Session ${data.sessionId} not ready, waiting for 'ready' event...`);
+
+        // Set a timeout - if session doesn't become ready in 30s, send anyway with warning
+        const readyTimeout = setTimeout(() => {
+            console.warn(`[UserMessage] Session ${data.sessionId} ready timeout, attempting to send anyway...`);
+            wsManager.send({
+                type: 'output',
+                data: {
+                    runnerId: wsManager.runnerId,
+                    sessionId: data.sessionId,
+                    content: `⚠️ Session was not ready after 30s, attempting to send message anyway...`,
+                    timestamp: new Date().toISOString(),
+                    outputType: 'stderr'
+                }
+            });
+            sendMessage();
+        }, 30000);
+
+        session.once('ready', () => {
+            clearTimeout(readyTimeout);
+            console.log(`[UserMessage] Session ${data.sessionId} is now ready, sending message...`);
+            sendMessage();
         });
     }
 }
