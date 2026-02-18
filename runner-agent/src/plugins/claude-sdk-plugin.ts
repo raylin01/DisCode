@@ -545,10 +545,11 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
     }
 
     async sendMessage(message: string): Promise<void> {
-        this.status = 'working';
         this.lastActivity = new Date();
         this.lastAssistantOutput = '';
-        await this.client.sendMessage(message);
+        // Use queueMessage to properly handle messages while processing
+        // This queues the message if Claude is busy, or sends immediately if idle
+        this.client.queueMessage(message);
     }
 
     /**
