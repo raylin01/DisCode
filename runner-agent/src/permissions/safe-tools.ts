@@ -13,6 +13,10 @@
 /**
  * Built-in tools that are considered SAFE to auto-approve.
  * These are read-only operations that cannot modify the filesystem or execute code.
+ *
+ * NOTE: AskUserQuestion is NOT here because it requires actual user interaction.
+ * Even though it's "safe" from a security perspective, auto-approving it would
+ * skip presenting the question to the user.
  */
 export const SAFE_TOOLS = new Set([
     // File reading (read-only)
@@ -24,9 +28,6 @@ export const SAFE_TOOLS = new Set([
 
     // Information gathering
     'NotebookRead',
-
-    // User interaction (requires user input anyway)
-    'AskUserQuestion',
 ]);
 
 /**
