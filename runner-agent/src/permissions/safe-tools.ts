@@ -440,6 +440,11 @@ export function shouldAutoApproveInSafeMode(
     toolName: string,
     input: Record<string, any> | undefined
 ): boolean {
+    // AskUserQuestion should NEVER be auto-approved - it requires actual user input
+    if (toolName === 'AskUserQuestion') {
+        return false;
+    }
+
     // Safe tools are always auto-approved
     if (isToolSafe(toolName)) {
         return true;
