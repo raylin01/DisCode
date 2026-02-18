@@ -2313,7 +2313,21 @@ async function handleToolResult(data: any): Promise<void> {
 
         // Show output/error (truncated)
         if (content) {
-            const contentDisplay = content.length > 300 ? content.slice(0, 300) + '...' : content;
+            // Handle objects/arrays that would display as [object Object]
+            let contentStr: string;
+            if (typeof content === 'string') {
+                contentStr = content;
+            } else if (Array.isArray(content)) {
+                // Extract text from content blocks or stringify
+                contentStr = content.map((item: any) => {
+                    if (typeof item === 'string') return item;
+                    if (item?.text) return item.text;
+                    return JSON.stringify(item);
+                }).join('\n');
+            } else {
+                contentStr = JSON.stringify(content, null, 2);
+            }
+            const contentDisplay = contentStr.length > 300 ? contentStr.slice(0, 300) + '...' : contentStr;
             embed.addFields({
                 name: isError ? 'Error' : 'Output',
                 value: `\`\`\`\n${contentDisplay}\n\`\`\``,
