@@ -30,3 +30,4 @@ CLAUDE.md
 APPROVAL_BEHAVIOR_VALIDATION.md
 gemini-ext/extension/cloudcode_cli.zip
 gemini-ext/
+bun.lock
