@@ -262,7 +262,7 @@ export class PrintPlugin extends BasePlugin {
 
     async initialize(): Promise<void> {
         await super.initialize();
-        this.skillManager = new SkillManager(process.cwd()); // config.cliSearchPaths? 
+        this.skillManager = new SkillManager(); // Uses getRunnerRoot() by default
         this.log('Initialized (stateless mode, approvals via HTTP hooks)');
     }
 

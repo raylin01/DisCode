@@ -93,7 +93,7 @@ export class TmuxPlugin extends BasePlugin {
 
     async initialize(): Promise<void> {
         await super.initialize();
-        this.skillManager = new SkillManager(process.cwd());
+        this.skillManager = new SkillManager(); // Uses getRunnerRoot() by default
 
         // Check tmux is available
         try {

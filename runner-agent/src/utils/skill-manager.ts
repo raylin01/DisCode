@@ -1,11 +1,23 @@
 
 import fs from 'fs/promises';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+/**
+ * Get the runner-agent root directory.
+ * This works regardless of where the process is running from.
+ */
+export function getRunnerRoot(): string {
+    // Get the directory of this module
+    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+    // Go up from 'utils' to 'src' to 'runner-agent'
+    return path.dirname(path.dirname(moduleDir));
+}
 
 export class SkillManager {
     private runnerRoot: string;
 
-    constructor(runnerRoot: string) {
+    constructor(runnerRoot: string = getRunnerRoot()) {
         this.runnerRoot = runnerRoot;
     }
 

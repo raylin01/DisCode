@@ -13,6 +13,7 @@ import { expandPath, findCliPath, validateOrCreateFolder } from '../utils.js';
 import { normalizeClaudeOptions } from '../utils/session-options.js';
 import type { CliPaths } from '../types.js';
 import { sessionStorage } from '../storage.js';
+import { SkillManager } from '../utils/skill-manager.js';
 
 export interface SessionHandlerDeps {
     config: RunnerConfig;
@@ -155,6 +156,15 @@ export async function handleSessionStart(
                     timestamp: new Date().toISOString()
                 }
             });
+        }
+
+        // Install skills for SDK plugins (tmux/print plugins handle this internally)
+        const isSdkPlugin = data.plugin?.endsWith('-sdk');
+        if (isSdkPlugin && (data.cliType === 'claude' || data.cliType === 'gemini' || data.cliType === 'codex')) {
+            const skillManager = new SkillManager();
+            const excludedSkills = normalized.options.excludedSkills || [];
+            await skillManager.installSkills(cwd, data.cliType, excludedSkills);
+            console.log(`[SessionStart] Installed skills for ${data.cliType} SDK session in ${cwd}`);
         }
 
         const session = await pluginManager.createSession({

@@ -360,6 +360,8 @@ export interface PluginSession {
     // Messaging
     /** Send a message/prompt to the CLI */
     sendMessage(message: string): Promise<void>;
+    /** Send a message with image attachments (for vision-capable CLIs) */
+    sendMessageWithImages?(text: string, images: Array<{ data: string; mediaType: string }>): Promise<void>;
 
     // Approval handling
     /** Send an approval response (for plugins that support it) */

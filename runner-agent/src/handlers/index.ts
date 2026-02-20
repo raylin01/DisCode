@@ -103,7 +103,8 @@ export async function handleWebSocketMessage(
         case 'permission_sync_request': {
             await handlePermissionSyncRequest(message.data as any, {
                 wsManager: deps.wsManager,
-                pendingApprovalRequests: deps.pendingApprovalRequests
+                pendingApprovalRequests: deps.pendingApprovalRequests,
+                cliSessions: deps.cliSessions
             });
             break;
         }
