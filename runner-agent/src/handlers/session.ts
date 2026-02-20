@@ -116,6 +116,22 @@ export async function handleSessionStart(
             ...(data.options || {})
         };
 
+        if (data.cliType === 'gemini' && mergedOptions.autoApproveSafe) {
+            // Gemini SDK currently does not expose interactive approval callbacks
+            // needed for safe-only auto-approval. Fall back to default behavior.
+            delete mergedOptions.autoApproveSafe;
+            wsManager.send({
+                type: 'output',
+                data: {
+                    runnerId: wsManager.runnerId,
+                    sessionId: data.sessionId,
+                    content: 'ℹ️ Auto-Safe is not supported for Gemini yet; using default approval behavior.',
+                    outputType: 'info',
+                    timestamp: new Date().toISOString()
+                }
+            });
+        }
+
         // Only continue conversation if explicitly requested or resuming
         // New sessions should start fresh by default
         if (mergedOptions.continueConversation === undefined) {

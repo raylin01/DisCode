@@ -39,6 +39,27 @@ function parseProjectDashboardContext(customId: string, prefix: string): { runne
     };
 }
 
+function isEphemeralInteractionMessage(message: any): boolean {
+    if (!message) return false;
+    if (message.ephemeral === true) return true;
+
+    const flags = message.flags;
+    if (!flags) return false;
+
+    const rawFlags = flags.bitfield ?? flags;
+    if (typeof rawFlags === 'number') return (rawFlags & 64) === 64;
+    if (typeof rawFlags === 'bigint') return (rawFlags & 64n) === 64n;
+    if (typeof flags.has === 'function') {
+        try {
+            return flags.has(64);
+        } catch {
+            return false;
+        }
+    }
+
+    return false;
+}
+
 async function refreshProjectDashboardIfOutdated(
     interaction: any,
     projectPathHint: string,
@@ -49,6 +70,7 @@ async function refreshProjectDashboardIfOutdated(
 
     const clickedMessageId = interaction?.message?.id;
     if (!clickedMessageId) return false;
+    if (isEphemeralInteractionMessage(interaction?.message)) return false;
 
     let channel = interaction.channel;
     if (!channel || !channel.id) {

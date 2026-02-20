@@ -59,3 +59,6 @@ export {
     handleSetPermissionMode,
     handleSetThinkingTokens
 } from './session-control.js';
+
+// Dashboard command
+export { handleDashboard } from './dashboard.js';

@@ -418,6 +418,34 @@ export async function handleSessionCancel(interaction: any, userId: string): Pro
     await safeUpdate(interaction, { embeds: [embed], components: [] });
 }
 
+function resolveEffectiveApprovalMode(
+    stateOptions: Record<string, any> | undefined,
+    effectiveOptions: Record<string, any>
+): 'manual' | 'autoSafe' | 'auto' {
+    const explicit = stateOptions?.approvalMode;
+    if (explicit === 'manual' || explicit === 'autoSafe' || explicit === 'auto') return explicit;
+
+    if (effectiveOptions.skipPermissions === true) return 'auto';
+    if (effectiveOptions.autoApproveSafe === true) return 'autoSafe';
+    return 'manual';
+}
+
+function resolveEffectiveEditMode(
+    stateOptions: Record<string, any> | undefined,
+    effectiveOptions: Record<string, any>
+): 'default' | 'acceptEdits' {
+    const explicit = stateOptions?.permissionMode;
+    if (explicit === 'default' || explicit === 'acceptEdits') return explicit;
+    return effectiveOptions.permissionMode === 'acceptEdits' ? 'acceptEdits' : 'default';
+}
+
+function approvalModeToLabel(mode: 'manual' | 'autoSafe' | 'auto', plugin?: string): string {
+    if (plugin === 'stream') return 'Auto-Approve (Stream Mode)';
+    if (mode === 'auto') return 'Auto-Approve (YOLO)';
+    if (mode === 'autoSafe') return 'Auto-Safe (Read-Only)';
+    return 'Require Approval';
+}
+
 // ---------------------------------------------------------------------------
 // Review & Customization
 // ---------------------------------------------------------------------------
@@ -437,21 +465,21 @@ export async function handleSessionReview(interaction: any, userId: string): Pro
     }
 
     const runner = storage.getRunner(state.runnerId);
-    const isCodex = state.cliType === 'codex';
-    const defaults = isCodex ? runner?.config?.codexDefaults : runner?.config?.claudeDefaults;
+    const effectiveOptions = buildSessionStartOptions(
+        runner,
+        state.options as any,
+        undefined,
+        state.cliType,
+        state.folderPath
+    );
+    const effectiveApprovalMode = resolveEffectiveApprovalMode(state.options as any, effectiveOptions);
+    const approvalText = approvalModeToLabel(effectiveApprovalMode, state.plugin);
 
-    let approvalText = state.options?.approvalMode === 'auto' ? 'Auto-Approve (YOLO)' :
-                        state.options?.approvalMode === 'autoSafe' ? 'Auto-Safe (Read-Only)' :
-                        'Require Approval';
-    if (state.plugin === 'stream') {
-        approvalText = 'Auto-Approve (Stream Mode)';
-    }
-
-    const modelText = state.options?.model || (defaults as any)?.model || 'Auto';
-    const maxTurnsText = state.options?.maxTurns || (defaults as any)?.maxTurns || 'Default';
-    const maxThinkingText = state.options?.maxThinkingTokens || (defaults as any)?.maxThinkingTokens || 'Default';
-    const maxBudgetText = state.options?.maxBudgetUsd || (defaults as any)?.maxBudgetUsd || 'Default';
-    const permissionModeText = state.options?.permissionMode || (defaults as any)?.permissionMode || 'default';
+    const modelText = effectiveOptions.model ?? 'Auto';
+    const maxTurnsText = effectiveOptions.maxTurns ?? 'Default';
+    const maxThinkingText = effectiveOptions.maxThinkingTokens ?? 'Default';
+    const maxBudgetText = effectiveOptions.maxBudgetUsd ?? 'Default';
+    const permissionModeText = resolveEffectiveEditMode(state.options as any, effectiveOptions);
 
     const pluginLabel = state.cliType === 'terminal'
         ? 'Terminal (Tmux)'
@@ -471,7 +499,7 @@ export async function handleSessionReview(interaction: any, userId: string): Pro
             `Max Turns: \`${maxTurnsText}\`\n` +
             `Max Thinking: \`${maxThinkingText}\`\n` +
             `Max Budget: \`${maxBudgetText}\`\n` +
-            `Permission Mode: \`${permissionModeText}\``
+            `Edit Mode: \`${permissionModeText}\``
         );
 
     const row = new ActionRowBuilder<ButtonBuilder>()
@@ -499,10 +527,18 @@ export async function handleCustomizeSettings(interaction: any, userId: string):
     const state = botState.sessionCreationState.get(userId);
     if (!state) return;
 
-    const currentMode = state.options?.approvalMode || 'manual';
-    const permissionMode = state.options?.permissionMode || 'default';
+    const runner = state.runnerId ? storage.getRunner(state.runnerId) : undefined;
+    const effectiveOptions = buildSessionStartOptions(
+        runner,
+        state.options as any,
+        undefined,
+        state.cliType as any,
+        state.folderPath
+    );
+    const currentMode = resolveEffectiveApprovalMode(state.options as any, effectiveOptions);
+    const permissionMode = resolveEffectiveEditMode(state.options as any, effectiveOptions);
     const includePartials = state.options?.includePartialMessages !== false;
-    const modelText = state.options?.model || 'Auto';
+    const modelText = state.options?.model ?? effectiveOptions.model ?? 'Auto';
 
     const embed = new EmbedBuilder()
         .setColor(0x0099FF)
@@ -511,7 +547,7 @@ export async function handleCustomizeSettings(interaction: any, userId: string):
             `Configure how the CLI session behaves.\n\n` +
             `**Current:**\n` +
             `Approval: \`${currentMode}\`\n` +
-            `Permission Mode: \`${permissionMode}\`\n` +
+            `Edit Mode: \`${permissionMode}\`\n` +
             `Partials: \`${includePartials ? 'Enabled' : 'Disabled'}\`\n` +
             `Model: \`${modelText}\``
         );
@@ -539,11 +575,11 @@ export async function handleCustomizeSettings(interaction: any, userId: string):
         .addComponents(
             new ButtonBuilder()
                 .setCustomId('session_settings_permission_default')
-                .setLabel('Permission: Default')
+                .setLabel('Edit: Default')
                 .setStyle(permissionMode === 'default' ? ButtonStyle.Primary : ButtonStyle.Secondary),
             new ButtonBuilder()
                 .setCustomId('session_settings_permission_accept')
-                .setLabel('Permission: Accept Edits')
+                .setLabel('Edit: Accept Edits')
                 .setStyle(permissionMode === 'acceptEdits' ? ButtonStyle.Primary : ButtonStyle.Secondary),
             new ButtonBuilder()
                 .setCustomId('session_settings_partials_toggle')
@@ -850,6 +886,14 @@ export async function handleStartSession(interaction: any, userId: string): Prom
     }
 
     const pluginLabel = state.cliType === 'terminal' ? 'Terminal' : `${cliTypeLabel(state.cliType)} SDK`;
+    const effectiveStartOptions = buildSessionStartOptions(
+        runner,
+        state.options as any,
+        undefined,
+        state.cliType,
+        state.folderPath
+    );
+    const effectiveApprovalMode = resolveEffectiveApprovalMode(state.options as any, effectiveStartOptions);
 
     const initializingEmbed = new EmbedBuilder()
         .setColor(0xFFFF00)
@@ -859,8 +903,8 @@ export async function handleStartSession(interaction: any, userId: string): Prom
             { name: 'Runner', value: runner.name, inline: true },
             { name: 'CLI Type', value: state.cliType.toUpperCase(), inline: true },
             { name: 'Plugin', value: pluginLabel, inline: true },
-            { name: 'Approval', value: state.options?.approvalMode === 'auto' ? 'YOLO' :
-                                    state.options?.approvalMode === 'autoSafe' ? 'Auto-Safe' : 'Manual', inline: true },
+            { name: 'Approval', value: effectiveApprovalMode === 'auto' ? 'YOLO' :
+                                    effectiveApprovalMode === 'autoSafe' ? 'Auto-Safe' : 'Manual', inline: true },
             { name: 'Working Folder', value: `\`\`\`${state.folderPath}\`\`\``, inline: false }
         )
         .setTimestamp();
@@ -966,8 +1010,7 @@ export async function handleStartSession(interaction: any, userId: string): Prom
 
         const ws = botState.runnerConnections.get(runner.runnerId);
         if (ws) {
-            const startOptions = buildSessionStartOptions(runner, state.options, undefined, state.cliType);
-            storage.updateSession(session.sessionId, { options: startOptions } as any);
+            storage.updateSession(session.sessionId, { options: effectiveStartOptions } as any);
 
             ws.send(JSON.stringify({
                 type: 'session_start',
@@ -977,7 +1020,7 @@ export async function handleStartSession(interaction: any, userId: string): Prom
                     cliType: state.cliType,
                     folderPath: folderPath,
                     plugin: state.plugin,
-                    options: startOptions
+                    options: effectiveStartOptions
                 }
             }));
 
@@ -1053,7 +1096,7 @@ export async function handleCreateFolderRetry(interaction: any, userId: string, 
 
     const ws = botState.runnerConnections.get(runner.runnerId);
     if (ws) {
-        const startOptions = buildSessionStartOptions(runner, undefined, undefined, session.cliType);
+        const startOptions = buildSessionStartOptions(runner, undefined, undefined, session.cliType, session.folderPath);
         ws.send(JSON.stringify({
             type: 'session_start',
             data: {

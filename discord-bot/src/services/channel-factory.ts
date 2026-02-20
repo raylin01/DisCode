@@ -17,6 +17,8 @@ import {
     ButtonStyle
 } from 'discord.js';
 import { buildChannelPermissionOverwrites, RunnerPermissionInfo } from './permission-setup.js';
+import { storage } from '../storage.js';
+import { projectSettingsStore } from './project-settings.js';
 
 // ============================================================================
 // Types
@@ -352,6 +354,7 @@ export async function postRunnerDashboard(
 
 /**
  * Post/Update project action center dashboard
+ * Unified with /dashboard command format
  */
 export async function postProjectDashboard(
     channel: TextChannel,
@@ -361,57 +364,71 @@ export async function postProjectDashboard(
 ): Promise<string | null> {
     try {
         const folderName = projectPath.split('/').pop() || projectPath;
+        const runner = storage.getRunner(runnerId);
 
-        // Status indicators
-        let statusLine = '';
-        if (stats.pendingActions > 0) {
-            statusLine += `🟠 ${stats.pendingActions} pending │ `;
-        }
-        if (stats.activeSessions > 0) {
-            statusLine += `🟢 ${stats.activeSessions} running`;
-        } else {
-            statusLine += '⚫ Idle';
-        }
+        // Get project and runner config for settings display
+        const projectConfig = projectSettingsStore.getConfig(runnerId, projectPath);
+        const runnerConfig = runner?.config || {};
 
         const embed = new EmbedBuilder()
-            .setTitle(`📂 ${folderName}`)
-            .setDescription(`\`${projectPath}\`\n${statusLine}`)
-            .setColor(stats.pendingActions > 0 ? 0xFFA500 : (stats.activeSessions > 0 ? 0x00FF00 : 0x808080))
+            .setTitle(`Project: ${folderName}`)
+            .setDescription(`\`${projectPath}\``)
+            .setColor(stats.activeSessions > 0 ? 0x00FF00 : 0x808080)
             .setTimestamp();
 
-        // Add action required section if any
-        if (stats.pendingActions > 0) {
-            embed.addFields({
-                name: '⚠️ ACTION REQUIRED',
-                value: '_Sessions needing input will appear here_',
-                inline: false
-            });
-        }
+        // Session stats
+        embed.addFields(
+            { name: 'Active Sessions', value: String(stats.activeSessions), inline: true },
+            { name: 'Total Sessions', value: String(stats.totalSessions), inline: true }
+        );
 
-        // Add recent sessions section
-        embed.addFields({
-            name: '📋 Recent Sessions',
-            value: '_No sessions yet_',
-            inline: false
-        });
+        // Settings section with inheritance info
+        const hasOverrides = Object.keys(projectConfig).length > 0;
+        embed.addFields(
+            { name: '--- Settings ---', value: hasOverrides ? '*Using project overrides*' : '*Inheriting from runner defaults*', inline: false }
+        );
 
-        const row = new ActionRowBuilder<ButtonBuilder>()
+        // Show effective settings
+        const runnerPermMode = runnerConfig.claudeDefaults?.permissionMode ||
+            (runnerConfig.yoloMode ? 'yolo' : 'manual');
+        const permMode = projectConfig.permissionMode || runnerPermMode;
+        const thinkLevel = projectConfig.thinkingLevel || runnerConfig.thinkingLevel || 'low';
+        const defaultCli = projectConfig.defaultCliType || runner?.cliTypes?.[0] || 'claude';
+        const autoSpawn = projectConfig.autoSpawnEnabled !== false ? 'Enabled' : 'Disabled';
+
+        embed.addFields(
+            { name: 'Permission Mode', value: permMode, inline: true },
+            { name: 'Default CLI', value: defaultCli.toUpperCase(), inline: true },
+            { name: 'Thinking Level', value: thinkLevel, inline: true },
+            { name: 'Auto-Spawn', value: autoSpawn, inline: true }
+        );
+
+        // Unified buttons matching /dashboard command
+        const row1 = new ActionRowBuilder<ButtonBuilder>()
             .addComponents(
                 new ButtonBuilder()
-                    .setCustomId(`list_sessions:${runnerId}:${encodeURIComponent(projectPath)}`)
-                    .setLabel('📋 All Sessions')
-                    .setStyle(ButtonStyle.Secondary),
-                new ButtonBuilder()
                     .setCustomId(`new_session:${runnerId}:${encodeURIComponent(projectPath)}`)
-                    .setLabel('➕ New Session')
+                    .setLabel('New Session')
                     .setStyle(ButtonStyle.Success),
                 new ButtonBuilder()
+                    .setCustomId(`list_sessions:${runnerId}:${encodeURIComponent(projectPath)}`)
+                    .setLabel('All Sessions')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId(`project_config:${runnerId}:${encodeURIComponent(projectPath)}:section:main`)
+                    .setLabel('Edit Settings')
+                    .setStyle(ButtonStyle.Primary)
+            );
+
+        const row2 = new ActionRowBuilder<ButtonBuilder>()
+            .addComponents(
+                new ButtonBuilder()
                     .setCustomId(`sync_sessions:${runnerId}:${encodeURIComponent(projectPath)}`)
-                    .setLabel('🔄 Sync')
+                    .setLabel('Sync Sessions')
                     .setStyle(ButtonStyle.Secondary)
             );
 
-        const message = await channel.send({ embeds: [embed], components: [row] });
+        const message = await channel.send({ embeds: [embed], components: [row1, row2] });
 
         return message.id;
     } catch (error) {

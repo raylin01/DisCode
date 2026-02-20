@@ -31,6 +31,43 @@ export interface RunnerConfig {
   presets?: Record<string, any>;
 }
 
+// Project-level configuration that overrides runner defaults
+export interface ProjectConfig {
+  // Permission settings
+  permissionMode?: 'manual' | 'autoSafe' | 'yolo';
+  editAcceptMode?: 'default' | 'acceptEdits';
+
+  // CLI settings
+  defaultCliType?: 'claude' | 'gemini' | 'codex';
+
+  // CLI-specific defaults (override runner)
+  claudeDefaults?: Record<string, any>;
+  codexDefaults?: Record<string, any>;
+  geminiDefaults?: Record<string, any>;
+
+  // Thinking and behavior
+  thinkingLevel?: 'high' | 'medium' | 'low';
+  model?: string;
+  maxTurns?: number;
+  maxThinkingTokens?: number;
+
+  // Thread settings
+  threadArchiveDays?: number;
+
+  // Auto-spawn settings
+  autoSpawnEnabled?: boolean;
+  autoSpawnCliType?: 'claude' | 'gemini' | 'codex' | 'auto';
+}
+
+// Stored per-project settings
+export interface ProjectSettings {
+  projectPath: string;
+  runnerId: string;
+  config: ProjectConfig;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface RunnerInfo {
   runnerId: string;
   name: string;

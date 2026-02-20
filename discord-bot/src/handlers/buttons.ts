@@ -66,7 +66,12 @@ import {
     handleSyncSessionsButton,
     parseProjectDashboardContext
 } from './dashboard-buttons.js';
+import {
+    handleRunnerDashboardButton,
+    handleProjectDashboardButton
+} from './commands/dashboard.js';
 import { handleSyncAttachControlButton } from './synced-session-buttons.js';
+import { handleProjectConfigButton } from './project-config.js';
 
 // Re-export for external consumers
 export { handleSessionReview } from './session-buttons.js';
@@ -96,7 +101,10 @@ function getAutoDeferMode(customId: string): 'reply' | 'update' | null {
     if (customId.startsWith('runner_stats:')) return 'reply';
     if (customId.startsWith('create_folder_')) return 'reply';
 
+    if (customId.startsWith('runner_dashboard:')) return 'update';
+    if (customId.startsWith('project_dashboard:')) return 'update';
     if (customId.startsWith('runner_config:')) return 'update';
+    if (customId.startsWith('project_config:')) return 'update';
     if (customId.startsWith('config:')) return 'update';
     if (customId.startsWith('perm_')) return 'update';
     if (customId.startsWith('allow_')) return 'update';
@@ -217,6 +225,18 @@ export async function handleButtonInteraction(interaction: any): Promise<void> {
     if (customId.startsWith('session_settings_'))      { await handleSessionSettings(interaction, userId, customId); return; }
 
     // ── Runner dashboard ─────────────────────────────────────────────────
+    if (customId.startsWith('runner_dashboard:')) {
+        const rid = customId.split(':')[1];
+        await handleRunnerDashboardButton(interaction, userId, rid);
+        return;
+    }
+    if (customId.startsWith('project_dashboard:')) {
+        const parts = customId.split(':');
+        const rid = parts[1];
+        const projectPath = decodeURIComponent(parts.slice(2).join(':'));
+        await handleProjectDashboardButton(interaction, userId, rid, projectPath);
+        return;
+    }
     if (customId.startsWith('runner_config:'))  { const rid = customId.split(':')[1]; await handleRunnerConfig(interaction, userId, rid); return; }
     if (customId.startsWith('config:'))         { await handleConfigAction(interaction, userId, customId); return; }
     if (customId.startsWith('runner_stats:'))   { const rid = customId.split(':')[1]; await handleRunnerStats(interaction, userId, rid); return; }
@@ -240,6 +260,12 @@ export async function handleButtonInteraction(interaction: any): Promise<void> {
         const parsed = parseProjectDashboardContext(customId, 'sync_sessions');
         if (!parsed) { await safeEditReply(interaction, { content: '❌ Invalid dashboard action.' }); return; }
         await handleSyncSessionsButton(interaction, userId, parsed.projectPath, parsed.runnerIdHint);
+        return;
+    }
+
+    // ── Project config ───────────────────────────────────────────────────
+    if (customId.startsWith('project_config:')) {
+        await handleProjectConfigButton(interaction, userId, customId);
         return;
     }
 

@@ -69,6 +69,17 @@ function applyDefaultRunnerConfig(runner: RunnerInfo): void {
     if (runner.config.presets === undefined) runner.config.presets = {};
 }
 
+function mergeClaudeDefaultsPreservingPermissionMode(
+    currentDefaults: Record<string, any> | undefined,
+    incomingDefaults: Record<string, any>
+): Record<string, any> {
+    const merged = { ...incomingDefaults };
+    if (merged.permissionMode === undefined && currentDefaults?.permissionMode !== undefined) {
+        merged.permissionMode = currentDefaults.permissionMode;
+    }
+    return merged;
+}
+
 function clearOfflineTimer(runnerId: string): void {
     const timer = runnerOfflineTimers.get(runnerId);
     if (timer) {
@@ -471,7 +482,10 @@ async function handleWebSocketMessage(ws: any, message: WebSocketMessage): Promi
                         geminiDefaults: {}
                     };
                     if (data.claudeDefaults) {
-                        runner.config.claudeDefaults = { ...data.claudeDefaults };
+                        runner.config.claudeDefaults = mergeClaudeDefaultsPreservingPermissionMode(
+                            runner.config.claudeDefaults,
+                            data.claudeDefaults
+                        );
                     }
                     if (data.codexDefaults) {
                         runner.config.codexDefaults = { ...data.codexDefaults };
@@ -643,7 +657,10 @@ async function handleRegister(ws: any, data: any): Promise<void> {
         tokenInUse.assistantEnabled = data.assistantEnabled ?? tokenInUse.assistantEnabled ?? true;
         if (data.claudeDefaults && typeof data.claudeDefaults === 'object') {
             tokenInUse.config = tokenInUse.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {}, geminiDefaults: {} };
-            tokenInUse.config.claudeDefaults = { ...data.claudeDefaults };
+            tokenInUse.config.claudeDefaults = mergeClaudeDefaultsPreservingPermissionMode(
+                tokenInUse.config.claudeDefaults,
+                data.claudeDefaults
+            );
         }
         if (data.codexDefaults && typeof data.codexDefaults === 'object') {
             tokenInUse.config = tokenInUse.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {}, geminiDefaults: {} };
@@ -734,7 +751,10 @@ async function handleRegister(ws: any, data: any): Promise<void> {
         existingRunner.assistantEnabled = data.assistantEnabled ?? true;
         if (data.claudeDefaults && typeof data.claudeDefaults === 'object') {
             existingRunner.config = existingRunner.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {}, geminiDefaults: {} };
-            existingRunner.config.claudeDefaults = { ...data.claudeDefaults };
+            existingRunner.config.claudeDefaults = mergeClaudeDefaultsPreservingPermissionMode(
+                existingRunner.config.claudeDefaults,
+                data.claudeDefaults
+            );
         }
         if (data.codexDefaults && typeof data.codexDefaults === 'object') {
             existingRunner.config = existingRunner.config || { threadArchiveDays: 3, autoSync: true, thinkingLevel: 'low', yoloMode: false, claudeDefaults: {}, codexDefaults: {}, geminiDefaults: {} };

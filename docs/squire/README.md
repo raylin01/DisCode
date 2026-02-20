@@ -2,39 +2,46 @@
 
 A personal AI assistant system that can work independently in the background, remember context across sessions, and be accessed via Discord.
 
+**Architecture Decision:** See [ARCHITECTURE-DECISION.md](./ARCHITECTURE-DECISION.md) for the recommendation on standalone SquireBot vs DisCode integration.
+
 ## Overview
 
-Squire is designed as a **separate package** that provides intelligent assistant capabilities. It can be used in two ways:
-
-1. **Standalone with SquireBot** - Your own personal Discord bot
-2. **Embedded in DisCode** - Via runner-agent plugin
+Squire uses a **dual-connection architecture** where runner-agent connects to both DisCode bot and SquireBot:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         SQUIRE                                   │
-│                    (The Agent Package)                           │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │   Skills    │  │   Memory    │  │  Scheduler  │              │
-│  │   System    │  │   System    │  │   System    │              │
-│  └─────────────┘  └─────────────┘  └─────────────┘              │
-│                          │                                       │
-│                          ▼                                       │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │                    WORKSPACE MANAGER                         ││
-│  │  - Each channel/thread = isolated workspace                  ││
-│  │  - Shared global memory across all workspaces                ││
-│  │  - Independent decision-making context per workspace         ││
-│  └─────────────────────────────────────────────────────────────┘│
+│                         RUNNER-AGENT                             │
+│                                                                  │
+│  Core Plugins: claude-sdk, codex-sdk, gemini-sdk, tmux          │
+│                                                                  │
+│  Squire Plugin:                                                  │
+│  - Memory system (SQLite)                                        │
+│  - Ticket tools                                                  │
+│  - Channel management tools                                      │
+│  - Scheduler                                                     │
+│  - Skills system                                                 │
+│                                                                  │
+│  Dual Connection (simultaneous):                                 │
+│  - WebSocket to DisCode Bot → Sessions, projects                │
+│  - WebSocket to SquireBot → DMs, forums, channel management     │
 └─────────────────────────────────────────────────────────────────┘
-         │                              │
-         ▼                              ▼
-┌─────────────────┐           ┌─────────────────┐
-│   SQUIRE BOT    │           │   DISCODE BOT   │
-│ (Discord only)  │           │ (via runner-    │
-│  Single-user    │           │  agent plugin)  │
-│  Simple auth    │           │                 │
-└─────────────────┘           └─────────────────┘
+         │                                    │
+         ▼                                    ▼
+┌─────────────────┐                  ┌─────────────────────────────────┐
+│  DISCODE BOT    │                  │  SQUIRE BOT (minimal)           │
+│  (unchanged)    │                  │                                 │
+│                 │                  │  - WebSocket server             │
+│  - Sessions     │                  │  - DM passthrough               │
+│  - Projects     │                  │  - Forum passthrough            │
+│  - Multi-user   │                  │  - Channel API for AI skills    │
+└─────────────────┘                  └─────────────────────────────────┘
 ```
+
+**Key points:**
+- **SquireBot is minimal** - just Discord interface + WebSocket server
+- **discord-bot is unchanged** - no squire code added
+- **runner-agent does the work** - squire plugin provides all AI capabilities
+- **Channel management as skills** - AI can create channels, post updates, etc.
 
 ## Key Features
 
@@ -60,6 +67,13 @@ Squire is designed as a **separate package** that provides intelligent assistant
 - Single-token authentication for SquireBot
 - Works autonomously within defined boundaries
 
+### 5. Discussion Board / Ticket Tracker (Phase 8)
+- Discord forum-based bug and feature request tracking
+- AI can claim and work on tickets
+- Status tracking via forum tags
+- AI can ask clarifying questions on tickets
+- Links tickets to sessions and commits
+
 ## Project Structure
 
 ```
@@ -73,25 +87,38 @@ discode/
 │   │   ├── memory/            # Memory system (embeddings + search)
 │   │   ├── skills/            # Skills system (frontmatter + loading)
 │   │   ├── scheduler/         # Task scheduling (daemon mode)
+│   │   ├── tickets/           # Ticket tracker system (Phase 8)
+│   │   │   ├── ticket-manager.ts
+│   │   │   ├── forum-bridge.ts
+│   │   │   └── tools.ts
+│   │   ├── channel-tools/     # Channel management tools
+│   │   │   ├── tools.ts
+│   │   │   └── squirebot-client.ts
 │   │   ├── mcp/               # MCP tools for agent
 │   │   └── types.ts           # Type definitions
 │   └── tests/
 │
-├── squire-bot/                # Discord bot for Squire (standalone)
+├── squire-bot/                # Minimal Discord bot
 │   ├── package.json           # @discode/squire-bot
 │   ├── src/
-│   │   ├── index.ts           # Bot entry point
-│   │   ├── commands/          # /listen, /dm, /status, etc.
-│   │   ├── handlers/          # Message, interaction handlers
-│   │   ├── workspace-bridge.ts # Connect Discord to Squire workspaces
+│   │   ├── index.ts           # Entry point
+│   │   ├── discord-client.ts  # Discord.js setup
+│   │   ├── ws-server.ts       # WebSocket server
+│   │   ├── handlers/
+│   │   │   ├── dm.ts          # DM passthrough
+│   │   │   ├── forum.ts       # Forum post passthrough
+│   │   │   └── channel-ops.ts # Channel operations from AI
 │   │   └── config.ts          # Single-user config
 │   └── tests/
 │
 ├── runner-agent/              # EXISTING - with Squire plugin
 │   └── src/
-│       └── squire-plugin/     # Plugin to embed Squire in DisCode
+│       └── squire-plugin/     # Squire plugin (connects to both bots)
+│           ├── index.ts
+│           ├── tools.ts
+│           └── squirebot-client.ts
 │
-├── discord-bot/               # EXISTING - DisCode bot
+├── discord-bot/               # EXISTING - unchanged
 └── shared/                    # EXISTING - shared types
 ```
 
@@ -105,6 +132,7 @@ See individual phase documents:
 - [Phase 5: Workspaces](./phase-5-workspaces.md) - Channel-isolated contexts
 - [Phase 6: SquireBot](./phase-6-squirebot.md) - Standalone Discord bot
 - [Phase 7: DisCode Integration](./phase-7-discode-integration.md) - runner-agent plugin
+- [Phase 8: Discussion Board](./phase-8-discussion-board.md) - Forum-based ticket tracker
 
 ## Usage Examples
 
@@ -136,20 +164,35 @@ squire-bot init --token "YOUR_DISCORD_BOT_TOKEN"
 
 | Feature | SquireBot | DisCode Bot |
 |---------|-----------|-------------|
-| Multi-tenancy | Single-user | Multi-user |
-| Permissions | Minimal prompts | Full permission system |
-| Authentication | Single token | Per-runner tokens |
-| Use case | Personal assistant | Team collaboration |
-| Background tasks | Yes (daemon) | Session-based |
-| Memory | Global + workspaces | Per-session |
+| Purpose | Personal assistant | Team collaboration |
+| WebSocket | Server (accepts connections) | Server (accepts connections) |
+| AI Logic | In runner-agent plugin | In runner-agent plugin |
+| DMs | Yes (passthrough) | No |
+| Forums | Yes (ticket tracking) | No |
+| Channel Management | Yes (AI skills) | No |
+| Sessions | No | Yes |
+| Multi-user | No | Yes |
+| Code changes | New minimal bot | Unchanged |
 
 ## Design Decisions
 
-### Why Separate SquireBot?
-- Simplicity for personal use
-- No need for complex multi-tenant infrastructure
-- Can be more aggressive/autonomous with fewer permission prompts
-- Easier to deploy for individual users
+### Why Dual-Connection Architecture?
+- runner-agent already connects to DisCode bot for sessions
+- Adding SquireBot connection extends capabilities
+- No changes needed to discord-bot
+- Consistent WebSocket pattern
+
+### Why Minimal SquireBot?
+- Just Discord interface, no AI logic
+- All smarts in runner-agent plugin
+- Easy to maintain and debug
+- Follows same pattern as DisCode bot
+
+### Why Channel Management as Skills?
+- AI can create channels for progress tracking
+- AI can rename channels to reflect current work
+- AI can post updates to dedicated channels
+- Gives AI autonomy over its workspace
 
 ### Why Shared Memory?
 - Squire "remembers" context from all conversations
@@ -160,8 +203,3 @@ squire-bot init --token "YOUR_DISCORD_BOT_TOKEN"
 - Prevents context pollution between channels
 - Each project/task has clean decision context
 - But memory is still shared for cross-context recall
-
-### Why Plugin Architecture?
-- DisCode users don't need separate bot
-- Same Squire core works in both contexts
-- Easy to migrate from DisCode to standalone SquireBot

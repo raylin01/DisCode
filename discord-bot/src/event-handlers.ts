@@ -45,6 +45,7 @@ import {
   handleDeleteProject,
   handleCodexThreads,
   handleResumeCodex,
+  handleDashboard,
 } from './handlers/index.js';
 
 const config = getConfig();
@@ -260,6 +261,10 @@ async function handleChatInputCommand(
       await handleDeleteProject(interaction, userId);
       break;
 
+    case 'dashboard':
+      await handleDashboard(interaction, userId);
+      break;
+
     default:
       await interaction.reply({
         content: 'Unknown command',
@@ -460,6 +465,137 @@ async function handleProjectChannelMessage(
     activeSessions,
     pendingActions
   }, message.channel as any);
+
+  // Auto-spawn thread if message is not a command and has content
+  if (!message.content.startsWith('/') && message.content.trim().length > 0) {
+    const { projectSettingsStore } = await import('./services/project-settings.js');
+    const projectConfig = projectSettingsStore.getConfig(runnerId, projectPath);
+
+    // Auto-spawn is enabled by default (opt-out behavior)
+    if (projectConfig.autoSpawnEnabled !== false) {
+      await spawnThreadFromMessage(message, runnerId, projectPath, message.content);
+    }
+  }
+}
+
+/**
+ * Spawn a new thread from a user message
+ */
+async function spawnThreadFromMessage(
+  message: any,
+  runnerId: string,
+  projectPath: string,
+  initialPrompt: string
+): Promise<void> {
+  const { projectSettingsStore } = await import('./services/project-settings.js');
+  const { buildSessionStartOptions } = await import('./utils/session-options.js');
+
+  const runner = storage.getRunner(runnerId);
+  if (!runner || runner.status !== 'online') {
+    // Runner offline, don't spawn
+    return;
+  }
+
+  // Check user access
+  if (!storage.canUserAccessRunner(message.author.id, runnerId)) {
+    return;
+  }
+
+  const projectConfig = projectSettingsStore.getConfig(runnerId, projectPath);
+
+  // Determine CLI type
+  let cliType: 'claude' | 'gemini' | 'codex' = projectConfig.defaultCliType || runner.cliTypes[0] || 'claude';
+
+  // Get channel
+  const categoryManager = getCategoryManager();
+  const channelId = await categoryManager?.ensureProjectChannel(runnerId, projectPath);
+
+  if (!channelId) {
+    return;
+  }
+
+  const channel = await botState.client.channels.fetch(channelId);
+  if (!channel || !('threads' in channel)) {
+    return;
+  }
+
+  // Create thread
+  const folderName = projectPath.split('/').pop() || 'project';
+  const threadName = `${cliType}-${folderName}`.substring(0, 100);
+
+  const thread = await (channel as any).threads.create({
+    name: threadName,
+    autoArchiveDuration: 1440,
+    reason: 'Spawned from project channel message'
+  });
+
+  // Create session
+  const { randomUUID } = await import('crypto');
+  const sessionId = randomUUID();
+
+  const startOptions = buildSessionStartOptions(runner, undefined, undefined, cliType, projectPath);
+
+  const plugin = (cliType === 'claude' ? 'claude-sdk' : cliType === 'codex' ? 'codex-sdk' : 'gemini-sdk') as 'claude-sdk' | 'codex-sdk' | 'gemini-sdk';
+
+  const session = {
+    sessionId,
+    runnerId: runner.runnerId,
+    channelId: channel.id,
+    threadId: thread.id,
+    createdAt: new Date().toISOString(),
+    status: 'active' as const,
+    cliType,
+    plugin,
+    folderPath: projectPath,
+    creatorId: message.author.id,
+    options: startOptions
+  };
+
+  storage.createSession(session);
+
+  // Add user to thread
+  await thread.members.add(message.author.id);
+
+  // Notify runner
+  const ws = botState.runnerConnections.get(runnerId);
+  if (ws) {
+    ws.send(JSON.stringify({
+      type: 'session_start',
+      data: {
+        sessionId,
+        runnerId: runner.runnerId,
+        cliType,
+        plugin: session.plugin,
+        folderPath: projectPath,
+        create: true,
+        options: startOptions
+      }
+    }));
+
+    // Send initial message after a short delay to let the session start
+    setTimeout(() => {
+      const wsConnection = botState.runnerConnections.get(runnerId);
+      if (wsConnection) {
+        wsConnection.send(JSON.stringify({
+          type: 'user_message',
+          data: {
+            sessionId,
+            userId: message.author.id,
+            username: message.author.username,
+            content: initialPrompt,
+            timestamp: new Date().toISOString()
+          }
+        }));
+      }
+    }, 2000);
+  }
+
+  // React to original message to indicate spawn
+  try {
+    await message.react('🚀');
+  } catch (e) {
+    // Ignore reaction errors
+  }
 }
 
 /**

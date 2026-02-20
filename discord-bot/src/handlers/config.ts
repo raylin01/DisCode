@@ -205,24 +205,22 @@ async function showDefaultModelPicker(
 }
 
 export async function handleRunnerConfig(
-    interaction: ButtonInteraction, 
-    userId: string, 
+    interaction: ButtonInteraction,
+    userId: string,
     runnerId: string,
     section: ConfigSection = 'main'
 ): Promise<void> {
     const runner = storage.getRunner(runnerId);
     if (!runner) {
-        await interaction.reply({ 
-            embeds: [createErrorEmbed('Runner Not Found', 'This runner no longer exists.')], 
-            ephemeral: true 
+        await editOrUpdateInteraction(interaction, {
+            embeds: [createErrorEmbed('Runner Not Found', 'This runner no longer exists.')]
         });
         return;
     }
 
     if (!storage.canUserAccessRunner(userId, runnerId)) {
-        await interaction.reply({ 
-            embeds: [createErrorEmbed('Access Denied', 'You do not have permission to configure this runner.')], 
-            ephemeral: true 
+        await editOrUpdateInteraction(interaction, {
+            embeds: [createErrorEmbed('Access Denied', 'You do not have permission to configure this runner.')]
         });
         return;
     }
@@ -270,29 +268,39 @@ export async function handleRunnerConfig(
     // --- Navigation Row (Top) ---
     const navRow = new ActionRowBuilder<ButtonBuilder>()
         .addComponents(
-             new ButtonBuilder()
+            new ButtonBuilder()
                 .setCustomId(`config:${runnerId}:section:projects`)
-                .setLabel('📁 Projects')
+                .setLabel('Projects')
                 .setStyle(section === 'projects' ? ButtonStyle.Primary : ButtonStyle.Secondary),
             new ButtonBuilder()
                 .setCustomId(`config:${runnerId}:section:threads`)
-                .setLabel('🧵 Threads')
+                .setLabel('Threads')
                 .setStyle(section === 'threads' ? ButtonStyle.Primary : ButtonStyle.Secondary),
             new ButtonBuilder()
                 .setCustomId(`config:${runnerId}:section:claude`)
-                .setLabel('🤖 Claude')
+                .setLabel('Claude')
                 .setStyle(section === 'claude' ? ButtonStyle.Primary : ButtonStyle.Secondary),
             new ButtonBuilder()
                 .setCustomId(`config:${runnerId}:section:codex`)
-                .setLabel('🧠 Codex')
+                .setLabel('Codex')
                 .setStyle(section === 'codex' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-             new ButtonBuilder()
+            new ButtonBuilder()
                 .setCustomId(`config:${runnerId}:section:advanced`)
-                .setLabel('🔧 Advanced')
+                .setLabel('Advanced')
                 .setStyle(section === 'advanced' ? ButtonStyle.Primary : ButtonStyle.Secondary)
         );
-    
+
     rows.push(navRow);
+
+    // --- Close button row (always visible) ---
+    const closeRow = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId(`runner_dashboard:${runnerId}`)
+                .setLabel('Back to Dashboard')
+                .setStyle(ButtonStyle.Secondary)
+        );
+    // Add close row at the end (after section-specific rows)
 
     // --- Section Content ---
     switch (section) {
@@ -309,9 +317,40 @@ export async function handleRunnerConfig(
             break;
 
         case 'projects':
-            embed.setDescription('**Project Settings**\n\nManage how projects are synced and displayed.');
-            // Add project specific actions if needed (e.g., refresh list)
-            embed.addFields({ name: 'Info', value: 'Use `/sync-projects` to refresh the project list.' });
+            embed.setDescription('**Project Settings**\n\nManage project-specific defaults that override runner settings.');
+
+            // List projects with their override status
+            const { getCategoryManager } = await import('../services/category-manager.js');
+            const { projectSettingsStore } = await import('../services/project-settings.js');
+            const categoryManager = getCategoryManager();
+            const runnerCategory = categoryManager?.getRunnerCategory(runnerId);
+
+            if (runnerCategory && runnerCategory.projects.size > 0) {
+                const projectList: string[] = [];
+                for (const [path, project] of runnerCategory.projects) {
+                    const folderName = path.split('/').pop() || path;
+                    const hasOverrides = projectSettingsStore.hasOverrides(runnerId, path);
+                    projectList.push(`${hasOverrides ? '⚙️' : '📁'} ${folderName}`);
+                }
+                embed.addFields({
+                    name: `Projects (${runnerCategory.projects.size})`,
+                    value: projectList.slice(0, 15).join('\n') + (projectList.length > 15 ? '\n...' : ''),
+                    inline: false
+                });
+            } else {
+                embed.addFields({
+                    name: 'No Projects',
+                    value: 'Use `/sync-projects` to discover projects from this runner.',
+                    inline: false
+                });
+            }
+
+            // Sync button
+            const syncProjectsBtn = new ButtonBuilder()
+                .setCustomId(`sync_projects:${runnerId}`)
+                .setLabel('Sync Projects')
+                .setStyle(ButtonStyle.Primary);
+            rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(syncProjectsBtn));
             break;
 
         case 'threads':
@@ -340,157 +379,92 @@ export async function handleRunnerConfig(
             break;
 
         case 'claude':
-            embed.setDescription('**Claude Settings**\n\nConfigure AI behavior and capabilities.');
+            embed.setDescription('**Claude Settings**\n\nConfigure AI behavior and capabilities. Use `/session-control` commands for advanced options.');
             const claudeDefaults = config.claudeDefaults || {};
-            
-            // Thinking Level
-            const thinkingRow = new ActionRowBuilder<ButtonBuilder>();
-            (['low', 'medium', 'high'] as const).forEach(level => {
-                 thinkingRow.addComponents(
+
+            // Row 2: Thinking Level + YOLO (combined)
+            const thinkingAndYoloRow = new ActionRowBuilder<ButtonBuilder>()
+                .addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:set:thinkingLevel:${level}`)
-                        .setLabel(`${level.charAt(0).toUpperCase() + level.slice(1)} Thinking`)
-                        .setStyle(config.thinkingLevel === level ? ButtonStyle.Primary : ButtonStyle.Secondary)
+                        .setCustomId(`config:${runnerId}:set:thinkingLevel:low`)
+                        .setLabel('Low')
+                        .setStyle(config.thinkingLevel === 'low' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:set:thinkingLevel:medium`)
+                        .setLabel('Medium')
+                        .setStyle(config.thinkingLevel === 'medium' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:set:thinkingLevel:high`)
+                        .setLabel('High')
+                        .setStyle(config.thinkingLevel === 'high' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:toggle:yoloMode`)
+                        .setLabel(config.yoloMode ? 'YOLO ON' : 'YOLO OFF')
+                        .setStyle(config.yoloMode ? ButtonStyle.Danger : ButtonStyle.Secondary)
                 );
-            });
-            rows.push(thinkingRow);
+            rows.push(thinkingAndYoloRow);
 
-            // YOLO Mode Toggle
-            const yoloToggle = new ButtonBuilder()
-                .setCustomId(`config:${runnerId}:toggle:yoloMode`)
-                .setLabel(config.yoloMode ? '⚠️ YOLO Mode Enabled' : '🛡️ YOLO Mode Disabled')
-                .setStyle(config.yoloMode ? ButtonStyle.Danger : ButtonStyle.Success);
-            
-            rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(yoloToggle));
-
-            embed.addFields(
-                { name: 'Default Model', value: claudeDefaults.model || 'Auto', inline: true },
-                { name: 'Fallback Model', value: claudeDefaults.fallbackModel || 'None', inline: true },
-                { name: 'Max Turns', value: claudeDefaults.maxTurns ? String(claudeDefaults.maxTurns) : 'Default', inline: true },
-                { name: 'Max Thinking Tokens', value: claudeDefaults.maxThinkingTokens ? String(claudeDefaults.maxThinkingTokens) : 'Default', inline: true },
-                { name: 'Max Budget (USD)', value: claudeDefaults.maxBudgetUsd ? String(claudeDefaults.maxBudgetUsd) : 'Default', inline: true },
-                { name: 'Agent', value: claudeDefaults.agent || 'Default', inline: true },
-                { name: 'Permission Mode', value: claudeDefaults.permissionMode || 'default', inline: true },
-                { name: 'Include Partials', value: claudeDefaults.includePartialMessages === false ? 'Disabled' : 'Enabled', inline: true },
-                { name: 'Allowed Tools', value: claudeDefaults.allowedTools?.length ? claudeDefaults.allowedTools.join(', ') : 'Any', inline: true },
-                { name: 'Disallowed Tools', value: claudeDefaults.disallowedTools?.length ? claudeDefaults.disallowedTools.join(', ') : 'None', inline: true },
-                { name: 'Tools', value: claudeDefaults.tools ? (Array.isArray(claudeDefaults.tools) ? claudeDefaults.tools.join(', ') : 'default') : 'default', inline: true },
-                { name: 'Betas', value: claudeDefaults.betas?.length ? claudeDefaults.betas.join(', ') : 'None', inline: true },
-                { name: 'Setting Sources', value: claudeDefaults.settingSources?.length ? claudeDefaults.settingSources.join(', ') : 'Default', inline: true },
-                { name: 'Add Dirs', value: claudeDefaults.additionalDirectories?.length ? claudeDefaults.additionalDirectories.join(', ') : 'None', inline: true },
-                { name: 'Presets', value: Object.keys(config.presets || {}).length ? Object.keys(config.presets || {}).join(', ') : 'None', inline: false }
-            );
-
-            const claudeDefaultsRow = new ActionRowBuilder<ButtonBuilder>()
+            // Row 3: Core model settings
+            const coreSettingsRow = new ActionRowBuilder<ButtonBuilder>()
                 .addComponents(
                     new ButtonBuilder()
                         .setCustomId(`config:${runnerId}:models:claude`)
-                        .setLabel('Select Model')
+                        .setLabel('Model')
                         .setStyle(ButtonStyle.Primary),
                     new ButtonBuilder()
                         .setCustomId(`config:${runnerId}:modal:setMaxTurns`)
-                        .setLabel('Set Max Turns')
+                        .setLabel('Max Turns')
                         .setStyle(ButtonStyle.Secondary),
                     new ButtonBuilder()
                         .setCustomId(`config:${runnerId}:modal:setMaxThinking`)
-                        .setLabel('Set Max Thinking')
+                        .setLabel('Max Thinking')
                         .setStyle(ButtonStyle.Secondary),
                     new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setFallbackModel`)
-                        .setLabel('Set Fallback')
+                        .setCustomId(`config:${runnerId}:modal:setMaxBudget`)
+                        .setLabel('Max Budget')
                         .setStyle(ButtonStyle.Secondary),
                     new ButtonBuilder()
                         .setCustomId(`config:${runnerId}:action:clearClaudeDefaults`)
-                        .setLabel('Clear Defaults')
+                        .setLabel('Clear')
                         .setStyle(ButtonStyle.Danger)
                 );
+            rows.push(coreSettingsRow);
 
-            rows.push(claudeDefaultsRow);
-
-            const claudeDefaultsRowTwo = new ActionRowBuilder<ButtonBuilder>()
+            // Row 4: Permission mode (Manual, Auto-Safe, YOLO)
+            const effectivePermMode = claudeDefaults.permissionMode || 'manual';
+            const permissionModeRow = new ActionRowBuilder<ButtonBuilder>()
                 .addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setMaxBudget`)
-                        .setLabel('Set Max Budget')
-                        .setStyle(ButtonStyle.Secondary),
+                        .setCustomId(`config:${runnerId}:set:permissionMode:manual`)
+                        .setLabel('Manual')
+                        .setStyle(effectivePermMode === 'manual' ? ButtonStyle.Secondary : ButtonStyle.Secondary),
                     new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setAgent`)
-                        .setLabel('Set Agent')
-                        .setStyle(ButtonStyle.Secondary),
+                        .setCustomId(`config:${runnerId}:set:permissionMode:autoSafe`)
+                        .setLabel('Auto-Safe')
+                        .setStyle(effectivePermMode === 'autoSafe' ? ButtonStyle.Success : ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId(`config:${runnerId}:set:permissionMode:yolo`)
+                        .setLabel('YOLO')
+                        .setStyle(effectivePermMode === 'yolo' ? ButtonStyle.Danger : ButtonStyle.Secondary),
                     new ButtonBuilder()
                         .setCustomId(`config:${runnerId}:toggle:includePartialMessages`)
-                        .setLabel(claudeDefaults.includePartialMessages === false ? 'Enable Partials' : 'Disable Partials')
-                        .setStyle(claudeDefaults.includePartialMessages === false ? ButtonStyle.Success : ButtonStyle.Secondary)
+                        .setLabel(claudeDefaults.includePartialMessages === false ? 'Partials ON' : 'Partials OFF')
+                        .setStyle(claudeDefaults.includePartialMessages === false ? ButtonStyle.Secondary : ButtonStyle.Success)
                 );
+            rows.push(permissionModeRow);
 
-            rows.push(claudeDefaultsRowTwo);
-
-            const claudeDefaultsRowThree = new ActionRowBuilder<ButtonBuilder>()
+            // Row 5: Edit mode + Presets (combined to stay within 5 rows)
+            const effectiveEditMode = claudeDefaults.editAcceptMode || 'default';
+            const editAndPresetsRow = new ActionRowBuilder<ButtonBuilder>()
                 .addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setAllowedTools`)
-                        .setLabel('Set Allowed Tools')
-                        .setStyle(ButtonStyle.Secondary),
+                        .setCustomId(`config:${runnerId}:set:editAcceptMode:default`)
+                        .setLabel('Edit: Default')
+                        .setStyle(effectiveEditMode === 'default' ? ButtonStyle.Primary : ButtonStyle.Secondary),
                     new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setDisallowedTools`)
-                        .setLabel('Set Disallowed Tools')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setToolsList`)
-                        .setLabel('Set Tools List')
-                        .setStyle(ButtonStyle.Secondary)
-                );
-
-            const claudeDefaultsRowFour = new ActionRowBuilder<ButtonBuilder>()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setBetas`)
-                        .setLabel('Set Betas')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setSettingSources`)
-                        .setLabel('Set Setting Sources')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setAdditionalDirs`)
-                        .setLabel('Set Add Dirs')
-                        .setStyle(ButtonStyle.Secondary)
-                );
-
-            const claudeDefaultsRowFive = new ActionRowBuilder<ButtonBuilder>()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setJsonSchema`)
-                        .setLabel('Set JSON Schema')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setMcpServers`)
-                        .setLabel('Set MCP Servers')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:toggle:strictMcpConfig`)
-                        .setLabel(claudeDefaults.strictMcpConfig ? 'Strict MCP: ON' : 'Strict MCP: OFF')
-                        .setStyle(claudeDefaults.strictMcpConfig ? ButtonStyle.Success : ButtonStyle.Secondary)
-                );
-
-            const claudeDefaultsRowSix = new ActionRowBuilder<ButtonBuilder>()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setPlugins`)
-                        .setLabel('Set Plugins')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setExtraArgs`)
-                        .setLabel('Set Extra Args')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setSandbox`)
-                        .setLabel('Set Sandbox')
-                        .setStyle(ButtonStyle.Secondary)
-                );
-
-            const presetRow = new ActionRowBuilder<ButtonBuilder>()
-                .addComponents(
+                        .setCustomId(`config:${runnerId}:set:editAcceptMode:acceptEdits`)
+                        .setLabel('Edit: Accept All')
+                        .setStyle(effectiveEditMode === 'acceptEdits' ? ButtonStyle.Success : ButtonStyle.Secondary),
                     new ButtonBuilder()
                         .setCustomId(`config:${runnerId}:modal:savePreset`)
                         .setLabel('Save Preset')
@@ -501,25 +475,21 @@ export async function handleRunnerConfig(
                         .setStyle(ButtonStyle.Secondary),
                     new ButtonBuilder()
                         .setCustomId(`config:${runnerId}:modal:deletePreset`)
-                        .setLabel('Delete Preset')
+                        .setLabel('Delete')
                         .setStyle(ButtonStyle.Danger)
                 );
+            rows.push(editAndPresetsRow);
 
-            rows.push(claudeDefaultsRowThree, claudeDefaultsRowFour, claudeDefaultsRowFive, claudeDefaultsRowSix, presetRow);
-
-            const permissionModeRow = new ActionRowBuilder<ButtonBuilder>()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:set:permissionMode:default`)
-                        .setLabel('Permission: Default')
-                        .setStyle(claudeDefaults.permissionMode === 'default' || !claudeDefaults.permissionMode ? ButtonStyle.Primary : ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:set:permissionMode:acceptEdits`)
-                        .setLabel('Permission: Accept Edits')
-                        .setStyle(claudeDefaults.permissionMode === 'acceptEdits' ? ButtonStyle.Primary : ButtonStyle.Secondary)
-                );
-
-            rows.push(permissionModeRow);
+            // Show current settings in embed with default/override indicators
+            embed.addFields(
+                { name: 'Default Model', value: claudeDefaults.model ? claudeDefaults.model : 'Auto _default_', inline: true },
+                { name: 'Max Turns', value: claudeDefaults.maxTurns ? String(claudeDefaults.maxTurns) : 'Default', inline: true },
+                { name: 'Max Thinking', value: claudeDefaults.maxThinkingTokens ? String(claudeDefaults.maxThinkingTokens) : 'Default', inline: true },
+                { name: 'Max Budget', value: claudeDefaults.maxBudgetUsd ? `$${claudeDefaults.maxBudgetUsd}` : 'Default', inline: true },
+                { name: 'Permission Mode', value: (claudeDefaults.permissionMode || 'manual') + (claudeDefaults.permissionMode ? '' : ' _default_'), inline: true },
+                { name: 'Edit Mode', value: (claudeDefaults.editAcceptMode || 'default') + (claudeDefaults.editAcceptMode ? '' : ' _default_'), inline: true },
+                { name: 'Thinking Level', value: (config.thinkingLevel || 'low').toUpperCase() + (config.thinkingLevel ? '' : ' _default_'), inline: true }
+            );
             break;
 
         case 'codex': {
@@ -586,10 +556,27 @@ export async function handleRunnerConfig(
         }
 
         case 'advanced':
-            embed.setDescription('**Advanced Settings**\n\nDangerous or technical configurations.');
-            // Placeholders
-            embed.addFields({ name: 'Version', value: 'v1.0.0', inline: true });
+            embed.setDescription('**Advanced Settings**\n\nTechnical configurations and maintenance actions.');
+
+            // Show runner info
+            embed.addFields(
+                { name: 'Runner ID', value: `\`${runnerId}\``, inline: true },
+                { name: 'Status', value: runner.status || 'unknown', inline: true },
+                { name: 'Owner', value: `<@${runner.ownerId}>`, inline: true }
+            );
+
+            // Clear all defaults button
+            const clearAllBtn = new ButtonBuilder()
+                .setCustomId(`config:${runnerId}:action:clearAllDefaults`)
+                .setLabel('Clear All Defaults')
+                .setStyle(ButtonStyle.Danger);
+            rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(clearAllBtn));
             break;
+    }
+
+    // Add close row at the end (check if we have room - Discord max is 5 rows)
+    if (rows.length < 5) {
+        rows.push(closeRow);
     }
 
     // Refresh interaction
@@ -608,7 +595,7 @@ export async function handleConfigAction(interaction: any, userId: string, custo
     // Actions: section, toggle, set, cycle, modal, action
     const parts = customId.split(':');
     if (parts.length < 4) return;
-    
+
     const runnerId = parts[1];
     const action = parts[2];
     const param = parts.slice(3).join(':');
@@ -617,7 +604,7 @@ export async function handleConfigAction(interaction: any, userId: string, custo
     if (!runner || !runner.config) return;
 
     if (!storage.canUserAccessRunner(userId, runnerId)) {
-        await interaction.reply({ content: 'Access Denied', ephemeral: true });
+        await editOrUpdateInteraction(interaction, { content: 'Access Denied' });
         return;
     }
 
@@ -711,9 +698,14 @@ export async function handleConfigAction(interaction: any, userId: string, custo
             runner.config.thinkingLevel = level;
             updated = true;
         } else if (param.startsWith('permissionMode')) {
-            const mode = param.split(':')[1] as 'default' | 'acceptEdits';
+            const mode = param.split(':')[1] as 'manual' | 'autoSafe' | 'yolo';
             runner.config.claudeDefaults = runner.config.claudeDefaults || {};
             runner.config.claudeDefaults.permissionMode = mode;
+            updated = true;
+        } else if (param.startsWith('editAcceptMode')) {
+            const mode = param.split(':')[1] as 'default' | 'acceptEdits';
+            runner.config.claudeDefaults = runner.config.claudeDefaults || {};
+            runner.config.claudeDefaults.editAcceptMode = mode;
             updated = true;
         }
     } else if (action === 'action') {
@@ -722,6 +714,11 @@ export async function handleConfigAction(interaction: any, userId: string, custo
             updated = true;
         } else if (param === 'clearCodexDefaults') {
             runner.config.codexDefaults = {};
+            updated = true;
+        } else if (param === 'clearAllDefaults') {
+            runner.config.claudeDefaults = {};
+            runner.config.codexDefaults = {};
+            runner.config.geminiDefaults = {};
             updated = true;
         }
     }
@@ -752,9 +749,10 @@ export async function handleConfigAction(interaction: any, userId: string, custo
         // Determine current section to stay on
         // We can check the customId or infer likely section
         let section: ConfigSection = 'main';
-        if (param.startsWith('thinkingLevel') || param === 'yoloMode' || param.startsWith('permissionMode') || param === 'clearClaudeDefaults' || param === 'includePartialMessages' || param === 'strictMcpConfig') section = 'claude';
+        if (param.startsWith('thinkingLevel') || param === 'yoloMode' || param.startsWith('permissionMode') || param.startsWith('editAcceptMode') || param === 'clearClaudeDefaults' || param === 'includePartialMessages' || param === 'strictMcpConfig') section = 'claude';
         if (param.startsWith('codex') || param === 'clearCodexDefaults') section = 'codex';
         if (param === 'autoSync' || param === 'archiveDays') section = 'threads';
+        if (param === 'clearAllDefaults') section = 'advanced';
 
         await handleRunnerConfig(interaction as ButtonInteraction, userId, runnerId, section);
     }
@@ -855,6 +853,17 @@ function sendRunnerConfigUpdate(
         console.warn(`[RunnerConfig] No defaults to update for ${runnerId}`);
         return;
     }
+
+    // Sanitize claudeDefaults before sending to runner-agent
+    // Discord-bot uses permissionMode: 'manual' | 'autoSafe' | 'yolo' for tool permissions
+    // Runner-agent uses permissionMode: 'default' | 'acceptEdits' for edit acceptance
+    // These are different concepts, so we strip permissionMode from what we send
+    const sanitizedClaudeDefaults = defaults.claudeDefaults ? { ...defaults.claudeDefaults } : undefined;
+    if (sanitizedClaudeDefaults) {
+        // Remove discord-bot specific permissionMode (mapped to skipPermissions/autoApproveSafe at session start)
+        delete sanitizedClaudeDefaults.permissionMode;
+    }
+
     const requestId = `runner_config_${runnerId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const timeout = setTimeout(() => {
         botState.pendingRunnerConfigUpdates.delete(requestId);
@@ -865,7 +874,7 @@ function sendRunnerConfigUpdate(
         type: 'runner_config_update',
         data: {
             runnerId,
-            ...(defaults.claudeDefaults ? { claudeDefaults: defaults.claudeDefaults } : {}),
+            ...(sanitizedClaudeDefaults && Object.keys(sanitizedClaudeDefaults).length > 0 ? { claudeDefaults: sanitizedClaudeDefaults } : {}),
             ...(defaults.codexDefaults ? { codexDefaults: defaults.codexDefaults } : {}),
             ...(defaults.geminiDefaults ? { geminiDefaults: defaults.geminiDefaults } : {}),
             requestId

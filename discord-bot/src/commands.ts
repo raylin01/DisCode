@@ -359,6 +359,10 @@ export function getCommandDefinitions(): (SlashCommandBuilder | SlashCommandOpti
           .setDescription('Delete ALL projects for this runner')
           .setRequired(false)
       ),
+
+    new SlashCommandBuilder()
+      .setName('dashboard')
+      .setDescription('Show the dashboard for this runner or project'),
   ];
 }
 

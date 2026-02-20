@@ -12,7 +12,7 @@
 
 /**
  * Built-in tools that are considered SAFE to auto-approve.
- * These are read-only operations that cannot modify the filesystem or execute code.
+ * These are low-risk operations - mostly read-only, plus controlled edits.
  *
  * NOTE: AskUserQuestion is NOT here because it requires actual user interaction.
  * Even though it's "safe" from a security perspective, auto-approving it would
@@ -28,6 +28,12 @@ export const SAFE_TOOLS = new Set([
 
     // Information gathering
     'NotebookRead',
+
+    // File editing (controlled string replacements)
+    'Edit',
+
+    // Planning mode
+    'EnterPlanMode',
 ]);
 
 /**
@@ -36,7 +42,6 @@ export const SAFE_TOOLS = new Set([
  */
 export const DANGEROUS_TOOLS = new Set([
     // File modifications
-    'Edit',
     'Write',
     'MultiEdit',
     'NotebookEdit',

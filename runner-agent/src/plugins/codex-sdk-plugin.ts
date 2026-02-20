@@ -55,6 +55,7 @@ class CodexSDKSession extends BaseSDKSession {
   private activeTurnId: string | null = null;
   private messageQueue: MessageQueue;
   private codexPlugin: CodexSDKPlugin;
+  private permissionModeOverride: 'default' | 'acceptEdits' | undefined;
 
   private currentOutput = '';
   private completedOutputEmitted = false;
@@ -76,6 +77,11 @@ class CodexSDKSession extends BaseSDKSession {
     super(config, plugin);
     this.codexPlugin = plugin;
     this.messageQueue = new MessageQueue((message) => this.doSendMessage(message));
+    const options = config.options || {};
+    this.permissionModeOverride =
+      options.permissionMode === 'default' || options.permissionMode === 'acceptEdits'
+        ? options.permissionMode
+        : undefined;
   }
 
   async initializeThread(): Promise<void> {
@@ -134,7 +140,7 @@ class CodexSDKSession extends BaseSDKSession {
 
     this.emitMetadata({
       model: response.model,
-      permissionMode: approvalPolicy ?? undefined
+      permissionMode: this.permissionModeOverride || 'default'
     });
   }
 
@@ -251,6 +257,11 @@ class CodexSDKSession extends BaseSDKSession {
       decision.behavior === 'deny' ? denyMessage : undefined,
       requestId
     );
+  }
+
+  async setPermissionMode(mode: 'default' | 'acceptEdits'): Promise<void> {
+    this.permissionModeOverride = mode;
+    this.emitMetadata({ permissionMode: mode });
   }
 
   async interrupt(): Promise<void> {
@@ -468,6 +479,15 @@ class CodexSDKSession extends BaseSDKSession {
   }
 
   private handleFileApproval(requestId: string | number, params: FileChangeRequestApprovalParams): void {
+    // acceptEdits mode auto-approves edit/file-change actions.
+    if (this.permissionModeOverride === 'acceptEdits') {
+      const response: FileChangeRequestApprovalResponse = {
+        decision: 'accept'
+      };
+      this.codexPlugin.client.sendResponse(requestId, response);
+      return;
+    }
+
     // File changes are never auto-approved in autoSafe mode since they modify the filesystem
     if (this.autoApproveSafe) {
       console.log(`[CodexSDK ${this.sessionId.slice(0, 8)}] File change requires approval in autoSafe mode: ${params.reason}`);
