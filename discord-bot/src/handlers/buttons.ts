@@ -61,6 +61,9 @@ import {
 
 import {
     handleRunnerStats,
+    handleRunnerHealthButton,
+    handleRunnerLogsButton,
+    handleRunnerClisButton,
     handleListSessionsButton,
     handleNewSessionButton,
     handleSyncSessionsButton,
@@ -99,6 +102,9 @@ function getAutoDeferMode(customId: string): 'reply' | 'update' | null {
     if (customId.startsWith('sync_projects:')) return 'reply';
     if (customId === 'sync_attach_control') return 'reply';
     if (customId.startsWith('runner_stats:')) return 'reply';
+    if (customId.startsWith('runner_health:')) return 'reply';
+    if (customId.startsWith('runner_logs:')) return 'reply';
+    if (customId.startsWith('runner_clis:')) return 'reply';
     if (customId.startsWith('create_folder_')) return 'reply';
 
     if (customId.startsWith('runner_dashboard:')) return 'update';
@@ -240,6 +246,9 @@ export async function handleButtonInteraction(interaction: any): Promise<void> {
     if (customId.startsWith('runner_config:'))  { const rid = customId.split(':')[1]; await handleRunnerConfig(interaction, userId, rid); return; }
     if (customId.startsWith('config:'))         { await handleConfigAction(interaction, userId, customId); return; }
     if (customId.startsWith('runner_stats:'))   { const rid = customId.split(':')[1]; await handleRunnerStats(interaction, userId, rid); return; }
+    if (customId.startsWith('runner_health:'))  { const rid = customId.split(':')[1]; await handleRunnerHealthButton(interaction, userId, rid); return; }
+    if (customId.startsWith('runner_logs:'))    { const rid = customId.split(':')[1]; await handleRunnerLogsButton(interaction, userId, rid); return; }
+    if (customId.startsWith('runner_clis:'))    { const rid = customId.split(':')[1]; await handleRunnerClisButton(interaction, userId, rid); return; }
     if (customId.startsWith('sync_projects:'))  { const rid = customId.split(':')[1]; await handleSyncProjects(interaction, userId, rid); return; }
     if (customId === 'sync_attach_control') { await handleSyncAttachControlButton(interaction, userId); return; }
 

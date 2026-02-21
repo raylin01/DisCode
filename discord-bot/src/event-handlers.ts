@@ -35,6 +35,8 @@ import {
   handleUnwatch,
   handleInterrupt,
   handleSetModel,
+  handleSetEditMode,
+  handleSetApprovalMode,
   handleSetPermissionMode,
   handleSetThinkingTokens,
   handleAssistantCommand,
@@ -215,6 +217,14 @@ async function handleChatInputCommand(
 
     case 'set-model':
       await handleSetModel(interaction, userId);
+      break;
+
+    case 'set-edit-mode':
+      await handleSetEditMode(interaction, userId);
+      break;
+
+    case 'set-approval-mode':
+      await handleSetApprovalMode(interaction, userId);
       break;
 
     case 'set-permission-mode':

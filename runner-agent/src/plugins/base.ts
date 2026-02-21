@@ -373,6 +373,7 @@ export interface PluginSession {
 
     // Session controls (optional)
     setPermissionMode?(mode: 'default' | 'acceptEdits'): Promise<void>;
+    setApprovalMode?(mode: 'manual' | 'autoSafe' | 'auto'): Promise<void>;
     setModel?(model: string): Promise<void>;
     setMaxThinkingTokens?(maxTokens: number): Promise<void>;
 

@@ -56,6 +56,8 @@ class CodexSDKSession extends BaseSDKSession {
   private messageQueue: MessageQueue;
   private codexPlugin: CodexSDKPlugin;
   private permissionModeOverride: 'default' | 'acceptEdits' | undefined;
+  private approvalModeOverride: 'manual' | 'autoSafe' | 'auto' = 'manual';
+  private approvalPolicyOverride: AskForApproval | null | undefined;
 
   private currentOutput = '';
   private completedOutputEmitted = false;
@@ -82,13 +84,30 @@ class CodexSDKSession extends BaseSDKSession {
       options.permissionMode === 'default' || options.permissionMode === 'acceptEdits'
         ? options.permissionMode
         : undefined;
+    const shouldAutoApproveAll =
+      (options.allowDangerouslySkipPermissions ?? options.skipPermissions ?? false) === true;
+    const shouldAutoApproveSafe = options.autoApproveSafe === true;
+    this.approvalModeOverride = shouldAutoApproveAll
+      ? 'auto'
+      : shouldAutoApproveSafe
+      ? 'autoSafe'
+      : 'manual';
+    this.autoApproveSafe = this.approvalModeOverride === 'autoSafe';
+    this.approvalPolicyOverride =
+      (options.approvalPolicy as AskForApproval | undefined) ?? undefined;
+  }
+
+  private getEffectiveApprovalPolicy(options: Record<string, unknown>): AskForApproval | null {
+    if (this.approvalPolicyOverride !== undefined) {
+      return this.approvalPolicyOverride;
+    }
+    return (options.approvalPolicy as AskForApproval | undefined) ?? 'on-request';
   }
 
   async initializeThread(): Promise<void> {
     const options = this.config.options || {};
 
-    const approvalPolicy: AskForApproval | null = (options.approvalPolicy as AskForApproval | undefined)
-      ?? (options.skipPermissions ? 'never' : 'on-request');
+    const approvalPolicy = this.getEffectiveApprovalPolicy(options);
 
     const sandbox = (options.sandbox as SandboxMode | undefined) || null;
     const persistSession = options.persistSession !== false;
@@ -166,7 +185,7 @@ class CodexSDKSession extends BaseSDKSession {
       threadId: this.threadId,
       input: [{ type: 'text', text: message, text_elements: [] }],
       cwd: null,
-      approvalPolicy: (options.approvalPolicy as AskForApproval | undefined) ?? null,
+      approvalPolicy: this.getEffectiveApprovalPolicy(options),
       sandboxPolicy: this.toSandboxPolicy(options.sandboxPolicy ?? options.sandbox ?? null),
       model: (options.model as string | undefined) ?? null,
       effort: (options.reasoningEffort as any) ?? null,
@@ -262,6 +281,13 @@ class CodexSDKSession extends BaseSDKSession {
   async setPermissionMode(mode: 'default' | 'acceptEdits'): Promise<void> {
     this.permissionModeOverride = mode;
     this.emitMetadata({ permissionMode: mode });
+  }
+
+  async setApprovalMode(mode: 'manual' | 'autoSafe' | 'auto'): Promise<void> {
+    this.approvalModeOverride = mode;
+    this.autoApproveSafe = mode === 'autoSafe';
+    this.approvalPolicyOverride = mode === 'auto' ? 'never' : 'on-request';
+    this.emitMetadata({ mode: `approval:${mode}` });
   }
 
   async interrupt(): Promise<void> {
@@ -424,8 +450,17 @@ class CodexSDKSession extends BaseSDKSession {
   }
 
   private handleCommandApproval(requestId: string | number, params: CommandExecutionRequestApprovalParams): void {
+    const approvalMode = this.approvalModeOverride;
+    if (approvalMode === 'auto') {
+      const response: CommandExecutionRequestApprovalResponse = {
+        decision: 'accept'
+      };
+      this.codexPlugin.client.sendResponse(requestId, response);
+      return;
+    }
+
     // Auto-approve safe commands if in autoApproveSafe mode
-    if (this.autoApproveSafe && params.command) {
+    if (approvalMode === 'autoSafe' && params.command) {
       if (isBashCommandSafe(params.command)) {
         console.log(`[CodexSDK ${this.sessionId.slice(0, 8)}] Auto-approving safe command: ${params.command.slice(0, 50)}...`);
         const response: CommandExecutionRequestApprovalResponse = {
@@ -479,6 +514,15 @@ class CodexSDKSession extends BaseSDKSession {
   }
 
   private handleFileApproval(requestId: string | number, params: FileChangeRequestApprovalParams): void {
+    const approvalMode = this.approvalModeOverride;
+    if (approvalMode === 'auto') {
+      const response: FileChangeRequestApprovalResponse = {
+        decision: 'accept'
+      };
+      this.codexPlugin.client.sendResponse(requestId, response);
+      return;
+    }
+
     // acceptEdits mode auto-approves edit/file-change actions.
     if (this.permissionModeOverride === 'acceptEdits') {
       const response: FileChangeRequestApprovalResponse = {
@@ -489,7 +533,7 @@ class CodexSDKSession extends BaseSDKSession {
     }
 
     // File changes are never auto-approved in autoSafe mode since they modify the filesystem
-    if (this.autoApproveSafe) {
+    if (approvalMode === 'autoSafe') {
       console.log(`[CodexSDK ${this.sessionId.slice(0, 8)}] File change requires approval in autoSafe mode: ${params.reason}`);
     }
 

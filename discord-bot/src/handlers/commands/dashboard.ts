@@ -29,7 +29,7 @@ export async function handleDashboard(
     if (!categoryManager) {
         await interaction.reply({
             embeds: [createErrorEmbed('Error', 'Category manager not available')],
-            ephemeral: true
+            flags: 64
         });
         return;
     }
@@ -56,7 +56,7 @@ export async function handleDashboard(
                     'Runner control channels are named `runner-control` in each runner category. ' +
                     'Project channels start with `project-`.'
                 )],
-                ephemeral: true
+                flags: 64
             });
         }
     }
@@ -74,7 +74,7 @@ async function showRunnerDashboard(
     if (!runner) {
         await interaction.reply({
             embeds: [createErrorEmbed('Runner Not Found', 'This runner no longer exists.')],
-            ephemeral: true
+            flags: 64
         });
         return;
     }
@@ -82,7 +82,7 @@ async function showRunnerDashboard(
     if (!storage.canUserAccessRunner(userId, runnerId)) {
         await interaction.reply({
             embeds: [createErrorEmbed('Access Denied', 'You do not have access to this runner.')],
-            ephemeral: true
+            flags: 64
         });
         return;
     }
@@ -146,10 +146,26 @@ async function showRunnerDashboard(
                 .setStyle(ButtonStyle.Secondary)
         );
 
+    const toolsRow = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId(`runner_health:${runnerId}`)
+                .setLabel('Health')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId(`runner_logs:${runnerId}`)
+                .setLabel('Logs')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId(`runner_clis:${runnerId}`)
+                .setLabel('List CLIs')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
     await interaction.reply({
         embeds: [embed],
-        components: [row],
-        ephemeral: true
+        components: [row, toolsRow],
+        flags: 64
     });
 }
 
@@ -167,7 +183,7 @@ async function showProjectDashboard(
     if (!runner) {
         await interaction.reply({
             embeds: [createErrorEmbed('Runner Not Found', 'Runner for this project no longer exists.')],
-            ephemeral: true
+            flags: 64
         });
         return;
     }
@@ -175,7 +191,7 @@ async function showProjectDashboard(
     if (!storage.canUserAccessRunner(userId, runnerId)) {
         await interaction.reply({
             embeds: [createErrorEmbed('Access Denied', 'You do not have access to this project.')],
-            ephemeral: true
+            flags: 64
         });
         return;
     }
@@ -251,7 +267,7 @@ async function showProjectDashboard(
     await interaction.reply({
         embeds: [embed],
         components: [row1, row2],
-        ephemeral: true
+        flags: 64
     });
 }
 
@@ -345,9 +361,25 @@ export async function handleRunnerDashboardButton(
                 .setStyle(ButtonStyle.Secondary)
         );
 
+    const toolsRow = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId(`runner_health:${runnerId}`)
+                .setLabel('Health')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId(`runner_logs:${runnerId}`)
+                .setLabel('Logs')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId(`runner_clis:${runnerId}`)
+                .setLabel('List CLIs')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
     await editOrUpdateInteraction(interaction, {
         embeds: [embed],
-        components: [row]
+        components: [row, toolsRow]
     });
 }
 

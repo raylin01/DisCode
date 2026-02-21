@@ -22,7 +22,46 @@ import { fetchRunnerModels, AUTO_MODEL_VALUE } from '../utils/models.js';
 import * as botState from '../state.js';
 import type { RunnerConfig } from '../../../shared/types.js';
 
-type ConfigSection = 'main' | 'projects' | 'threads' | 'claude' | 'codex' | 'advanced';
+type ConfigSection =
+    | 'main'
+    | 'home'
+    | 'projects'
+    | 'threads'
+    | 'claude'
+    | 'claude-2'
+    | 'claude-3'
+    | 'codex'
+    | 'codex-2'
+    | 'gemini'
+    | 'gemini-2'
+    | 'advanced';
+
+const TOP_NAV_PAGES: ReadonlyArray<ReadonlyArray<ConfigSection>> = [
+    ['home', 'projects', 'threads', 'claude'],
+    ['codex', 'gemini', 'advanced']
+];
+
+function normalizeSection(section: ConfigSection): ConfigSection {
+    return section === 'main' ? 'home' : section;
+}
+
+function getBaseSection(section: ConfigSection): ConfigSection {
+    const normalized = normalizeSection(section);
+    if (normalized.startsWith('claude')) return 'claude';
+    if (normalized.startsWith('codex')) return 'codex';
+    if (normalized.startsWith('gemini')) return 'gemini';
+    return normalized;
+}
+
+function getTopPageForSection(section: ConfigSection): 0 | 1 {
+    const base = getBaseSection(section);
+    const pageOne = TOP_NAV_PAGES[1].includes(base);
+    return pageOne ? 1 : 0;
+}
+
+function getFirstSectionForTopPage(topPage: 0 | 1): ConfigSection {
+    return TOP_NAV_PAGES[topPage][0] as ConfigSection;
+}
 
 function truncateForDiscord(value: string, max: number): string {
     if (value.length <= max) return value;
@@ -208,7 +247,8 @@ export async function handleRunnerConfig(
     interaction: ButtonInteraction,
     userId: string,
     runnerId: string,
-    section: ConfigSection = 'main'
+    section: ConfigSection = 'home',
+    topPageOverride?: 0 | 1
 ): Promise<void> {
     const runner = storage.getRunner(runnerId);
     if (!runner) {
@@ -224,6 +264,8 @@ export async function handleRunnerConfig(
         });
         return;
     }
+
+    const activeSection = normalizeSection(section);
 
     // Default config if missing
     const config: RunnerConfig = runner.config || {
@@ -259,40 +301,47 @@ export async function handleRunnerConfig(
         storage.updateRunner(runnerId, runner);
     }
 
+    const effectiveTopPage = topPageOverride ?? getTopPageForSection(activeSection);
     const embed = new EmbedBuilder()
         .setTitle(`⚙️ Configuration: ${runner.name}`)
         .setColor(0x5ca1e6);
 
     const rows: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[] = [];
 
-    // --- Navigation Row (Top) ---
-    const navRow = new ActionRowBuilder<ButtonBuilder>()
-        .addComponents(
+    const headerButtons: ButtonBuilder[] = [];
+    if (effectiveTopPage === 0) {
+        for (const item of TOP_NAV_PAGES[0]) {
+            headerButtons.push(
+                new ButtonBuilder()
+                    .setCustomId(`config:${runnerId}:section:${item}`)
+                    .setLabel(item === 'home' ? 'Home' : item.charAt(0).toUpperCase() + item.slice(1))
+                    .setStyle(getBaseSection(activeSection) === item ? ButtonStyle.Primary : ButtonStyle.Secondary)
+            );
+        }
+        headerButtons.push(
             new ButtonBuilder()
-                .setCustomId(`config:${runnerId}:section:projects`)
-                .setLabel('Projects')
-                .setStyle(section === 'projects' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId(`config:${runnerId}:section:threads`)
-                .setLabel('Threads')
-                .setStyle(section === 'threads' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId(`config:${runnerId}:section:claude`)
-                .setLabel('Claude')
-                .setStyle(section === 'claude' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId(`config:${runnerId}:section:codex`)
-                .setLabel('Codex')
-                .setStyle(section === 'codex' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId(`config:${runnerId}:section:advanced`)
-                .setLabel('Advanced')
-                .setStyle(section === 'advanced' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+                .setCustomId(`config:${runnerId}:topPage:1:${activeSection}`)
+                .setLabel('>')
+                .setStyle(ButtonStyle.Secondary)
         );
+    } else {
+        headerButtons.push(
+            new ButtonBuilder()
+                .setCustomId(`config:${runnerId}:topPage:0:${activeSection}`)
+                .setLabel('<')
+                .setStyle(ButtonStyle.Secondary)
+        );
+        for (const item of TOP_NAV_PAGES[1]) {
+            headerButtons.push(
+                new ButtonBuilder()
+                    .setCustomId(`config:${runnerId}:section:${item}`)
+                    .setLabel(item.charAt(0).toUpperCase() + item.slice(1))
+                    .setStyle(getBaseSection(activeSection) === item ? ButtonStyle.Primary : ButtonStyle.Secondary)
+            );
+        }
+    }
+    rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...headerButtons));
 
-    rows.push(navRow);
-
-    // --- Close button row (always visible) ---
     const closeRow = new ActionRowBuilder<ButtonBuilder>()
         .addComponents(
             new ButtonBuilder()
@@ -300,26 +349,22 @@ export async function handleRunnerConfig(
                 .setLabel('Back to Dashboard')
                 .setStyle(ButtonStyle.Secondary)
         );
-    // Add close row at the end (after section-specific rows)
-
-    // --- Section Content ---
-    switch (section) {
-        case 'main':
+    switch (activeSection) {
+        case 'home':
             embed.setDescription('Select a category above to configure runner settings.');
-            
-            // Overview fields
             embed.addFields(
                 { name: 'Auto-Sync', value: config.autoSync ? '✅ Enabled' : '❌ Disabled', inline: true },
                 { name: 'Thread Archive', value: `${config.threadArchiveDays} days`, inline: true },
                 { name: 'Thinking', value: (config.thinkingLevel || 'low').toUpperCase(), inline: true },
-                { name: 'YOLO Mode', value: config.yoloMode ? '✅ Enabled' : '❌ Disabled', inline: true }
+                { name: 'Claude Approval', value: config.claudeDefaults?.permissionMode || 'manual', inline: true },
+                { name: 'Claude Edit Mode', value: config.claudeDefaults?.editAcceptMode || 'default', inline: true },
+                { name: 'Codex Approval', value: config.codexDefaults?.approvalPolicy || 'on-request', inline: true },
+                { name: 'Gemini Approval', value: config.geminiDefaults?.approvalMode || 'default', inline: true }
             );
             break;
 
         case 'projects':
             embed.setDescription('**Project Settings**\n\nManage project-specific defaults that override runner settings.');
-
-            // List projects with their override status
             const { getCategoryManager } = await import('../services/category-manager.js');
             const { projectSettingsStore } = await import('../services/project-settings.js');
             const categoryManager = getCategoryManager();
@@ -355,8 +400,6 @@ export async function handleRunnerConfig(
 
         case 'threads':
             embed.setDescription('**Thread Settings**\n\nConfigure how session threads behave.');
-            
-            // Archive Duration Select
             const archiveSelect = new StringSelectMenuBuilder()
                 .setCustomId(`config:${runnerId}:set:archiveDays`)
                 .setPlaceholder('Archive threads after...')
@@ -379,186 +422,197 @@ export async function handleRunnerConfig(
             break;
 
         case 'claude':
-            embed.setDescription('**Claude Settings**\n\nConfigure AI behavior and capabilities. Use `/session-control` commands for advanced options.');
+        case 'claude-2':
+        case 'claude-3': {
             const claudeDefaults = config.claudeDefaults || {};
-
-            // Row 2: Thinking Level + YOLO (combined)
-            const thinkingAndYoloRow = new ActionRowBuilder<ButtonBuilder>()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:set:thinkingLevel:low`)
-                        .setLabel('Low')
-                        .setStyle(config.thinkingLevel === 'low' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:set:thinkingLevel:medium`)
-                        .setLabel('Medium')
-                        .setStyle(config.thinkingLevel === 'medium' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:set:thinkingLevel:high`)
-                        .setLabel('High')
-                        .setStyle(config.thinkingLevel === 'high' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:toggle:yoloMode`)
-                        .setLabel(config.yoloMode ? 'YOLO ON' : 'YOLO OFF')
-                        .setStyle(config.yoloMode ? ButtonStyle.Danger : ButtonStyle.Secondary)
-                );
-            rows.push(thinkingAndYoloRow);
-
-            // Row 3: Core model settings
-            const coreSettingsRow = new ActionRowBuilder<ButtonBuilder>()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:models:claude`)
-                        .setLabel('Model')
-                        .setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setMaxTurns`)
-                        .setLabel('Max Turns')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setMaxThinking`)
-                        .setLabel('Max Thinking')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setMaxBudget`)
-                        .setLabel('Max Budget')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:action:clearClaudeDefaults`)
-                        .setLabel('Clear')
-                        .setStyle(ButtonStyle.Danger)
-                );
-            rows.push(coreSettingsRow);
-
-            // Row 4: Permission mode (Manual, Auto-Safe, YOLO)
             const effectivePermMode = claudeDefaults.permissionMode || 'manual';
-            const permissionModeRow = new ActionRowBuilder<ButtonBuilder>()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:set:permissionMode:manual`)
-                        .setLabel('Manual')
-                        .setStyle(effectivePermMode === 'manual' ? ButtonStyle.Secondary : ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:set:permissionMode:autoSafe`)
-                        .setLabel('Auto-Safe')
-                        .setStyle(effectivePermMode === 'autoSafe' ? ButtonStyle.Success : ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:set:permissionMode:yolo`)
-                        .setLabel('YOLO')
-                        .setStyle(effectivePermMode === 'yolo' ? ButtonStyle.Danger : ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:toggle:includePartialMessages`)
-                        .setLabel(claudeDefaults.includePartialMessages === false ? 'Partials ON' : 'Partials OFF')
-                        .setStyle(claudeDefaults.includePartialMessages === false ? ButtonStyle.Secondary : ButtonStyle.Success)
-                );
-            rows.push(permissionModeRow);
-
-            // Row 5: Edit mode + Presets (combined to stay within 5 rows)
             const effectiveEditMode = claudeDefaults.editAcceptMode || 'default';
-            const editAndPresetsRow = new ActionRowBuilder<ButtonBuilder>()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:set:editAcceptMode:default`)
-                        .setLabel('Edit: Default')
-                        .setStyle(effectiveEditMode === 'default' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:set:editAcceptMode:acceptEdits`)
-                        .setLabel('Edit: Accept All')
-                        .setStyle(effectiveEditMode === 'acceptEdits' ? ButtonStyle.Success : ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:savePreset`)
-                        .setLabel('Save Preset')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:applyPreset`)
-                        .setLabel('Apply Preset')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:deletePreset`)
-                        .setLabel('Delete')
-                        .setStyle(ButtonStyle.Danger)
-                );
-            rows.push(editAndPresetsRow);
 
-            // Show current settings in embed with default/override indicators
+            embed.setDescription(
+                `**Claude Settings (${activeSection === 'claude' ? '1/3' : activeSection === 'claude-2' ? '2/3' : '3/3'})**\n` +
+                (activeSection === 'claude'
+                    ? 'Core limits and model defaults for new Claude sessions.'
+                    : activeSection === 'claude-2'
+                    ? 'Approval controls tools; Edit Mode controls edit/write auto-accept.'
+                    : 'Thinking level tunes depth; presets save/reuse Claude defaults.')
+            );
             embed.addFields(
-                { name: 'Default Model', value: claudeDefaults.model ? claudeDefaults.model : 'Auto _default_', inline: true },
+                { name: 'Model', value: claudeDefaults.model || 'Auto', inline: true },
                 { name: 'Max Turns', value: claudeDefaults.maxTurns ? String(claudeDefaults.maxTurns) : 'Default', inline: true },
                 { name: 'Max Thinking', value: claudeDefaults.maxThinkingTokens ? String(claudeDefaults.maxThinkingTokens) : 'Default', inline: true },
                 { name: 'Max Budget', value: claudeDefaults.maxBudgetUsd ? `$${claudeDefaults.maxBudgetUsd}` : 'Default', inline: true },
-                { name: 'Permission Mode', value: (claudeDefaults.permissionMode || 'manual') + (claudeDefaults.permissionMode ? '' : ' _default_'), inline: true },
-                { name: 'Edit Mode', value: (claudeDefaults.editAcceptMode || 'default') + (claudeDefaults.editAcceptMode ? '' : ' _default_'), inline: true },
-                { name: 'Thinking Level', value: (config.thinkingLevel || 'low').toUpperCase() + (config.thinkingLevel ? '' : ' _default_'), inline: true }
+                { name: 'Approval Mode', value: effectivePermMode, inline: true },
+                { name: 'Edit Mode', value: effectiveEditMode, inline: true },
+                { name: 'Thinking Level', value: (config.thinkingLevel || 'low').toUpperCase(), inline: true }
             );
+            if (activeSection === 'claude-2') {
+                embed.addFields({
+                    name: 'Mode Guide',
+                    value: [
+                        '`Manual` = ask before tools',
+                        '`Auto-Safe` = auto-allow only safe tools',
+                        '`YOLO` = auto-allow all tools',
+                        '`Edit: Default` = ask on edits',
+                        '`Edit: Accept` = auto-accept edits'
+                    ].join('\n'),
+                    inline: false
+                });
+            }
+
+            if (activeSection === 'claude') {
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:models:claude`).setLabel('Model').setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:modal:setMaxTurns`).setLabel('Max Turns').setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:modal:setMaxThinking`).setLabel('Max Thinking').setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:modal:setMaxBudget`).setLabel('Max Budget').setStyle(ButtonStyle.Secondary)
+                ));
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:subpage:claude-2`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary)
+                ));
+            } else if (activeSection === 'claude-2') {
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:set:permissionMode:manual`).setLabel('Manual').setStyle(effectivePermMode === 'manual' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:set:permissionMode:autoSafe`).setLabel('Auto-Safe').setStyle(effectivePermMode === 'autoSafe' ? ButtonStyle.Success : ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:set:permissionMode:yolo`).setLabel('YOLO').setStyle(effectivePermMode === 'yolo' ? ButtonStyle.Danger : ButtonStyle.Secondary)
+                ));
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:set:editAcceptMode:default`).setLabel('Edit: Default').setStyle(effectiveEditMode === 'default' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:set:editAcceptMode:acceptEdits`).setLabel('Edit: Accept').setStyle(effectiveEditMode === 'acceptEdits' ? ButtonStyle.Success : ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:toggle:includePartialMessages`).setLabel(claudeDefaults.includePartialMessages === false ? 'Partials ON' : 'Partials OFF').setStyle(claudeDefaults.includePartialMessages === false ? ButtonStyle.Secondary : ButtonStyle.Success)
+                ));
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:subpage:claude`).setLabel('◀ Prev').setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:subpage:claude-3`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary)
+                ));
+            } else {
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:set:thinkingLevel:low`).setLabel('Low').setStyle(config.thinkingLevel === 'low' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:set:thinkingLevel:medium`).setLabel('Medium').setStyle(config.thinkingLevel === 'medium' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:set:thinkingLevel:high`).setLabel('High').setStyle(config.thinkingLevel === 'high' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:toggle:yoloMode`).setLabel(config.yoloMode ? 'YOLO ON' : 'YOLO OFF').setStyle(config.yoloMode ? ButtonStyle.Danger : ButtonStyle.Secondary)
+                ));
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:modal:savePreset`).setLabel('Save Preset').setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:modal:applyPreset`).setLabel('Apply Preset').setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:modal:deletePreset`).setLabel('Delete Preset').setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:action:clearClaudeDefaults`).setLabel('Clear').setStyle(ButtonStyle.Danger)
+                ));
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:subpage:claude-2`).setLabel('◀ Prev').setStyle(ButtonStyle.Secondary)
+                ));
+            }
             break;
+        }
 
-        case 'codex': {
-            embed.setDescription('**Codex Settings**\n\nConfigure Codex CLI defaults.');
+        case 'codex':
+        case 'codex-2': {
             const codexDefaults = config.codexDefaults || {};
-
+            embed.setDescription(
+                `**Codex Settings (${activeSection === 'codex' ? '1/2' : '2/2'})**\n` +
+                (activeSection === 'codex'
+                    ? 'Approval gates tool calls, reasoning sets depth, summary controls explanation detail.'
+                    : 'Sandbox controls FS/network limits; instructions/schema shape assistant behavior.')
+            );
             embed.addFields(
-                { name: 'Default Model', value: codexDefaults.model || 'Auto', inline: true },
-                { name: 'Approval Policy', value: codexDefaults.approvalPolicy || 'on-request', inline: true },
-                { name: 'Reasoning Effort', value: codexDefaults.reasoningEffort || 'default', inline: true },
-                { name: 'Reasoning Summary', value: codexDefaults.reasoningSummary || 'auto', inline: true },
+                { name: 'Model', value: codexDefaults.model || 'Auto', inline: true },
+                { name: 'Approval', value: codexDefaults.approvalPolicy || 'on-request', inline: true },
+                { name: 'Reasoning', value: codexDefaults.reasoningEffort || 'default', inline: true },
+                { name: 'Summary', value: codexDefaults.reasoningSummary || 'auto', inline: true },
                 { name: 'Sandbox', value: codexDefaults.sandbox || 'default', inline: true },
                 { name: 'Base Instructions', value: codexDefaults.baseInstructions ? 'Set' : 'Default', inline: true },
-                { name: 'Developer Instructions', value: codexDefaults.developerInstructions ? 'Set' : 'Default', inline: true },
+                { name: 'Dev Instructions', value: codexDefaults.developerInstructions ? 'Set' : 'Default', inline: true },
                 { name: 'Output Schema', value: codexDefaults.outputSchema ? 'Set' : 'Default', inline: true }
             );
+            if (activeSection === 'codex') {
+                embed.addFields({
+                    name: 'Option Guide',
+                    value: [
+                        '`Approval` = when Codex asks before actions',
+                        '`Reasoning` = depth/cost of reasoning',
+                        '`Summary` = verbosity of reasoning summary'
+                    ].join('\n'),
+                    inline: false
+                });
+            }
 
-            const codexRowOne = new ActionRowBuilder<ButtonBuilder>()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:models:codex`)
-                        .setLabel('Select Model')
-                        .setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setCodexApproval`)
-                        .setLabel('Set Approval')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setCodexReasoning`)
-                        .setLabel('Set Reasoning')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setCodexSummary`)
-                        .setLabel('Set Summary')
-                        .setStyle(ButtonStyle.Secondary)
-                );
+            if (activeSection === 'codex') {
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:models:codex`).setLabel('Model').setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:modal:setCodexApproval`).setLabel('Approval').setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:modal:setCodexReasoning`).setLabel('Reasoning').setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:modal:setCodexSummary`).setLabel('Summary').setStyle(ButtonStyle.Secondary)
+                ));
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:action:clearCodexDefaults`).setLabel('Clear Defaults').setStyle(ButtonStyle.Danger)
+                ));
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:subpage:codex-2`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary)
+                ));
+            } else {
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:modal:setCodexSandbox`).setLabel('Sandbox').setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:modal:setCodexBase`).setLabel('Base Instr').setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:modal:setCodexDev`).setLabel('Dev Instr').setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:modal:setCodexSchema`).setLabel('Schema').setStyle(ButtonStyle.Secondary)
+                ));
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:action:clearCodexDefaults`).setLabel('Clear Defaults').setStyle(ButtonStyle.Danger)
+                ));
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:subpage:codex`).setLabel('◀ Prev').setStyle(ButtonStyle.Secondary)
+                ));
+            }
+            break;
+        }
 
-            const codexRowTwo = new ActionRowBuilder<ButtonBuilder>()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setCodexSandbox`)
-                        .setLabel('Set Sandbox')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setCodexBase`)
-                        .setLabel('Set Base Instr')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setCodexDev`)
-                        .setLabel('Set Dev Instr')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:modal:setCodexSchema`)
-                        .setLabel('Set Output Schema')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
-                        .setCustomId(`config:${runnerId}:action:clearCodexDefaults`)
-                        .setLabel('Clear Defaults')
-                        .setStyle(ButtonStyle.Danger)
-                );
+        case 'gemini':
+        case 'gemini-2': {
+            const geminiDefaults = config.geminiDefaults || {};
+            const approval = geminiDefaults.approvalMode || 'default';
+            const includePartials = geminiDefaults.includePartialMessages === true;
+            const extensions = Array.isArray(geminiDefaults.extensions) ? geminiDefaults.extensions : [];
+            const allowedMcpServerNames = Array.isArray(geminiDefaults.allowedMcpServerNames)
+                ? geminiDefaults.allowedMcpServerNames
+                : [];
 
-            rows.push(codexRowOne, codexRowTwo);
+            embed.setDescription(`**Gemini Settings (${activeSection === 'gemini' ? '1/2' : '2/2'})**`);
+            embed.addFields(
+                { name: 'Model', value: geminiDefaults.model || 'Auto', inline: true },
+                { name: 'Approval Mode', value: approval, inline: true },
+                { name: 'Partials', value: includePartials ? 'Enabled' : 'Disabled', inline: true },
+                { name: 'Extensions', value: extensions.length > 0 ? `${extensions.length} configured` : 'None', inline: true },
+                { name: 'Allowed MCP Servers', value: allowedMcpServerNames.length > 0 ? `${allowedMcpServerNames.length} configured` : 'None', inline: true }
+            );
+
+            if (activeSection === 'gemini') {
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:set:geminiApprovalMode:default`).setLabel('Default').setStyle(approval === 'default' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:set:geminiApprovalMode:auto_edit`).setLabel('Auto Edit').setStyle(approval === 'auto_edit' ? ButtonStyle.Success : ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:set:geminiApprovalMode:yolo`).setLabel('YOLO').setStyle(approval === 'yolo' ? ButtonStyle.Danger : ButtonStyle.Secondary)
+                ));
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:modal:setGeminiModel`).setLabel('Set Model').setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:toggle:geminiIncludePartialMessages`).setLabel(includePartials ? 'Partials ON' : 'Partials OFF').setStyle(includePartials ? ButtonStyle.Success : ButtonStyle.Secondary)
+                ));
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:subpage:gemini-2`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary)
+                ));
+            } else {
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:modal:setGeminiExtensions`).setLabel('Extensions').setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:modal:setGeminiAllowedMcpServerNames`).setLabel('Allowed MCP').setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:action:clearGeminiDefaults`).setLabel('Clear Defaults').setStyle(ButtonStyle.Danger)
+                ));
+                rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId(`config:${runnerId}:subpage:gemini`).setLabel('◀ Prev').setStyle(ButtonStyle.Secondary)
+                ));
+            }
             break;
         }
 
         case 'advanced':
             embed.setDescription('**Advanced Settings**\n\nTechnical configurations and maintenance actions.');
 
-            // Show runner info
             embed.addFields(
                 { name: 'Runner ID', value: `\`${runnerId}\``, inline: true },
                 { name: 'Status', value: runner.status || 'unknown', inline: true },
@@ -574,12 +628,10 @@ export async function handleRunnerConfig(
             break;
     }
 
-    // Add close row at the end (check if we have room - Discord max is 5 rows)
     if (rows.length < 5) {
         rows.push(closeRow);
     }
 
-    // Refresh interaction
     if (interaction.replied || interaction.deferred) {
         await interaction.editReply({ embeds: [embed], components: rows });
     } else {
@@ -591,8 +643,6 @@ export async function handleRunnerConfig(
  * Handle configuration actions
  */
 export async function handleConfigAction(interaction: any, userId: string, customId: string): Promise<void> {
-    // Parse customId: config:{runnerId}:{action}:{param}
-    // Actions: section, toggle, set, cycle, modal, action
     const parts = customId.split(':');
     if (parts.length < 4) return;
 
@@ -608,9 +658,25 @@ export async function handleConfigAction(interaction: any, userId: string, custo
         return;
     }
 
-    // Handle Sections (Navigation)
+    if (action === 'topPage') {
+        const [rawPage = '0', rawSection = 'home'] = param.split(':');
+        const requestedPage = rawPage === '1' ? 1 : 0;
+        const currentSection = normalizeSection(rawSection as ConfigSection);
+        const allowedSections = TOP_NAV_PAGES[requestedPage];
+        const nextSection = allowedSections.includes(getBaseSection(currentSection))
+            ? currentSection
+            : getFirstSectionForTopPage(requestedPage);
+        await handleRunnerConfig(interaction as ButtonInteraction, userId, runnerId, nextSection, requestedPage);
+        return;
+    }
+
     if (action === 'section') {
-        await handleRunnerConfig(interaction as ButtonInteraction, userId, runnerId, param as ConfigSection);
+        await handleRunnerConfig(interaction as ButtonInteraction, userId, runnerId, normalizeSection(param as ConfigSection));
+        return;
+    }
+
+    if (action === 'subpage') {
+        await handleRunnerConfig(interaction as ButtonInteraction, userId, runnerId, normalizeSection(param as ConfigSection));
         return;
     }
 
@@ -670,64 +736,89 @@ export async function handleConfigAction(interaction: any, userId: string, custo
 
     // Update Config
     let updated = false;
+    let sectionAfterUpdate: ConfigSection = 'home';
 
     if (action === 'toggle') {
         if (param === 'autoSync') {
             runner.config.autoSync = !runner.config.autoSync;
             updated = true;
+            sectionAfterUpdate = 'threads';
         } else if (param === 'yoloMode') {
             runner.config.yoloMode = !runner.config.yoloMode;
             updated = true;
+            sectionAfterUpdate = 'claude-3';
         } else if (param === 'includePartialMessages') {
             runner.config.claudeDefaults = runner.config.claudeDefaults || {};
             const current = runner.config.claudeDefaults.includePartialMessages;
             runner.config.claudeDefaults.includePartialMessages = current === false ? true : false;
             updated = true;
+            sectionAfterUpdate = 'claude-2';
         } else if (param === 'strictMcpConfig') {
             runner.config.claudeDefaults = runner.config.claudeDefaults || {};
             runner.config.claudeDefaults.strictMcpConfig = !runner.config.claudeDefaults.strictMcpConfig;
             updated = true;
+            sectionAfterUpdate = 'claude-3';
+        } else if (param === 'geminiIncludePartialMessages') {
+            runner.config.geminiDefaults = runner.config.geminiDefaults || {};
+            const current = runner.config.geminiDefaults.includePartialMessages;
+            runner.config.geminiDefaults.includePartialMessages = current === true ? false : true;
+            updated = true;
+            sectionAfterUpdate = 'gemini';
         }
     } else if (action === 'set') {
         if (param === 'archiveDays') {
-            // Handled by Select Menu? Select menu interaction is different.
-            // If this is a button click (e.g. thinkingLevel:high), it works.
-            // If select menu, values are in interaction.values
+            sectionAfterUpdate = 'threads';
         } else if (param.startsWith('thinkingLevel')) {
             const level = param.split(':')[1] as 'low'|'medium'|'high';
             runner.config.thinkingLevel = level;
             updated = true;
+            sectionAfterUpdate = 'claude-3';
         } else if (param.startsWith('permissionMode')) {
             const mode = param.split(':')[1] as 'manual' | 'autoSafe' | 'yolo';
             runner.config.claudeDefaults = runner.config.claudeDefaults || {};
             runner.config.claudeDefaults.permissionMode = mode;
             updated = true;
+            sectionAfterUpdate = 'claude-2';
         } else if (param.startsWith('editAcceptMode')) {
             const mode = param.split(':')[1] as 'default' | 'acceptEdits';
             runner.config.claudeDefaults = runner.config.claudeDefaults || {};
             runner.config.claudeDefaults.editAcceptMode = mode;
             updated = true;
+            sectionAfterUpdate = 'claude-2';
+        } else if (param.startsWith('geminiApprovalMode')) {
+            const mode = param.split(':')[1] as 'default' | 'auto_edit' | 'yolo';
+            runner.config.geminiDefaults = runner.config.geminiDefaults || {};
+            runner.config.geminiDefaults.approvalMode = mode;
+            updated = true;
+            sectionAfterUpdate = 'gemini';
         }
     } else if (action === 'action') {
         if (param === 'clearClaudeDefaults') {
             runner.config.claudeDefaults = {};
             updated = true;
+            sectionAfterUpdate = 'claude';
         } else if (param === 'clearCodexDefaults') {
             runner.config.codexDefaults = {};
             updated = true;
+            sectionAfterUpdate = 'codex';
+        } else if (param === 'clearGeminiDefaults') {
+            runner.config.geminiDefaults = {};
+            updated = true;
+            sectionAfterUpdate = 'gemini';
         } else if (param === 'clearAllDefaults') {
             runner.config.claudeDefaults = {};
             runner.config.codexDefaults = {};
             runner.config.geminiDefaults = {};
             updated = true;
+            sectionAfterUpdate = 'advanced';
         }
     }
 
-    // Handle Select Menus (values come from interaction, not just customId)
     if (interaction.isStringSelectMenu() && action === 'set' && param === 'archiveDays') {
         const value = parseInt(interaction.values[0], 10);
         runner.config.threadArchiveDays = value;
         updated = true;
+        sectionAfterUpdate = 'threads';
     }
 
     if (updated) {
@@ -745,16 +836,8 @@ export async function handleConfigAction(interaction: any, userId: string, custo
             codexDefaults: runner.config?.codexDefaults,
             geminiDefaults: runner.config?.geminiDefaults
         });
-        
-        // Determine current section to stay on
-        // We can check the customId or infer likely section
-        let section: ConfigSection = 'main';
-        if (param.startsWith('thinkingLevel') || param === 'yoloMode' || param.startsWith('permissionMode') || param.startsWith('editAcceptMode') || param === 'clearClaudeDefaults' || param === 'includePartialMessages' || param === 'strictMcpConfig') section = 'claude';
-        if (param.startsWith('codex') || param === 'clearCodexDefaults') section = 'codex';
-        if (param === 'autoSync' || param === 'archiveDays') section = 'threads';
-        if (param === 'clearAllDefaults') section = 'advanced';
 
-        await handleRunnerConfig(interaction as ButtonInteraction, userId, runnerId, section);
+        await handleRunnerConfig(interaction as ButtonInteraction, userId, runnerId, sectionAfterUpdate);
     }
 }
 
@@ -763,9 +846,14 @@ async function handleConfigModal(
     runnerId: string,
     param: string
 ): Promise<void> {
+    const modalTitle = param.startsWith('setCodex')
+        ? 'Update Codex Defaults'
+        : param.startsWith('setGemini')
+        ? 'Update Gemini Defaults'
+        : 'Update Claude Defaults';
     const modal = new ModalBuilder()
         .setCustomId(`config_modal:${runnerId}:${param}`)
-        .setTitle(param.startsWith('setCodex') ? 'Update Codex Defaults' : 'Update Claude Defaults');
+        .setTitle(modalTitle);
 
     const input = new TextInputBuilder()
         .setRequired(true)
@@ -808,13 +896,13 @@ async function handleConfigModal(
     } else if (param === 'setCodexModel') {
         input.setCustomId('codexModel').setLabel('Model (e.g., gpt-5.1)');
     } else if (param === 'setCodexApproval') {
-        input.setCustomId('codexApproval').setLabel('Approval Policy (untrusted | on-failure | on-request | never)');
+        input.setCustomId('codexApproval').setLabel('Approval (untrusted/on-fail/on-req/never)');
     } else if (param === 'setCodexReasoning') {
-        input.setCustomId('codexReasoning').setLabel('Reasoning Effort (none | minimal | low | medium | high | xhigh)');
+        input.setCustomId('codexReasoning').setLabel('Reasoning (none/min/low/med/high/xhigh)');
     } else if (param === 'setCodexSummary') {
-        input.setCustomId('codexSummary').setLabel('Reasoning Summary (auto | concise | detailed | none)');
+        input.setCustomId('codexSummary').setLabel('Summary (auto/concise/detailed/none)');
     } else if (param === 'setCodexSandbox') {
-        input.setCustomId('codexSandbox').setLabel('Sandbox (read-only | workspace-write | danger-full-access)');
+        input.setCustomId('codexSandbox').setLabel('Sandbox (ro/workspace-write/full-access)');
     } else if (param === 'setCodexBase') {
         input.setCustomId('codexBase').setLabel('Base Instructions');
         input.setStyle(TextInputStyle.Paragraph);
@@ -824,6 +912,12 @@ async function handleConfigModal(
     } else if (param === 'setCodexSchema') {
         input.setCustomId('codexSchema').setLabel('Output Schema (JSON)');
         input.setStyle(TextInputStyle.Paragraph);
+    } else if (param === 'setGeminiModel') {
+        input.setCustomId('geminiModel').setLabel('Model (e.g., gemini-2.5-pro)');
+    } else if (param === 'setGeminiExtensions') {
+        input.setCustomId('geminiExtensions').setLabel('Extensions (comma-separated)');
+    } else if (param === 'setGeminiAllowedMcpServerNames') {
+        input.setCustomId('geminiAllowedMcpServerNames').setLabel('Allowed MCP Servers (comma-separated)');
     } else if (param === 'savePreset') {
         input.setCustomId('presetName').setLabel('Preset Name');
     } else if (param === 'applyPreset') {
@@ -831,7 +925,7 @@ async function handleConfigModal(
     } else if (param === 'deletePreset') {
         input.setCustomId('presetName').setLabel('Preset Name to Delete');
     } else {
-        await interaction.reply({ content: 'Unknown configuration option.', ephemeral: true });
+        await interaction.reply({ content: 'Unknown configuration option.', flags: 64 });
         return;
     }
 

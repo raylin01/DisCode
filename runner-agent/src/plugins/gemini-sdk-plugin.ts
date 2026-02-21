@@ -96,6 +96,15 @@ class GeminiSDKSession extends BaseSDKSession {
     this.emitMetadata({ permissionMode: mode });
   }
 
+  async setApprovalMode(mode: 'manual' | 'autoSafe' | 'auto'): Promise<void> {
+    this.emitMetadata({ mode: `approval:${mode}` });
+    this.emitOutput({
+      content: 'ℹ️ Gemini does not support dynamic approval-mode changes yet; leaving runtime behavior unchanged.',
+      isComplete: true,
+      outputType: 'info'
+    });
+  }
+
   async setModel(model: string): Promise<void> {
     this.modelOverride = model;
     this.emitMetadata({ model });

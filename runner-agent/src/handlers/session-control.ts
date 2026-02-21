@@ -13,7 +13,7 @@ export interface SessionControlHandlerDeps {
 export interface SessionControlData {
     sessionId: string;
     runnerId: string;
-    action: 'set_model' | 'set_permission_mode' | 'set_max_thinking_tokens';
+    action: 'set_model' | 'set_permission_mode' | 'set_approval_mode' | 'set_max_thinking_tokens';
     value: string | number;
 }
 
@@ -47,6 +47,16 @@ export async function handleSessionControl(
                 console.log(`[SessionControl] Set model to ${value} for ${sessionId}`);
             } else {
                 console.warn(`[SessionControl] setModel not supported for ${sessionId}`);
+            }
+            return;
+        }
+
+        if (action === 'set_approval_mode') {
+            if ('setApprovalMode' in session && typeof (session as any).setApprovalMode === 'function') {
+                await (session as any).setApprovalMode(value as 'manual' | 'autoSafe' | 'auto');
+                console.log(`[SessionControl] Set approval mode to ${value} for ${sessionId}`);
+            } else {
+                console.warn(`[SessionControl] setApprovalMode not supported for ${sessionId}`);
             }
             return;
         }

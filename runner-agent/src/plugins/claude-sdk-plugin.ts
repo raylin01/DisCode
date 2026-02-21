@@ -90,6 +90,7 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
 
     // Auto-approve safe mode flag
     private autoApproveSafe: boolean = false;
+    private approvalModeOverride: 'manual' | 'autoSafe' | 'auto' = 'manual';
 
     // Use PendingApprovalTracker from sdk-base
     private readonly pendingPermissions = new PendingApprovalTracker<ClaudePendingApproval>();
@@ -127,11 +128,19 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         this.lastActivity = new Date();
 
         const options = config.options || {};
-        const allowDangerouslySkipPermissions =
-            options.allowDangerouslySkipPermissions ?? options.skipPermissions ?? false;
+        const shouldAutoApproveAll =
+            (options.allowDangerouslySkipPermissions ?? options.skipPermissions ?? false) === true;
+        const shouldAutoApproveSafe = options.autoApproveSafe === true;
 
-        // Store autoApproveSafe flag for use in permission handling
-        this.autoApproveSafe = options.autoApproveSafe ?? false;
+        this.approvalModeOverride = shouldAutoApproveAll
+            ? 'auto'
+            : shouldAutoApproveSafe
+            ? 'autoSafe'
+            : 'manual';
+        this.autoApproveSafe = this.approvalModeOverride === 'autoSafe';
+
+        // Keep this disabled so approval behavior can be changed at runtime.
+        const allowDangerouslySkipPermissions = false;
 
         // Initialize the Claude Client
         this.client = new ClaudeClient({
@@ -306,15 +315,41 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
             console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] control_request: id=${req.request_id} subtype=${request.subtype} tool=${toolNameForLog}`);
 
             if (request.subtype === 'can_use_tool') {
-                // Auto-approve safe tools if in autoApproveSafe mode
-                if (this.autoApproveSafe) {
-                    const toolName = request.tool_name || '';
-                    const input = request.input || {};
+                if (request.tool_name === 'AskUserQuestion') {
+                    this.handleAskUserQuestion(req.request_id, request).catch((err) => {
+                        this.plugin.emit('error', {
+                            sessionId: this.sessionId,
+                            error: err.message,
+                            fatal: false
+                        });
+                    });
+                    return;
+                }
 
+                const approvalMode = this.approvalModeOverride;
+                const toolName = request.tool_name || '';
+                const input = request.input || {};
+
+                if (approvalMode === 'auto') {
+                    const responseData: ControlResponseData = {
+                        behavior: 'allow',
+                        updatedInput: input,
+                        message: 'Auto-approved (approval mode: auto)'
+                    };
+                    this.client.sendControlResponse(req.request_id, responseData).catch((err) => {
+                        this.plugin.emit('error', {
+                            sessionId: this.sessionId,
+                            error: err.message,
+                            fatal: false
+                        });
+                    });
+                    return;
+                }
+
+                if (approvalMode === 'autoSafe') {
                     if (shouldAutoApproveInSafeMode(toolName, input)) {
                         console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Auto-approving safe tool: ${toolName}`);
 
-                        // Send auto-approval response
                         const responseData: ControlResponseData = {
                             behavior: 'allow',
                             updatedInput: input,
@@ -328,21 +363,10 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
                             });
                         });
                         return;
-                    } else {
-                        const reason = toolName === 'Bash' ? getDangerousReason(input?.command || '') : undefined;
-                        console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Tool ${toolName} requires approval in autoSafe mode${reason ? `: ${reason}` : ''}`);
                     }
-                }
 
-                if (request.tool_name === 'AskUserQuestion') {
-                    this.handleAskUserQuestion(req.request_id, request).catch((err) => {
-                        this.plugin.emit('error', {
-                            sessionId: this.sessionId,
-                            error: err.message,
-                            fatal: false
-                        });
-                    });
-                    return;
+                    const reason = toolName === 'Bash' ? getDangerousReason(input?.command || '') : undefined;
+                    console.log(`[ClaudeSDK ${this.sessionId.slice(0, 8)}] Tool ${toolName} requires approval in autoSafe mode${reason ? `: ${reason}` : ''}`);
                 }
 
                 if (request.tool_name === 'ExitPlanMode') {
@@ -923,6 +947,16 @@ class ClaudeSDKSession extends EventEmitter implements PluginSession {
         this.plugin.emit('metadata', {
             sessionId: this.sessionId,
             permissionMode: mode,
+            timestamp: new Date()
+        });
+    }
+
+    async setApprovalMode(mode: 'manual' | 'autoSafe' | 'auto'): Promise<void> {
+        this.approvalModeOverride = mode;
+        this.autoApproveSafe = mode === 'autoSafe';
+        this.plugin.emit('metadata', {
+            sessionId: this.sessionId,
+            mode: `approval:${mode}`,
             timestamp: new Date()
         });
     }

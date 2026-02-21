@@ -199,6 +199,7 @@ export abstract class BaseSDKSession extends EventEmitter implements PluginSessi
     // Optional methods with default implementations
     async sendMessageWithImages?(_text: string, _images: Array<{ data: string; mediaType: string }>): Promise<void>;
     async setPermissionMode?(_mode: 'default' | 'acceptEdits'): Promise<void>;
+    async setApprovalMode?(_mode: 'manual' | 'autoSafe' | 'auto'): Promise<void>;
     async setModel?(_model: string): Promise<void>;
     async setMaxThinkingTokens?(_maxTokens: number): Promise<void>;
     async sendPermissionDecision?(_requestId: string, _decision: {

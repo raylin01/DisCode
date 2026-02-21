@@ -376,7 +376,7 @@ export interface SessionControlMessage extends WebSocketMessage {
   data: {
     runnerId: string;
     sessionId: string;
-    action: 'set_model' | 'set_permission_mode' | 'set_max_thinking_tokens';
+    action: 'set_model' | 'set_permission_mode' | 'set_approval_mode' | 'set_max_thinking_tokens';
     value: string | number;
   };
 }

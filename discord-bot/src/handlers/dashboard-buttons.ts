@@ -158,6 +158,152 @@ export async function handleRunnerStats(interaction: any, userId: string, runner
     await safeEditReply(interaction, { embeds: [embed] });
 }
 
+export async function handleRunnerHealthButton(interaction: any, userId: string, runnerId: string): Promise<void> {
+    const acknowledged = await safeDeferReply(interaction);
+    if (!acknowledged) return;
+
+    const runner = storage.getRunner(runnerId);
+    if (!runner || !storage.canUserAccessRunner(userId, runnerId)) {
+        await safeEditReply(interaction, { content: '❌ Access denied.' });
+        return;
+    }
+
+    const ws = botState.runnerConnections.get(runnerId);
+    if (!ws) {
+        await safeEditReply(interaction, { content: '❌ Runner is offline.' });
+        return;
+    }
+
+    const requestId = `runner_health_${runnerId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const data = await new Promise<any | null>((resolve) => {
+        const timeout = setTimeout(() => {
+            botState.pendingRunnerHealthRequests.delete(requestId);
+            resolve(null);
+        }, 8000);
+        botState.pendingRunnerHealthRequests.set(requestId, { resolve, timeout });
+        ws.send(JSON.stringify({
+            type: 'runner_health_request',
+            data: { runnerId, requestId }
+        }));
+    });
+
+    if (!data) {
+        await safeEditReply(interaction, { content: '❌ Health request timed out.' });
+        return;
+    }
+
+    const embed = new EmbedBuilder()
+        .setColor(0x0099FF)
+        .setTitle(`Runner Health: ${runner.name}`)
+        .addFields(
+            { name: 'Host', value: data.hostname || 'Unknown', inline: true },
+            { name: 'Platform', value: `${data.platform || 'unknown'} (${data.arch || 'unknown'})`, inline: true },
+            { name: 'CPU', value: `${data.cpuCount || 0} cores`, inline: true },
+            { name: 'Load Avg', value: Array.isArray(data.loadAvg) ? data.loadAvg.map((n: number) => n.toFixed(2)).join(', ') : 'N/A', inline: true },
+            { name: 'Memory', value: data.totalMem ? `${Math.round((data.totalMem - data.freeMem) / 1e6)}MB / ${Math.round(data.totalMem / 1e6)}MB` : 'N/A', inline: true },
+            { name: 'Uptime', value: data.uptimeSec ? `${Math.round(data.uptimeSec)}s` : 'N/A', inline: true }
+        )
+        .setTimestamp();
+
+    await safeEditReply(interaction, { embeds: [embed] });
+}
+
+export async function handleRunnerLogsButton(interaction: any, userId: string, runnerId: string): Promise<void> {
+    const acknowledged = await safeDeferReply(interaction);
+    if (!acknowledged) return;
+
+    const runner = storage.getRunner(runnerId);
+    if (!runner || !storage.canUserAccessRunner(userId, runnerId)) {
+        await safeEditReply(interaction, { content: '❌ Access denied.' });
+        return;
+    }
+
+    const ws = botState.runnerConnections.get(runnerId);
+    if (!ws) {
+        await safeEditReply(interaction, { content: '❌ Runner is offline.' });
+        return;
+    }
+
+    const requestId = `runner_logs_${runnerId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const data = await new Promise<any | null>((resolve) => {
+        const timeout = setTimeout(() => {
+            botState.pendingRunnerLogsRequests.delete(requestId);
+            resolve(null);
+        }, 8000);
+        botState.pendingRunnerLogsRequests.set(requestId, { resolve, timeout });
+        ws.send(JSON.stringify({
+            type: 'runner_logs_request',
+            data: { runnerId, requestId, maxBytes: 20000 }
+        }));
+    });
+
+    if (!data) {
+        await safeEditReply(interaction, { content: '❌ Log request timed out.' });
+        return;
+    }
+    if (data.error) {
+        await safeEditReply(interaction, { content: `❌ ${data.error}` });
+        return;
+    }
+
+    const content = data.content ? data.content.slice(-1900) : 'No log content.';
+    const embed = new EmbedBuilder()
+        .setColor(0x0099FF)
+        .setTitle(`Runner Logs: ${runner.name}`)
+        .setDescription(`\`\`\`\n${content}\n\`\`\``)
+        .setFooter({ text: data.logPath ? `Source: ${data.logPath}` : 'Source: unknown' });
+
+    await safeEditReply(interaction, { embeds: [embed] });
+}
+
+export async function handleRunnerClisButton(interaction: any, userId: string, runnerId: string): Promise<void> {
+    const acknowledged = await safeDeferReply(interaction);
+    if (!acknowledged) return;
+
+    const runner = storage.getRunner(runnerId);
+    if (!runner || !storage.canUserAccessRunner(userId, runnerId)) {
+        await safeEditReply(interaction, { content: '❌ Access denied.' });
+        return;
+    }
+
+    const ws = botState.runnerConnections.get(runnerId);
+    if (!ws) {
+        await safeEditReply(interaction, { content: '❌ Runner is offline.' });
+        return;
+    }
+
+    const requestId = `runner_health_${runnerId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const data = await new Promise<any | null>((resolve) => {
+        const timeout = setTimeout(() => {
+            botState.pendingRunnerHealthRequests.delete(requestId);
+            resolve(null);
+        }, 8000);
+        botState.pendingRunnerHealthRequests.set(requestId, { resolve, timeout });
+        ws.send(JSON.stringify({
+            type: 'runner_health_request',
+            data: { runnerId, requestId }
+        }));
+    });
+
+    if (!data) {
+        await safeEditReply(interaction, { content: '❌ CLI lookup timed out.' });
+        return;
+    }
+
+    const cliPaths = data.cliPaths || {};
+    const embed = new EmbedBuilder()
+        .setColor(0x0099FF)
+        .setTitle(`CLI Availability: ${runner.name}`)
+        .addFields(
+            { name: 'Claude', value: cliPaths.claude || 'Not detected', inline: false },
+            { name: 'Gemini', value: cliPaths.gemini || 'Not detected', inline: false },
+            { name: 'Codex', value: cliPaths.codex || 'Not detected', inline: false }
+        )
+        .setTimestamp();
+
+    await safeEditReply(interaction, { embeds: [embed] });
+}
+
 export async function handleListSessionsButton(interaction: any, userId: string, projectPath: string): Promise<void> {
     const acknowledged = await safeDeferReply(interaction);
     if (!acknowledged) return;

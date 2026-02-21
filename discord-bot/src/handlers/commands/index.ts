@@ -56,6 +56,8 @@ export { handleSyncSession } from './sync-session.js';
 // Session control commands
 export {
     handleSetModel,
+    handleSetEditMode,
+    handleSetApprovalMode,
     handleSetPermissionMode,
     handleSetThinkingTokens
 } from './session-control.js';

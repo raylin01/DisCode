@@ -323,6 +323,7 @@ async function handleRunnerConfigModal(interaction: any, userId: string, customI
     if (!runner.config) runner.config = {};
     if (!runner.config.claudeDefaults) runner.config.claudeDefaults = {};
     if (!runner.config.codexDefaults) runner.config.codexDefaults = {};
+    if (!runner.config.geminiDefaults) runner.config.geminiDefaults = {};
 
     if (param === 'setModel') {
         const model = interaction.fields.getTextInputValue('model').trim();
@@ -507,6 +508,23 @@ async function handleRunnerConfigModal(interaction: any, userId: string, customI
                 return;
             }
         }
+    } else if (param === 'setGeminiModel') {
+        const model = interaction.fields.getTextInputValue('geminiModel').trim();
+        if (!model) {
+            delete runner.config.geminiDefaults.model;
+        } else {
+            runner.config.geminiDefaults.model = model;
+        }
+    } else if (param === 'setGeminiExtensions') {
+        const raw = interaction.fields.getTextInputValue('geminiExtensions').trim();
+        runner.config.geminiDefaults.extensions = raw
+            ? raw.split(',').map((value) => value.trim()).filter(Boolean)
+            : [];
+    } else if (param === 'setGeminiAllowedMcpServerNames') {
+        const raw = interaction.fields.getTextInputValue('geminiAllowedMcpServerNames').trim();
+        runner.config.geminiDefaults.allowedMcpServerNames = raw
+            ? raw.split(',').map((value) => value.trim()).filter(Boolean)
+            : [];
     } else if (param === 'savePreset') {
         const name = interaction.fields.getTextInputValue('presetName').trim();
         if (!name) {
@@ -568,6 +586,7 @@ async function handleRunnerConfigModal(interaction: any, userId: string, customI
                     runnerId,
                     claudeDefaults: runner.config.claudeDefaults,
                     codexDefaults: runner.config.codexDefaults,
+                    geminiDefaults: runner.config.geminiDefaults,
                     requestId
                 }
             }));

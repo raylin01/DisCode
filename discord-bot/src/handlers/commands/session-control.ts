@@ -1,7 +1,7 @@
 /**
  * Session Control Command Handlers
  *
- * Provides commands for per-session control (model, permission mode, thinking tokens).
+ * Provides commands for per-session control (model, edit mode, approval mode, thinking tokens).
  */
 
 import { ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
@@ -24,15 +24,16 @@ async function resolveSession(interaction: ChatInputCommandInteraction) {
 async function sendSessionControl(
     interaction: ChatInputCommandInteraction,
     userId: string,
-    action: 'set_model' | 'set_permission_mode' | 'set_max_thinking_tokens',
-    value: string | number
+    action: 'set_model' | 'set_permission_mode' | 'set_approval_mode' | 'set_max_thinking_tokens',
+    value: string | number,
+    note?: string
 ): Promise<void> {
     const session = await resolveSession(interaction);
     if (!session) {
         await interaction.reply({
             embeds: [createErrorEmbed(
                 'Session Not Found',
-                'No active session found in this thread. Use `/set-model session:<id>` or `/set-permission-mode session:<id>`.'
+                'No active session found in this thread. Use `/set-model session:<id>`, `/set-edit-mode session:<id>`, or `/set-approval-mode session:<id>`.'
             )],
             flags: 64
         });
@@ -79,6 +80,8 @@ async function sendSessionControl(
 
     if (session.plugin && !['claude-sdk', 'codex-sdk', 'gemini-sdk'].includes(session.plugin)) {
         embed.setDescription('⚠️ This control is only supported on SDK sessions (`claude-sdk`, `codex-sdk`, `gemini-sdk`). Other plugins may ignore it.');
+    } else if (note) {
+        embed.setDescription(note);
     }
 
     await interaction.reply({
@@ -95,12 +98,34 @@ export async function handleSetModel(
     await sendSessionControl(interaction, userId, 'set_model', model);
 }
 
-export async function handleSetPermissionMode(
+export async function handleSetEditMode(
     interaction: ChatInputCommandInteraction,
     userId: string
 ): Promise<void> {
     const mode = interaction.options.getString('mode', true) as 'default' | 'acceptEdits';
     await sendSessionControl(interaction, userId, 'set_permission_mode', mode);
+}
+
+export async function handleSetApprovalMode(
+    interaction: ChatInputCommandInteraction,
+    userId: string
+): Promise<void> {
+    const mode = interaction.options.getString('mode', true) as 'manual' | 'autoSafe' | 'auto';
+    await sendSessionControl(interaction, userId, 'set_approval_mode', mode);
+}
+
+export async function handleSetPermissionMode(
+    interaction: ChatInputCommandInteraction,
+    userId: string
+): Promise<void> {
+    const mode = interaction.options.getString('mode', true) as 'default' | 'acceptEdits';
+    await sendSessionControl(
+        interaction,
+        userId,
+        'set_permission_mode',
+        mode,
+        'ℹ️ `/set-permission-mode` is deprecated. Use `/set-edit-mode`.'
+    );
 }
 
 export async function handleSetThinkingTokens(

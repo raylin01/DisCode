@@ -203,11 +203,48 @@ export function getCommandDefinitions(): (SlashCommandBuilder | SlashCommandOpti
       ),
 
     new SlashCommandBuilder()
-      .setName('set-permission-mode')
-      .setDescription('Set permission mode for an SDK session')
+      .setName('set-edit-mode')
+      .setDescription('Set edit mode for an SDK session')
       .addStringOption(option =>
         option.setName('mode')
-          .setDescription('Permission mode')
+          .setDescription('Edit mode')
+          .addChoices(
+            { name: 'Default', value: 'default' },
+            { name: 'Accept Edits', value: 'acceptEdits' }
+          )
+          .setRequired(true)
+      )
+      .addStringOption(option =>
+        option.setName('session')
+          .setDescription('Session ID (optional - auto-detects from current thread)')
+          .setRequired(false)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('set-approval-mode')
+      .setDescription('Set approval mode for an SDK session')
+      .addStringOption(option =>
+        option.setName('mode')
+          .setDescription('Approval mode')
+          .addChoices(
+            { name: 'Require Approval', value: 'manual' },
+            { name: 'Auto-Safe', value: 'autoSafe' },
+            { name: 'Auto-Approve (YOLO)', value: 'auto' }
+          )
+          .setRequired(true)
+      )
+      .addStringOption(option =>
+        option.setName('session')
+          .setDescription('Session ID (optional - auto-detects from current thread)')
+          .setRequired(false)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('set-permission-mode')
+      .setDescription('[Deprecated] Alias for /set-edit-mode')
+      .addStringOption(option =>
+        option.setName('mode')
+          .setDescription('Edit mode')
           .addChoices(
             { name: 'Default', value: 'default' },
             { name: 'Accept Edits', value: 'acceptEdits' }
