@@ -19,6 +19,7 @@ codex-ext/
 claude-client/
 codex-client/
 gemini-client/
+copilot-client/
 
 # Ignored test documentation
 TEST_PLAN.md
